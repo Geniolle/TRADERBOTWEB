@@ -1,4 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CandlestickSeries,
+  ColorType,
+  createChart,
+  type CandlestickData,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from "lightweight-charts";
 
 type HealthResponse = {
   status: string;
@@ -92,14 +101,85 @@ type CandleItem = {
   source: string | null;
 };
 
+type ChartCandleMeta = {
+  openTime: string;
+  closeTime: string;
+  time: UTCTimestamp;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+type OverlayMarker = {
+  id: string;
+  label: string;
+  color: string;
+  left: number;
+  top: number;
+  price: number;
+  timeLabel: string;
+};
+
+type OverlayLine = {
+  id: string;
+  label: string;
+  color: string;
+  top: number;
+  value: number;
+  dashed?: boolean;
+};
+
+function toUtcTimestamp(value: string): UTCTimestamp {
+  return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("pt-PT", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function parsePrice(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getCaseAccentColor(item?: RunDetailsCase | null): string {
+  if (!item) return "#64748b";
+
+  const outcome = (item.outcome ?? "").toLowerCase();
+  const status = (item.status ?? "").toLowerCase();
+
+  if (outcome.includes("hit")) return "#16a34a";
+  if (outcome.includes("fail")) return "#dc2626";
+  if (outcome.includes("timeout")) return "#d97706";
+  if (status.includes("closed")) return "#2563eb";
+  return "#7c3aed";
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
   const [runs, setRuns] = useState<RunHistoryItem[]>([]);
-
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [runDetails, setRunDetails] = useState<RunDetailsResponse | null>(null);
   const [candles, setCandles] = useState<CandleItem[]>([]);
+  const [selectedCaseId, setSelectedCaseId] = useState<string>("");
+  const [chartSize, setChartSize] = useState({ width: 0, height: 560 });
+  const [runSearch, setRunSearch] = useState("");
 
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [loadingStrategies, setLoadingStrategies] = useState(true);
@@ -113,89 +193,85 @@ function App() {
   const [runDetailsError, setRunDetailsError] = useState("");
   const [candlesError, setCandlesError] = useState("");
 
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+
   useEffect(() => {
-    const loadHealth = async () => {
-      try {
-        setLoadingHealth(true);
-        setHealthError("");
-
-        const response = await fetch("http://127.0.0.1:8000/api/v1/health");
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+    const loadInitialData = async () => {
+      const loadHealth = async () => {
+        try {
+          setLoadingHealth(true);
+          setHealthError("");
+          const response = await fetch("http://127.0.0.1:8000/api/v1/health");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data: HealthResponse = await response.json();
+          setHealth(data);
+        } catch (err) {
+          setHealthError(
+            err instanceof Error ? err.message : "Erro desconhecido ao ligar à API"
+          );
+        } finally {
+          setLoadingHealth(false);
         }
+      };
 
-        const data: HealthResponse = await response.json();
-        setHealth(data);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erro desconhecido ao ligar à API";
-        setHealthError(message);
-      } finally {
-        setLoadingHealth(false);
-      }
+      const loadStrategies = async () => {
+        try {
+          setLoadingStrategies(true);
+          setStrategiesError("");
+          const response = await fetch("http://127.0.0.1:8000/api/v1/strategies");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data: StrategyItem[] = await response.json();
+          setStrategies(data);
+        } catch (err) {
+          setStrategiesError(
+            err instanceof Error ? err.message : "Erro desconhecido ao carregar estratégias"
+          );
+        } finally {
+          setLoadingStrategies(false);
+        }
+      };
+
+      const loadRuns = async () => {
+        try {
+          setLoadingRuns(true);
+          setRunsError("");
+          const response = await fetch(
+            "http://127.0.0.1:8000/api/v1/run-history?limit=10"
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data: RunHistoryItem[] = await response.json();
+          setRuns(data);
+
+          if (data.length > 0) {
+            const preferredRun =
+              data.find((item) => item.strategy_key && item.strategy_key.trim() !== "") ??
+              data[0];
+            setSelectedRunId(preferredRun.id);
+          } else {
+            setSelectedRunId("");
+          }
+        } catch (err) {
+          setRunsError(
+            err instanceof Error ? err.message : "Erro desconhecido ao carregar histórico"
+          );
+        } finally {
+          setLoadingRuns(false);
+        }
+      };
+
+      await Promise.all([loadHealth(), loadStrategies(), loadRuns()]);
     };
 
-    const loadStrategies = async () => {
-      try {
-        setLoadingStrategies(true);
-        setStrategiesError("");
-
-        const response = await fetch("http://127.0.0.1:8000/api/v1/strategies");
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data: StrategyItem[] = await response.json();
-        setStrategies(data);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar estratégias";
-        setStrategiesError(message);
-      } finally {
-        setLoadingStrategies(false);
-      }
-    };
-
-    const loadRuns = async () => {
-      try {
-        setLoadingRuns(true);
-        setRunsError("");
-
-        const response = await fetch(
-          "http://127.0.0.1:8000/api/v1/run-history?limit=10"
-        );
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data: RunHistoryItem[] = await response.json();
-        setRuns(data);
-
-        if (data.length > 0) {
-          const preferredRun =
-            data.find((item) => item.strategy_key && item.strategy_key.trim() !== "") ??
-            data[0];
-
-          setSelectedRunId(preferredRun.id);
-        }
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar histórico";
-        setRunsError(message);
-      } finally {
-        setLoadingRuns(false);
-      }
-    };
-
-    loadHealth();
-    loadStrategies();
-    loadRuns();
+    loadInitialData();
   }, []);
 
   useEffect(() => {
     const loadRunDetails = async () => {
       if (!selectedRunId) {
         setRunDetails(null);
+        setSelectedCaseId("");
         return;
       }
 
@@ -206,16 +282,25 @@ function App() {
         const response = await fetch(
           `http://127.0.0.1:8000/api/v1/run-details/${selectedRunId}`
         );
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data: RunDetailsResponse = await response.json();
         setRunDetails(data);
+
+        if (data.cases.length > 0) {
+          setSelectedCaseId((prev) => {
+            const exists = data.cases.some((item) => item.id === prev);
+            return exists ? prev : data.cases[0].id;
+          });
+        } else {
+          setSelectedCaseId("");
+        }
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar detalhes do run";
-        setRunDetailsError(message);
+        setRunDetailsError(
+          err instanceof Error
+            ? err.message
+            : "Erro desconhecido ao carregar detalhes do run"
+        );
       } finally {
         setLoadingRunDetails(false);
       }
@@ -246,16 +331,14 @@ function App() {
         const response = await fetch(
           `http://127.0.0.1:8000/api/v1/candles?${params.toString()}`
         );
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data: CandleItem[] = await response.json();
         setCandles(data);
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar candles";
-        setCandlesError(message);
+        setCandlesError(
+          err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
+        );
       } finally {
         setLoadingCandles(false);
       }
@@ -264,231 +347,982 @@ function App() {
     loadCandles();
   }, [runDetails]);
 
+  const filteredRuns = useMemo(() => {
+    const term = runSearch.trim().toLowerCase();
+    if (!term) return runs;
+
+    return runs.filter((run) => {
+      return (
+        run.id.toLowerCase().includes(term) ||
+        (run.strategy_key ?? "").toLowerCase().includes(term) ||
+        run.symbol.toLowerCase().includes(term) ||
+        run.timeframe.toLowerCase().includes(term) ||
+        run.status.toLowerCase().includes(term)
+      );
+    });
+  }, [runs, runSearch]);
+
+  const candleMeta = useMemo<ChartCandleMeta[]>(() => {
+    return candles
+      .map((item) => ({
+        openTime: item.open_time,
+        closeTime: item.close_time,
+        time: toUtcTimestamp(item.open_time),
+        open: Number(item.open),
+        high: Number(item.high),
+        low: Number(item.low),
+        close: Number(item.close),
+      }))
+      .filter(
+        (item) =>
+          Number.isFinite(item.open) &&
+          Number.isFinite(item.high) &&
+          Number.isFinite(item.low) &&
+          Number.isFinite(item.close)
+      );
+  }, [candles]);
+
+  const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
+    return candleMeta.map((item) => ({
+      time: item.time,
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+    }));
+  }, [candleMeta]);
+
+  const selectedCase = useMemo(() => {
+    if (!runDetails || !selectedCaseId) return null;
+    return runDetails.cases.find((item) => item.id === selectedCaseId) ?? null;
+  }, [runDetails, selectedCaseId]);
+
+  const priceBounds = useMemo(() => {
+    if (candleMeta.length === 0) {
+      return { min: 0, max: 1, range: 1 };
+    }
+
+    const min = Math.min(...candleMeta.map((item) => item.low));
+    const max = Math.max(...candleMeta.map((item) => item.high));
+    const range = max - min || 1;
+
+    return { min, max, range };
+  }, [candleMeta]);
+
+  const overlays = useMemo(() => {
+    if (
+      !selectedCase ||
+      candleMeta.length === 0 ||
+      chartSize.width <= 0 ||
+      chartSize.height <= 0
+    ) {
+      return {
+        markers: [] as OverlayMarker[],
+        lines: [] as OverlayLine[],
+      };
+    }
+
+    const width = chartSize.width;
+    const height = chartSize.height;
+
+    const leftPadding = 12;
+    const rightPadding = 70;
+    const topPadding = 12;
+    const bottomPadding = 24;
+
+    const plotWidth = Math.max(width - leftPadding - rightPadding, 1);
+    const plotHeight = Math.max(height - topPadding - bottomPadding, 1);
+
+    const xFromIndex = (index: number) => {
+      if (candleMeta.length === 1) return leftPadding + plotWidth / 2;
+      return leftPadding + (index / (candleMeta.length - 1)) * plotWidth;
+    };
+
+    const yFromPrice = (price: number) => {
+      const normalized = (price - priceBounds.min) / priceBounds.range;
+      return topPadding + (1 - normalized) * plotHeight;
+    };
+
+    const findClosestCandleIndexByTime = (value: string | null): number | null => {
+      if (!value || candleMeta.length === 0) return null;
+
+      const target = new Date(value).getTime();
+      if (Number.isNaN(target)) return null;
+
+      let bestIndex = 0;
+      let bestDiff = Number.POSITIVE_INFINITY;
+
+      for (let i = 0; i < candleMeta.length; i += 1) {
+        const candleTime = new Date(candleMeta[i].openTime).getTime();
+        const diff = Math.abs(candleTime - target);
+
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestIndex = i;
+        }
+      }
+
+      return bestIndex;
+    };
+
+    const markerDefs: Array<{
+      id: string;
+      label: string;
+      color: string;
+      time: string | null;
+      price: number | null;
+    }> = [
+      {
+        id: "trigger",
+        label: "TRG",
+        color: "#7c3aed",
+        time: selectedCase.trigger_candle_time || selectedCase.trigger_time,
+        price: parsePrice(selectedCase.entry_price),
+      },
+      {
+        id: "entry",
+        label: "ENT",
+        color: "#2563eb",
+        time: selectedCase.entry_time,
+        price: parsePrice(selectedCase.entry_price),
+      },
+      {
+        id: "close",
+        label: "CLS",
+        color: getCaseAccentColor(selectedCase),
+        time: selectedCase.close_time,
+        price: parsePrice(selectedCase.close_price),
+      },
+    ];
+
+    const lineDefs: Array<{
+      id: string;
+      label: string;
+      color: string;
+      value: number | null;
+      dashed?: boolean;
+    }> = [
+      {
+        id: "entry-line",
+        label: "ENTRY",
+        color: "#2563eb",
+        value: parsePrice(selectedCase.entry_price),
+      },
+      {
+        id: "target-line",
+        label: "TARGET",
+        color: "#16a34a",
+        value: parsePrice(selectedCase.target_price),
+        dashed: true,
+      },
+      {
+        id: "invalid-line",
+        label: "INVALID",
+        color: "#dc2626",
+        value: parsePrice(selectedCase.invalidation_price),
+        dashed: true,
+      },
+      {
+        id: "close-line",
+        label: "CLOSE",
+        color: getCaseAccentColor(selectedCase),
+        value: parsePrice(selectedCase.close_price),
+        dashed: true,
+      },
+    ];
+
+    const markers: OverlayMarker[] = [];
+    const lines: OverlayLine[] = [];
+
+    for (const item of markerDefs) {
+      if (!item.time || item.price === null) continue;
+      const index = findClosestCandleIndexByTime(item.time);
+      if (index === null) continue;
+
+      markers.push({
+        id: item.id,
+        label: item.label,
+        color: item.color,
+        left: xFromIndex(index),
+        top: yFromPrice(item.price),
+        price: item.price,
+        timeLabel: formatDateTime(item.time),
+      });
+    }
+
+    for (const item of lineDefs) {
+      if (item.value === null) continue;
+      lines.push({
+        id: item.id,
+        label: item.label,
+        color: item.color,
+        top: yFromPrice(item.value),
+        value: item.value,
+        dashed: item.dashed,
+      });
+    }
+
+    return { markers, lines };
+  }, [selectedCase, candleMeta, chartSize, priceBounds]);
+
+  useEffect(() => {
+    if (!chartContainerRef.current || chartData.length === 0) {
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+        candleSeriesRef.current = null;
+      }
+      return;
+    }
+
+    const container = chartContainerRef.current;
+
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+    }
+
+    const width = Math.max(container.clientWidth, 300);
+    const height = 560;
+
+    setChartSize({ width, height });
+
+    const chart = createChart(container, {
+      width,
+      height,
+      layout: {
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#222222",
+      },
+      grid: {
+        vertLines: { color: "#eef2f7" },
+        horzLines: { color: "#eef2f7" },
+      },
+      rightPriceScale: {
+        borderColor: "#dbe2ea",
+      },
+      timeScale: {
+        borderColor: "#dbe2ea",
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      localization: {
+        priceFormatter: (price: number) => price.toFixed(2),
+      },
+    });
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#16a34a",
+      downColor: "#dc2626",
+      wickUpColor: "#16a34a",
+      wickDownColor: "#dc2626",
+      borderUpColor: "#16a34a",
+      borderDownColor: "#dc2626",
+    });
+
+    candleSeries.setData(chartData);
+    chart.timeScale().fitContent();
+
+    chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+
+    const handleResize = () => {
+      if (!chartContainerRef.current || !chartRef.current) return;
+
+      const nextWidth = Math.max(chartContainerRef.current.clientWidth, 300);
+
+      chartRef.current.applyOptions({ width: nextWidth });
+      chartRef.current.timeScale().fitContent();
+      setChartSize({ width: nextWidth, height: 560 });
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+        candleSeriesRef.current = null;
+      }
+    };
+  }, [chartData]);
+
+  const legendCloseColor = getCaseAccentColor(selectedCase);
+
+  const sidebarCardStyle: React.CSSProperties = {
+    border: "1px solid #dbe2ea",
+    borderRadius: 14,
+    padding: 14,
+    background: "#ffffff",
+    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  };
+
+  const mainCardStyle: React.CSSProperties = {
+    border: "1px solid #dbe2ea",
+    borderRadius: 16,
+    padding: 20,
+    background: "#ffffff",
+    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  };
+
+  const sectionTitleStyle: React.CSSProperties = {
+    marginTop: 0,
+    marginBottom: 16,
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#0f172a",
+  };
+
   return (
-    <div style={{ padding: 24, fontFamily: "Arial, sans-serif" }}>
-      <h1>Trader Bot Dashboard</h1>
-      <p>Frontend online com sucesso.</p>
-      <p>Próximo passo: carregar candles do run selecionado.</p>
-
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2>Teste de ligação à API</h2>
-
-      {loadingHealth && <p>A carregar healthcheck...</p>}
-
-      {!loadingHealth && healthError && (
-        <div>
-          <p style={{ color: "red", fontWeight: "bold" }}>Erro ao ligar à API</p>
-          <p>{healthError}</p>
-        </div>
-      )}
-
-      {!loadingHealth && !healthError && health && (
-        <div>
-          <p><strong>Status:</strong> {health.status}</p>
-          <p><strong>App:</strong> {health.app_name}</p>
-          <p><strong>Environment:</strong> {health.environment}</p>
-        </div>
-      )}
-
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2>Estratégias disponíveis</h2>
-
-      {loadingStrategies && <p>A carregar estratégias...</p>}
-
-      {!loadingStrategies && strategiesError && (
-        <div>
-          <p style={{ color: "red", fontWeight: "bold" }}>
-            Erro ao carregar estratégias
-          </p>
-          <p>{strategiesError}</p>
-        </div>
-      )}
-
-      {!loadingStrategies && !strategiesError && strategies.length === 0 && (
-        <p>Nenhuma estratégia encontrada.</p>
-      )}
-
-      {!loadingStrategies && !strategiesError && strategies.length > 0 && (
-        <div style={{ display: "grid", gap: 16 }}>
-          {strategies.map((strategy) => (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f8fafc",
+        fontFamily: "Arial, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          alignItems: "stretch",
+        }}
+      >
+        <aside
+          style={{
+            width: 340,
+            minWidth: 340,
+            maxWidth: 340,
+            borderRight: "1px solid #dbe2ea",
+            background: "#ffffff",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              height: "100vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
             <div
-              key={strategy.key}
               style={{
-                border: "1px solid #ccc",
-                borderRadius: 8,
-                padding: 16,
+                padding: "24px 20px 16px 20px",
+                borderBottom: "1px solid #eef2f7",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>{strategy.name}</h3>
-              <p><strong>Key:</strong> {strategy.key}</p>
-              <p><strong>Version:</strong> {strategy.version}</p>
-              <p><strong>Category:</strong> {strategy.category}</p>
-              <p><strong>Description:</strong> {strategy.description}</p>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 34,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  lineHeight: 1.1,
+                }}
+              >
+                Trader Bot
+              </h1>
+              <p
+                style={{
+                  margin: "8px 0 0 0",
+                  color: "#475569",
+                  fontSize: 15,
+                }}
+              >
+                Dashboard
+              </p>
             </div>
-          ))}
-        </div>
-      )}
 
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2>Histórico de runs</h2>
-
-      {loadingRuns && <p>A carregar histórico...</p>}
-
-      {!loadingRuns && runsError && (
-        <div>
-          <p style={{ color: "red", fontWeight: "bold" }}>
-            Erro ao carregar histórico
-          </p>
-          <p>{runsError}</p>
-        </div>
-      )}
-
-      {!loadingRuns && !runsError && runs.length === 0 && (
-        <p>Nenhum run encontrado.</p>
-      )}
-
-      {!loadingRuns && !runsError && runs.length > 0 && (
-        <div style={{ display: "grid", gap: 16 }}>
-          {runs.map((run) => (
-            <button
-              key={run.id}
-              onClick={() => setSelectedRunId(run.id)}
+            <div
               style={{
-                textAlign: "left",
-                border: selectedRunId === run.id ? "2px solid #333" : "1px solid #ccc",
-                borderRadius: 8,
+                flex: 1,
+                overflowY: "auto",
                 padding: 16,
-                background: selectedRunId === run.id ? "#f3f3f3" : "#fff",
-                cursor: "pointer",
+                boxSizing: "border-box",
               }}
             >
-              <h3 style={{ marginTop: 0 }}>{run.id}</h3>
-              <p><strong>Strategy:</strong> {run.strategy_key ?? "(sem strategy_key)"}</p>
-              <p><strong>Symbol:</strong> {run.symbol}</p>
-              <p><strong>Timeframe:</strong> {run.timeframe}</p>
-              <p><strong>Status:</strong> {run.status}</p>
-              <p><strong>Candles:</strong> {run.total_candles_processed}</p>
-              <p><strong>Cases Opened:</strong> {run.total_cases_opened}</p>
-              <p><strong>Cases Closed:</strong> {run.total_cases_closed}</p>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2>Detalhes do run selecionado</h2>
-
-      {!selectedRunId && <p>Nenhum run selecionado.</p>}
-
-      {selectedRunId && loadingRunDetails && <p>A carregar detalhes do run...</p>}
-
-      {selectedRunId && !loadingRunDetails && runDetailsError && (
-        <div>
-          <p style={{ color: "red", fontWeight: "bold" }}>
-            Erro ao carregar detalhes do run
-          </p>
-          <p>{runDetailsError}</p>
-        </div>
-      )}
-
-      {selectedRunId && !loadingRunDetails && !runDetailsError && runDetails && (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Run</h3>
-            <p><strong>ID:</strong> {runDetails.run.id}</p>
-            <p><strong>Strategy:</strong> {runDetails.run.strategy_key ?? "(sem strategy_key)"}</p>
-            <p><strong>Symbol:</strong> {runDetails.run.symbol}</p>
-            <p><strong>Timeframe:</strong> {runDetails.run.timeframe}</p>
-            <p><strong>Status:</strong> {runDetails.run.status}</p>
-            <p><strong>Mode:</strong> {runDetails.run.mode}</p>
-            <p><strong>Start:</strong> {runDetails.run.start_at}</p>
-            <p><strong>End:</strong> {runDetails.run.end_at}</p>
-          </div>
-
-          <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Métricas</h3>
-            {!runDetails.metrics && <p>Sem métricas.</p>}
-            {runDetails.metrics && (
-              <>
-                <p><strong>Total Cases:</strong> {runDetails.metrics.total_cases}</p>
-                <p><strong>Total Hits:</strong> {runDetails.metrics.total_hits}</p>
-                <p><strong>Total Fails:</strong> {runDetails.metrics.total_fails}</p>
-                <p><strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}</p>
-                <p><strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}</p>
-                <p><strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}</p>
-                <p><strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}</p>
-                <p><strong>Avg Bars To Resolution:</strong> {runDetails.metrics.avg_bars_to_resolution}</p>
-                <p><strong>Avg Time To Resolution Seconds:</strong> {runDetails.metrics.avg_time_to_resolution_seconds}</p>
-                <p><strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}</p>
-                <p><strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}</p>
-              </>
-            )}
-          </div>
-
-          <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Cases</h3>
-            {runDetails.cases.length === 0 && <p>Sem cases neste run.</p>}
-            {runDetails.cases.length > 0 && (
-              <div style={{ display: "grid", gap: 12 }}>
-                {runDetails.cases.map((item) => (
-                  <div
-                    key={item.id}
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={sidebarCardStyle}>
+                  <h2
                     style={{
-                      border: "1px solid #ddd",
-                      borderRadius: 8,
-                      padding: 12,
+                      marginTop: 0,
+                      marginBottom: 12,
+                      fontSize: 20,
+                      fontWeight: 700,
                     }}
                   >
-                    <p><strong>ID:</strong> {item.id}</p>
-                    <p><strong>Status:</strong> {item.status}</p>
-                    <p><strong>Outcome:</strong> {item.outcome ?? "-"}</p>
-                    <p><strong>Entry Price:</strong> {item.entry_price}</p>
-                    <p><strong>Target Price:</strong> {item.target_price}</p>
-                    <p><strong>Invalidation Price:</strong> {item.invalidation_price}</p>
-                    <p><strong>Trigger Time:</strong> {item.trigger_time}</p>
-                    <p><strong>Close Time:</strong> {item.close_time ?? "-"}</p>
+                    Histórico de runs
+                  </h2>
+
+                  <input
+                    value={runSearch}
+                    onChange={(e) => setRunSearch(e.target.value)}
+                    placeholder="Buscar por run, symbol, status..."
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid #cbd5e1",
+                      marginBottom: 12,
+                      outline: "none",
+                      fontSize: 14,
+                    }}
+                  />
+
+                  {loadingRuns && <p style={{ margin: 0 }}>A carregar histórico...</p>}
+
+                  {!loadingRuns && runsError && (
+                    <div>
+                      <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                        Erro ao carregar histórico
+                      </p>
+                      <p>{runsError}</p>
+                    </div>
+                  )}
+
+                  {!loadingRuns && !runsError && filteredRuns.length === 0 && (
+                    <p style={{ margin: 0 }}>Nenhum run encontrado.</p>
+                  )}
+
+                  {!loadingRuns && !runsError && filteredRuns.length > 0 && (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {filteredRuns.map((run) => {
+                        const selected = selectedRunId === run.id;
+
+                        return (
+                          <button
+                            key={run.id}
+                            onClick={() => setSelectedRunId(run.id)}
+                            style={{
+                              textAlign: "left",
+                              border: selected ? "2px solid #0f172a" : "1px solid #cbd5e1",
+                              borderRadius: 12,
+                              padding: 12,
+                              background: selected ? "#f1f5f9" : "#fff",
+                              cursor: "pointer",
+                              boxShadow: selected
+                                ? "0 1px 3px rgba(15, 23, 42, 0.08)"
+                                : "none",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 15,
+                                fontWeight: 700,
+                                lineHeight: 1.35,
+                                wordBreak: "break-word",
+                                marginBottom: 8,
+                                color: "#0f172a",
+                              }}
+                            >
+                              {run.id}
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: 13,
+                                lineHeight: 1.5,
+                                color: "#1e293b",
+                              }}
+                            >
+                              <div><strong>Symbol:</strong> {run.symbol}</div>
+                              <div><strong>Timeframe:</strong> {run.timeframe}</div>
+                              <div><strong>Status:</strong> {run.status}</div>
+                              <div><strong>Strategy:</strong> {run.strategy_key ?? "-"}</div>
+                              <div><strong>Candles:</strong> {run.total_candles_processed}</div>
+                              <div><strong>Cases:</strong> {run.total_cases_opened}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div style={sidebarCardStyle}>
+                  <h2
+                    style={{
+                      marginTop: 0,
+                      marginBottom: 12,
+                      fontSize: 18,
+                      fontWeight: 700,
+                    }}
+                  >
+                    API
+                  </h2>
+
+                  {loadingHealth && <p style={{ margin: 0 }}>A carregar healthcheck...</p>}
+
+                  {!loadingHealth && healthError && (
+                    <div>
+                      <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                        Erro ao ligar à API
+                      </p>
+                      <p>{healthError}</p>
+                    </div>
+                  )}
+
+                  {!loadingHealth && !healthError && health && (
+                    <div style={{ fontSize: 14, lineHeight: 1.6, color: "#1e293b" }}>
+                      <div><strong>Status:</strong> {health.status}</div>
+                      <div><strong>App:</strong> {health.app_name}</div>
+                      <div><strong>Environment:</strong> {health.environment}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflowY: "auto",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 1240,
+              margin: "0 auto",
+              padding: 24,
+              boxSizing: "border-box",
+              display: "grid",
+              gap: 18,
+            }}
+          >
+            <div style={mainCardStyle}>
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: 20,
+                  textAlign: "center",
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                Análise do run selecionado
+              </h2>
+
+              {!selectedRunId && <p>Nenhum run selecionado.</p>}
+
+              {selectedRunId && loadingRunDetails && <p>A carregar detalhes do run...</p>}
+
+              {selectedRunId && !loadingRunDetails && runDetailsError && (
+                <div>
+                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                    Erro ao carregar detalhes do run
+                  </p>
+                  <p>{runDetailsError}</p>
+                </div>
+              )}
+
+              {selectedRunId && !loadingRunDetails && !runDetailsError && runDetails && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 14,
+                    fontSize: 15,
+                    color: "#334155",
+                  }}
+                >
+                  <div><strong>ID:</strong> {runDetails.run.id}</div>
+                  <div>
+                    <strong>Strategy:</strong>{" "}
+                    {runDetails.run.strategy_key ?? "(sem strategy_key)"}
                   </div>
-                ))}
+                  <div><strong>Symbol:</strong> {runDetails.run.symbol}</div>
+                  <div><strong>Timeframe:</strong> {runDetails.run.timeframe}</div>
+                  <div><strong>Status:</strong> {runDetails.run.status}</div>
+                  <div><strong>Mode:</strong> {runDetails.run.mode}</div>
+                  <div><strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}</div>
+                  <div><strong>End:</strong> {formatDateTime(runDetails.run.end_at)}</div>
+                </div>
+              )}
+            </div>
+
+            <div style={mainCardStyle}>
+              <h2
+                style={{
+                  marginTop: 0,
+                  marginBottom: 16,
+                  textAlign: "center",
+                  fontSize: 22,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                }}
+              >
+                Gráfico de candles
+              </h2>
+
+              {loadingCandles && <p>A carregar candles...</p>}
+
+              {!loadingCandles && candlesError && (
+                <div>
+                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                    Erro ao carregar candles
+                  </p>
+                  <p>{candlesError}</p>
+                </div>
+              )}
+
+              {!loadingCandles && !candlesError && candles.length === 0 && (
+                <p>Sem candles para este run.</p>
+              )}
+
+              {!loadingCandles && !candlesError && candles.length > 0 && (
+                <>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                      gap: 12,
+                      marginBottom: 18,
+                      fontSize: 14,
+                      color: "#475569",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div><strong>Total candles:</strong> {candles.length}</div>
+                    <div><strong>Primeiro candle:</strong> {candles[0].open_time}</div>
+                    <div>
+                      <strong>Último candle:</strong> {candles[candles.length - 1].open_time}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        maxWidth: 920,
+                        height: 560,
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 14,
+                        background: "#fff",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        ref={chartContainerRef}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                        }}
+                      />
+
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          pointerEvents: "none",
+                        }}
+                      >
+                        {overlays.lines.map((line) => (
+                          <div
+                            key={line.id}
+                            style={{
+                              position: "absolute",
+                              left: 0,
+                              right: 0,
+                              top: line.top,
+                              transform: "translateY(-50%)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                borderTop: line.dashed
+                                  ? `2px dashed ${line.color}`
+                                  : `2px solid ${line.color}`,
+                                width: "100%",
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: 8,
+                                top: -10,
+                                background: line.color,
+                                color: "#fff",
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: "2px 6px",
+                                borderRadius: 999,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {line.label} {line.value.toFixed(2)}
+                            </div>
+                          </div>
+                        ))}
+
+                        {overlays.markers.map((marker) => (
+                          <div
+                            key={marker.id}
+                            style={{
+                              position: "absolute",
+                              left: marker.left,
+                              top: marker.top,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                            title={`${marker.label} | ${marker.price.toFixed(2)} | ${marker.timeLabel}`}
+                          >
+                            <div
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: "50%",
+                                background: marker.color,
+                                border: "2px solid #ffffff",
+                                boxShadow: "0 0 0 1px rgba(0,0,0,0.15)",
+                                margin: "0 auto",
+                              }}
+                            />
+                            <div
+                              style={{
+                                marginTop: 4,
+                                padding: "2px 6px",
+                                borderRadius: 999,
+                                background: marker.color,
+                                color: "#fff",
+                                fontSize: 10,
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                                textAlign: "center",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                              }}
+                            >
+                              {marker.label}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      marginTop: 14,
+                      fontSize: 12,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span><strong>Legenda:</strong></span>
+                    <span style={{ color: "#7c3aed" }}>TRG = Trigger</span>
+                    <span style={{ color: "#2563eb" }}>ENT = Entry</span>
+                    <span style={{ color: legendCloseColor }}>CLS = Close</span>
+                    <span style={{ color: "#16a34a" }}>Linha verde = Target</span>
+                    <span style={{ color: "#dc2626" }}>Linha vermelha = Invalidation</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gap: 18,
+              }}
+            >
+              <div style={mainCardStyle}>
+                <h2 style={sectionTitleStyle}>Case selecionado</h2>
+
+                {!selectedCase && <p>Nenhum case selecionado.</p>}
+
+                {selectedCase && (
+                  <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
+                    <div><strong>ID:</strong> {selectedCase.id}</div>
+                    <div><strong>Status:</strong> {selectedCase.status}</div>
+                    <div><strong>Outcome:</strong> {selectedCase.outcome ?? "-"}</div>
+                    <div><strong>Entry Price:</strong> {selectedCase.entry_price}</div>
+                    <div><strong>Target Price:</strong> {selectedCase.target_price}</div>
+                    <div>
+                      <strong>Invalidation Price:</strong> {selectedCase.invalidation_price}
+                    </div>
+                    <div><strong>Close Price:</strong> {selectedCase.close_price ?? "-"}</div>
+                    <div>
+                      <strong>Trigger Time:</strong> {formatDateTime(selectedCase.trigger_time)}
+                    </div>
+                    <div><strong>Entry Time:</strong> {formatDateTime(selectedCase.entry_time)}</div>
+                    <div><strong>Close Time:</strong> {formatDateTime(selectedCase.close_time)}</div>
+                    <div>
+                      <strong>Bars To Resolution:</strong> {selectedCase.bars_to_resolution}
+                    </div>
+                    <div><strong>MFE:</strong> {selectedCase.max_favorable_excursion}</div>
+                    <div><strong>MAE:</strong> {selectedCase.max_adverse_excursion}</div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 16 }}>
-            <h3 style={{ marginTop: 0 }}>Candles do run</h3>
+              <div style={mainCardStyle}>
+                <h2 style={sectionTitleStyle}>Métricas</h2>
 
-            {loadingCandles && <p>A carregar candles...</p>}
+                {!runDetails?.metrics && <p>Sem métricas.</p>}
 
-            {!loadingCandles && candlesError && (
-              <div>
-                <p style={{ color: "red", fontWeight: "bold" }}>
-                  Erro ao carregar candles
-                </p>
-                <p>{candlesError}</p>
+                {runDetails?.metrics && (
+                  <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
+                    <div><strong>Total Cases:</strong> {runDetails.metrics.total_cases}</div>
+                    <div><strong>Total Hits:</strong> {runDetails.metrics.total_hits}</div>
+                    <div><strong>Total Fails:</strong> {runDetails.metrics.total_fails}</div>
+                    <div><strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}</div>
+                    <div><strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}</div>
+                    <div><strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}</div>
+                    <div><strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}</div>
+                    <div>
+                      <strong>Avg Bars To Resolution:</strong>{" "}
+                      {runDetails.metrics.avg_bars_to_resolution}
+                    </div>
+                    <div>
+                      <strong>Avg Time To Resolution Seconds:</strong>{" "}
+                      {runDetails.metrics.avg_time_to_resolution_seconds}
+                    </div>
+                    <div><strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}</div>
+                    <div><strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}</div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
-            {!loadingCandles && !candlesError && candles.length === 0 && (
-              <p>Sem candles para este run.</p>
-            )}
+            <div style={mainCardStyle}>
+              <h2 style={sectionTitleStyle}>Cases</h2>
 
-            {!loadingCandles && !candlesError && candles.length > 0 && (
-              <>
-                <p><strong>Total candles carregados:</strong> {candles.length}</p>
-                <p>
-                  <strong>Primeiro candle:</strong> {candles[0].open_time} | O: {candles[0].open} | H: {candles[0].high} | L: {candles[0].low} | C: {candles[0].close}
-                </p>
-                <p>
-                  <strong>Último candle:</strong> {candles[candles.length - 1].open_time} | O: {candles[candles.length - 1].open} | H: {candles[candles.length - 1].high} | L: {candles[candles.length - 1].low} | C: {candles[candles.length - 1].close}
-                </p>
-              </>
-            )}
+              {!runDetails && <p>Sem dados do run.</p>}
+
+              {runDetails && runDetails.cases.length === 0 && <p>Sem cases neste run.</p>}
+
+              {runDetails && runDetails.cases.length > 0 && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  {runDetails.cases.map((item) => {
+                    const isSelected = item.id === selectedCaseId;
+                    const accent = getCaseAccentColor(item);
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setSelectedCaseId(item.id)}
+                        style={{
+                          textAlign: "left",
+                          border: isSelected ? `2px solid ${accent}` : "1px solid #dbe2ea",
+                          borderRadius: 12,
+                          padding: 12,
+                          background: isSelected ? "#fafafa" : "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            marginBottom: 8,
+                            wordBreak: "break-word",
+                            color: "#0f172a",
+                          }}
+                        >
+                          {item.id}
+                        </div>
+                        <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
+                          <div><strong>Status:</strong> {item.status}</div>
+                          <div><strong>Outcome:</strong> {item.outcome ?? "-"}</div>
+                          <div><strong>Entry:</strong> {item.entry_price}</div>
+                          <div><strong>Target:</strong> {item.target_price}</div>
+                          <div><strong>Invalidation:</strong> {item.invalidation_price}</div>
+                          <div><strong>Trigger:</strong> {formatDateTime(item.trigger_time)}</div>
+                          <div><strong>Entry Time:</strong> {formatDateTime(item.entry_time)}</div>
+                          <div><strong>Close Time:</strong> {formatDateTime(item.close_time)}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={mainCardStyle}>
+              <h2 style={sectionTitleStyle}>Estratégias disponíveis</h2>
+
+              {loadingStrategies && <p>A carregar estratégias...</p>}
+
+              {!loadingStrategies && strategiesError && (
+                <div>
+                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                    Erro ao carregar estratégias
+                  </p>
+                  <p>{strategiesError}</p>
+                </div>
+              )}
+
+              {!loadingStrategies && !strategiesError && strategies.length === 0 && (
+                <p>Nenhuma estratégia encontrada.</p>
+              )}
+
+              {!loadingStrategies && !strategiesError && strategies.length > 0 && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  {strategies.map((strategy) => (
+                    <div
+                      key={strategy.key}
+                      style={{
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 12,
+                        padding: 12,
+                        background: "#fff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          marginBottom: 8,
+                          color: "#0f172a",
+                        }}
+                      >
+                        {strategy.name}
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
+                        <div><strong>Key:</strong> {strategy.key}</div>
+                        <div><strong>Version:</strong> {strategy.version}</div>
+                        <div><strong>Category:</strong> {strategy.category}</div>
+                        <div><strong>Description:</strong> {strategy.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        </main>
+      </div>
     </div>
   );
 }

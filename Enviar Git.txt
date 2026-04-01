@@ -1,0 +1,30 @@
+##### ENVIAR AO GITHUB #####
+
+INICIO
+git init
+
+🚀 Passo 1: Ver o estado dos ficheiros
+git status
+
+🚀 Passo 2: Adicionar todas as alterações
+git add .
+
+🚀 Passo 3: Criar o "Pacote" (Commit) com uma mensagem
+git commit -m ""
+
+🚀 Passo 4: Enviar para a Nuvem (Push)
+git push
+
+(Nota: Se for a primeira vez que sobes esta branch ou se der algum erro a pedir a origem, podes usar
+git push origin main ou git push origin master, dependendo do nome da tua branch principal).
+
+ENVIAR DE UAM VEZ.
+git add . ; git commit -m "Descricao da alteracao" ; git push
+
+##### ENVIAR AO SERVIDOR #####
+
+🚀 Passo 1: Aceder à pasta do projeto no servidor
+
+cd C:\TraderBotWeb\web
+npm run
+npm run dev
