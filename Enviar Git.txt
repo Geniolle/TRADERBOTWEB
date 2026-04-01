@@ -2,6 +2,7 @@
 
 INICIO
 git init
+git push -u origin master
 
 🚀 Passo 1: Ver o estado dos ficheiros
 git status
