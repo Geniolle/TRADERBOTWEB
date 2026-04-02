@@ -96,9 +96,7 @@ function App() {
     return runDetails?.run.start_at ?? buildFallbackStartAt();
   }, [selectedSymbol, runDetails]);
 
-  const effectiveChartEndAt = useMemo(() => {
-    return new Date().toISOString();
-  }, []);
+  const effectiveChartEndAt = new Date().toISOString();
 
   const {
     candles,

@@ -49,6 +49,7 @@ function useCandles({
       try {
         if (!cancelled && showLoader) {
           setLoadingCandles(true);
+          setCandles([]);
         }
 
         if (!cancelled) {

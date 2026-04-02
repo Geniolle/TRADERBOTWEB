@@ -14,9 +14,8 @@ import type {
 function useMarketCatalog() {
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
   const [selectedMarketType, setSelectedMarketType] = useState("");
-  const [marketTypeDetails, setMarketTypeDetails] = useState<CatalogProductResponse | null>(
-    null
-  );
+  const [marketTypeDetails, setMarketTypeDetails] =
+    useState<CatalogProductResponse | null>(null);
   const [selectedCatalog, setSelectedCatalog] = useState("");
   const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState("");
@@ -53,6 +52,8 @@ function useMarketCatalog() {
         setSelectedCatalog("");
         setCatalogSymbols([]);
         setSelectedSymbol("");
+        setCatalogsError("");
+        setSymbolsError("");
       } catch (err) {
         if (!cancelled) {
           setMarketTypesError(
@@ -83,6 +84,9 @@ function useMarketCatalog() {
         setSelectedCatalog("");
         setCatalogSymbols([]);
         setSelectedSymbol("");
+        setCatalogsError("");
+        setSymbolsError("");
+        setLoadingCatalogs(false);
         return;
       }
 
@@ -105,6 +109,7 @@ function useMarketCatalog() {
         setSelectedCatalog("");
         setCatalogSymbols([]);
         setSelectedSymbol("");
+        setSymbolsError("");
       } catch (err) {
         if (!cancelled) {
           setCatalogsError(
@@ -114,6 +119,7 @@ function useMarketCatalog() {
           setSelectedCatalog("");
           setCatalogSymbols([]);
           setSelectedSymbol("");
+          setSymbolsError("");
         }
       } finally {
         if (!cancelled) {
@@ -136,6 +142,8 @@ function useMarketCatalog() {
       if (!selectedMarketType || !selectedCatalog) {
         setCatalogSymbols([]);
         setSelectedSymbol("");
+        setSymbolsError("");
+        setLoadingSymbols(false);
         return;
       }
 
