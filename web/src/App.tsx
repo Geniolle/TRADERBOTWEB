@@ -170,6 +170,9 @@ type CatalogItemsResponse = {
   items: CatalogInstrument[];
 };
 
+const API_HTTP_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const API_WS_BASE_URL = "ws://127.0.0.1:8000/api/v1/ws";
+
 function toUtcTimestamp(value: string): UTCTimestamp {
   return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
@@ -216,10 +219,6 @@ function buildFallbackStartAt(): string {
   return date.toISOString();
 }
 
-function buildFallbackEndAt(): string {
-  return new Date().toISOString();
-}
-
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
@@ -230,6 +229,7 @@ function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [chartSize, setChartSize] = useState({ width: 0, height: 680 });
   const [runSearch, setRunSearch] = useState("");
+  const [wsStatus, setWsStatus] = useState("disconnected");
 
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
   const [selectedMarketType, setSelectedMarketType] = useState("");
@@ -268,7 +268,7 @@ function App() {
         try {
           setLoadingHealth(true);
           setHealthError("");
-          const response = await fetch("http://127.0.0.1:8000/api/v1/health");
+          const response = await fetch(`${API_HTTP_BASE_URL}/health`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data: HealthResponse = await response.json();
           setHealth(data);
@@ -285,7 +285,7 @@ function App() {
         try {
           setLoadingStrategies(true);
           setStrategiesError("");
-          const response = await fetch("http://127.0.0.1:8000/api/v1/strategies");
+          const response = await fetch(`${API_HTTP_BASE_URL}/strategies`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data: StrategyItem[] = await response.json();
           setStrategies(data);
@@ -302,9 +302,7 @@ function App() {
         try {
           setLoadingRuns(true);
           setRunsError("");
-          const response = await fetch(
-            "http://127.0.0.1:8000/api/v1/run-history?limit=10"
-          );
+          const response = await fetch(`${API_HTTP_BASE_URL}/run-history?limit=10`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data: RunHistoryItem[] = await response.json();
           setRuns(data);
@@ -331,7 +329,7 @@ function App() {
           setLoadingMarketTypes(true);
           setMarketTypesError("");
 
-          const response = await fetch("http://127.0.0.1:8000/api/v1/catalog/products");
+          const response = await fetch(`${API_HTTP_BASE_URL}/catalog/products`);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
           const data: CatalogProductsResponse = await response.json();
@@ -373,7 +371,7 @@ function App() {
         setCatalogsError("");
 
         const response = await fetch(
-          `http://127.0.0.1:8000/api/v1/catalog/products/${selectedMarketType}`
+          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}`
         );
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -411,7 +409,7 @@ function App() {
         setSymbolsError("");
 
         const response = await fetch(
-          `http://127.0.0.1:8000/api/v1/catalog/products/${selectedMarketType}/subproducts/${selectedCatalog}`
+          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}/subproducts/${selectedCatalog}`
         );
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -446,9 +444,7 @@ function App() {
         setLoadingRunDetails(true);
         setRunDetailsError("");
 
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/v1/run-details/${selectedRunId}`
-        );
+        const response = await fetch(`${API_HTTP_BASE_URL}/run-details/${selectedRunId}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data: RunDetailsResponse = await response.json();
@@ -475,6 +471,40 @@ function App() {
 
     loadRunDetails();
   }, [selectedRunId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const socket = new WebSocket(API_WS_BASE_URL);
+
+    socket.onopen = () => {
+      if (!isMounted) return;
+      setWsStatus("connected");
+      console.log("[WS] connected");
+      socket.send("frontend_connected");
+    };
+
+    socket.onmessage = (event) => {
+      if (!isMounted) return;
+      console.log("[WS] message:", event.data);
+    };
+
+    socket.onerror = (error) => {
+      if (!isMounted) return;
+      setWsStatus("error");
+      console.error("[WS] error:", error);
+    };
+
+    socket.onclose = () => {
+      if (!isMounted) return;
+      setWsStatus("closed");
+      console.log("[WS] closed");
+    };
+
+    return () => {
+      isMounted = false;
+      socket.close();
+    };
+  }, []);
 
   const filteredRuns = useMemo(() => {
     const term = runSearch.trim().toLowerCase();
@@ -513,27 +543,43 @@ function App() {
   }, [selectedSymbol, runDetails]);
 
   const effectiveChartTimeframe = useMemo(() => {
+    if (selectedSymbol) return "5m";
     return runDetails?.run.timeframe ?? "1h";
-  }, [runDetails]);
+  }, [selectedSymbol, runDetails]);
 
   const effectiveChartStartAt = useMemo(() => {
+    if (selectedSymbol) {
+      const date = new Date();
+      date.setDate(date.getDate() - 2);
+      return date.toISOString();
+    }
+
     return runDetails?.run.start_at ?? buildFallbackStartAt();
-  }, [runDetails]);
+  }, [selectedSymbol, runDetails]);
 
   const effectiveChartEndAt = useMemo(() => {
-    return runDetails?.run.end_at ?? buildFallbackEndAt();
-  }, [runDetails]);
+    return new Date().toISOString();
+  }, []);
 
   useEffect(() => {
-    const loadCandles = async () => {
+    let cancelled = false;
+
+    const loadCandles = async (showLoader = false) => {
       if (!effectiveChartSymbol) {
-        setCandles([]);
+        if (!cancelled) {
+          setCandles([]);
+        }
         return;
       }
 
       try {
-        setLoadingCandles(true);
-        setCandlesError("");
+        if (!cancelled && showLoader) {
+          setLoadingCandles(true);
+        }
+
+        if (!cancelled) {
+          setCandlesError("");
+        }
 
         const params = new URLSearchParams({
           symbol: effectiveChartSymbol,
@@ -543,24 +589,37 @@ function App() {
           limit: "500",
         });
 
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/v1/candles?${params.toString()}`
-        );
+        const response = await fetch(`${API_HTTP_BASE_URL}/candles?${params.toString()}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data: CandleItem[] = await response.json();
-        setCandles(data);
+
+        if (!cancelled) {
+          setCandles(data);
+        }
       } catch (err) {
-        setCandlesError(
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
-        );
-        setCandles([]);
+        if (!cancelled) {
+          setCandlesError(
+            err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
+          );
+        }
       } finally {
-        setLoadingCandles(false);
+        if (!cancelled && showLoader) {
+          setLoadingCandles(false);
+        }
       }
     };
 
-    loadCandles();
+    loadCandles(true);
+
+    const intervalId = window.setInterval(() => {
+      loadCandles(false);
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, [
     effectiveChartSymbol,
     effectiveChartTimeframe,
@@ -1021,7 +1080,11 @@ function App() {
                         id="market-catalog"
                         value={selectedCatalog}
                         onChange={(e) => setSelectedCatalog(e.target.value)}
-                        disabled={!selectedMarketType || loadingCatalogs || availableCatalogs.length === 0}
+                        disabled={
+                          !selectedMarketType ||
+                          loadingCatalogs ||
+                          availableCatalogs.length === 0
+                        }
                         style={{
                           width: "100%",
                           boxSizing: "border-box",
@@ -1060,7 +1123,11 @@ function App() {
                         id="market-symbol"
                         value={selectedSymbol}
                         onChange={(e) => setSelectedSymbol(e.target.value)}
-                        disabled={!selectedCatalog || loadingSymbols || catalogSymbols.length === 0}
+                        disabled={
+                          !selectedCatalog ||
+                          loadingSymbols ||
+                          catalogSymbols.length === 0
+                        }
                         style={{
                           width: "100%",
                           boxSizing: "border-box",
@@ -1082,7 +1149,9 @@ function App() {
                     </div>
                   </div>
 
-                  {loadingMarketTypes && <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>}
+                  {loadingMarketTypes && (
+                    <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>
+                  )}
 
                   {!loadingMarketTypes && marketTypesError && (
                     <div style={{ marginTop: 12 }}>
@@ -1224,12 +1293,24 @@ function App() {
                                 color: "#1e293b",
                               }}
                             >
-                              <div><strong>Symbol:</strong> {run.symbol}</div>
-                              <div><strong>Timeframe:</strong> {run.timeframe}</div>
-                              <div><strong>Status:</strong> {run.status}</div>
-                              <div><strong>Strategy:</strong> {run.strategy_key ?? "-"}</div>
-                              <div><strong>Candles:</strong> {run.total_candles_processed}</div>
-                              <div><strong>Cases:</strong> {run.total_cases_opened}</div>
+                              <div>
+                                <strong>Symbol:</strong> {run.symbol}
+                              </div>
+                              <div>
+                                <strong>Timeframe:</strong> {run.timeframe}
+                              </div>
+                              <div>
+                                <strong>Status:</strong> {run.status}
+                              </div>
+                              <div>
+                                <strong>Strategy:</strong> {run.strategy_key ?? "-"}
+                              </div>
+                              <div>
+                                <strong>Candles:</strong> {run.total_candles_processed}
+                              </div>
+                              <div>
+                                <strong>Cases:</strong> {run.total_cases_opened}
+                              </div>
                             </div>
                           </button>
                         );
@@ -1263,9 +1344,15 @@ function App() {
 
                   {!loadingHealth && !healthError && health && (
                     <div style={{ fontSize: 14, lineHeight: 1.6, color: "#1e293b" }}>
-                      <div><strong>Status:</strong> {health.status}</div>
-                      <div><strong>App:</strong> {health.app_name}</div>
-                      <div><strong>Environment:</strong> {health.environment}</div>
+                      <div>
+                        <strong>Status:</strong> {health.status}
+                      </div>
+                      <div>
+                        <strong>App:</strong> {health.app_name}
+                      </div>
+                      <div>
+                        <strong>Environment:</strong> {health.environment}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1330,17 +1417,31 @@ function App() {
                     color: "#334155",
                   }}
                 >
-                  <div><strong>ID:</strong> {runDetails.run.id}</div>
+                  <div>
+                    <strong>ID:</strong> {runDetails.run.id}
+                  </div>
                   <div>
                     <strong>Strategy:</strong>{" "}
                     {runDetails.run.strategy_key ?? "(sem strategy_key)"}
                   </div>
-                  <div><strong>Symbol:</strong> {runDetails.run.symbol}</div>
-                  <div><strong>Timeframe:</strong> {runDetails.run.timeframe}</div>
-                  <div><strong>Status:</strong> {runDetails.run.status}</div>
-                  <div><strong>Mode:</strong> {runDetails.run.mode}</div>
-                  <div><strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}</div>
-                  <div><strong>End:</strong> {formatDateTime(runDetails.run.end_at)}</div>
+                  <div>
+                    <strong>Symbol:</strong> {runDetails.run.symbol}
+                  </div>
+                  <div>
+                    <strong>Timeframe:</strong> {runDetails.run.timeframe}
+                  </div>
+                  <div>
+                    <strong>Status:</strong> {runDetails.run.status}
+                  </div>
+                  <div>
+                    <strong>Mode:</strong> {runDetails.run.mode}
+                  </div>
+                  <div>
+                    <strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}
+                  </div>
+                  <div>
+                    <strong>End:</strong> {formatDateTime(runDetails.run.end_at)}
+                  </div>
                 </div>
               )}
             </div>
@@ -1385,6 +1486,15 @@ function App() {
                   </div>
                   <div>
                     <strong>Timeframe:</strong> {effectiveChartTimeframe}
+                  </div>
+                  <div>
+                    <strong>Atualização:</strong> a cada 5 segundos
+                  </div>
+                  <div>
+                    <strong>WS:</strong> {API_WS_BASE_URL}
+                  </div>
+                  <div>
+                    <strong>WS status:</strong> {wsStatus}
                   </div>
                 </div>
               )}
@@ -1544,8 +1654,12 @@ function App() {
                       textAlign: "center",
                     }}
                   >
-                    <div><strong>Total candles:</strong> {candles.length}</div>
-                    <div><strong>Primeiro candle:</strong> {candles[0].open_time}</div>
+                    <div>
+                      <strong>Total candles:</strong> {candles.length}
+                    </div>
+                    <div>
+                      <strong>Primeiro candle:</strong> {candles[0].open_time}
+                    </div>
                     <div>
                       <strong>Último candle:</strong> {candles[candles.length - 1].open_time}
                     </div>
@@ -1561,7 +1675,9 @@ function App() {
                       justifyContent: "center",
                     }}
                   >
-                    <span><strong>Legenda:</strong></span>
+                    <span>
+                      <strong>Legenda:</strong>
+                    </span>
                     <span style={{ color: "#7c3aed" }}>TRG = Trigger</span>
                     <span style={{ color: "#2563eb" }}>ENT = Entry</span>
                     <span style={{ color: legendCloseColor }}>CLS = Close</span>
@@ -1586,25 +1702,45 @@ function App() {
 
                 {selectedCase && (
                   <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
-                    <div><strong>ID:</strong> {selectedCase.id}</div>
-                    <div><strong>Status:</strong> {selectedCase.status}</div>
-                    <div><strong>Outcome:</strong> {selectedCase.outcome ?? "-"}</div>
-                    <div><strong>Entry Price:</strong> {selectedCase.entry_price}</div>
-                    <div><strong>Target Price:</strong> {selectedCase.target_price}</div>
+                    <div>
+                      <strong>ID:</strong> {selectedCase.id}
+                    </div>
+                    <div>
+                      <strong>Status:</strong> {selectedCase.status}
+                    </div>
+                    <div>
+                      <strong>Outcome:</strong> {selectedCase.outcome ?? "-"}
+                    </div>
+                    <div>
+                      <strong>Entry Price:</strong> {selectedCase.entry_price}
+                    </div>
+                    <div>
+                      <strong>Target Price:</strong> {selectedCase.target_price}
+                    </div>
                     <div>
                       <strong>Invalidation Price:</strong> {selectedCase.invalidation_price}
                     </div>
-                    <div><strong>Close Price:</strong> {selectedCase.close_price ?? "-"}</div>
+                    <div>
+                      <strong>Close Price:</strong> {selectedCase.close_price ?? "-"}
+                    </div>
                     <div>
                       <strong>Trigger Time:</strong> {formatDateTime(selectedCase.trigger_time)}
                     </div>
-                    <div><strong>Entry Time:</strong> {formatDateTime(selectedCase.entry_time)}</div>
-                    <div><strong>Close Time:</strong> {formatDateTime(selectedCase.close_time)}</div>
+                    <div>
+                      <strong>Entry Time:</strong> {formatDateTime(selectedCase.entry_time)}
+                    </div>
+                    <div>
+                      <strong>Close Time:</strong> {formatDateTime(selectedCase.close_time)}
+                    </div>
                     <div>
                       <strong>Bars To Resolution:</strong> {selectedCase.bars_to_resolution}
                     </div>
-                    <div><strong>MFE:</strong> {selectedCase.max_favorable_excursion}</div>
-                    <div><strong>MAE:</strong> {selectedCase.max_adverse_excursion}</div>
+                    <div>
+                      <strong>MFE:</strong> {selectedCase.max_favorable_excursion}
+                    </div>
+                    <div>
+                      <strong>MAE:</strong> {selectedCase.max_adverse_excursion}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1616,13 +1752,27 @@ function App() {
 
                 {runDetails?.metrics && (
                   <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
-                    <div><strong>Total Cases:</strong> {runDetails.metrics.total_cases}</div>
-                    <div><strong>Total Hits:</strong> {runDetails.metrics.total_hits}</div>
-                    <div><strong>Total Fails:</strong> {runDetails.metrics.total_fails}</div>
-                    <div><strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}</div>
-                    <div><strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}</div>
-                    <div><strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}</div>
-                    <div><strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}</div>
+                    <div>
+                      <strong>Total Cases:</strong> {runDetails.metrics.total_cases}
+                    </div>
+                    <div>
+                      <strong>Total Hits:</strong> {runDetails.metrics.total_hits}
+                    </div>
+                    <div>
+                      <strong>Total Fails:</strong> {runDetails.metrics.total_fails}
+                    </div>
+                    <div>
+                      <strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}
+                    </div>
+                    <div>
+                      <strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}
+                    </div>
+                    <div>
+                      <strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}
+                    </div>
+                    <div>
+                      <strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}
+                    </div>
                     <div>
                       <strong>Avg Bars To Resolution:</strong>{" "}
                       {runDetails.metrics.avg_bars_to_resolution}
@@ -1631,8 +1781,12 @@ function App() {
                       <strong>Avg Time To Resolution Seconds:</strong>{" "}
                       {runDetails.metrics.avg_time_to_resolution_seconds}
                     </div>
-                    <div><strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}</div>
-                    <div><strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}</div>
+                    <div>
+                      <strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}
+                    </div>
+                    <div>
+                      <strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1681,14 +1835,30 @@ function App() {
                           {item.id}
                         </div>
                         <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
-                          <div><strong>Status:</strong> {item.status}</div>
-                          <div><strong>Outcome:</strong> {item.outcome ?? "-"}</div>
-                          <div><strong>Entry:</strong> {item.entry_price}</div>
-                          <div><strong>Target:</strong> {item.target_price}</div>
-                          <div><strong>Invalidation:</strong> {item.invalidation_price}</div>
-                          <div><strong>Trigger:</strong> {formatDateTime(item.trigger_time)}</div>
-                          <div><strong>Entry Time:</strong> {formatDateTime(item.entry_time)}</div>
-                          <div><strong>Close Time:</strong> {formatDateTime(item.close_time)}</div>
+                          <div>
+                            <strong>Status:</strong> {item.status}
+                          </div>
+                          <div>
+                            <strong>Outcome:</strong> {item.outcome ?? "-"}
+                          </div>
+                          <div>
+                            <strong>Entry:</strong> {item.entry_price}
+                          </div>
+                          <div>
+                            <strong>Target:</strong> {item.target_price}
+                          </div>
+                          <div>
+                            <strong>Invalidation:</strong> {item.invalidation_price}
+                          </div>
+                          <div>
+                            <strong>Trigger:</strong> {formatDateTime(item.trigger_time)}
+                          </div>
+                          <div>
+                            <strong>Entry Time:</strong> {formatDateTime(item.entry_time)}
+                          </div>
+                          <div>
+                            <strong>Close Time:</strong> {formatDateTime(item.close_time)}
+                          </div>
                         </div>
                       </button>
                     );
@@ -1743,10 +1913,18 @@ function App() {
                         {strategy.name}
                       </div>
                       <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
-                        <div><strong>Key:</strong> {strategy.key}</div>
-                        <div><strong>Version:</strong> {strategy.version}</div>
-                        <div><strong>Category:</strong> {strategy.category}</div>
-                        <div><strong>Description:</strong> {strategy.description}</div>
+                        <div>
+                          <strong>Key:</strong> {strategy.key}
+                        </div>
+                        <div>
+                          <strong>Version:</strong> {strategy.version}
+                        </div>
+                        <div>
+                          <strong>Category:</strong> {strategy.category}
+                        </div>
+                        <div>
+                          <strong>Description:</strong> {strategy.description}
+                        </div>
                       </div>
                     </div>
                   ))}
