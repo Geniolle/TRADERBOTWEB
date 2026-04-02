@@ -170,6 +170,11 @@ type CatalogItemsResponse = {
   items: CatalogInstrument[];
 };
 
+type WsEnvelope = {
+  event: string;
+  data?: Record<string, unknown>;
+};
+
 const API_HTTP_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const API_WS_BASE_URL = "ws://127.0.0.1:8000/api/v1/ws";
 
@@ -230,6 +235,9 @@ function App() {
   const [chartSize, setChartSize] = useState({ width: 0, height: 680 });
   const [runSearch, setRunSearch] = useState("");
   const [wsStatus, setWsStatus] = useState("disconnected");
+  const [lastWsEvent, setLastWsEvent] = useState("-");
+  const [heartbeatCount, setHeartbeatCount] = useState<number | null>(null);
+  const [heartbeatMessage, setHeartbeatMessage] = useState("-");
 
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
   const [selectedMarketType, setSelectedMarketType] = useState("");
@@ -479,13 +487,35 @@ function App() {
     socket.onopen = () => {
       if (!isMounted) return;
       setWsStatus("connected");
+      setLastWsEvent("connected");
       console.log("[WS] connected");
       socket.send("frontend_connected");
     };
 
     socket.onmessage = (event) => {
       if (!isMounted) return;
+
       console.log("[WS] message:", event.data);
+
+      try {
+        const parsed: WsEnvelope = JSON.parse(event.data);
+        const nextEvent = parsed.event ?? "unknown";
+        setLastWsEvent(nextEvent);
+
+        if (nextEvent === "heartbeat") {
+          const countValue = parsed.data?.count;
+          const messageValue = parsed.data?.message;
+
+          setHeartbeatCount(
+            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
+          );
+          setHeartbeatMessage(
+            typeof messageValue === "string" ? messageValue : "-"
+          );
+        }
+      } catch (error) {
+        console.error("[WS] failed to parse message:", error);
+      }
     };
 
     socket.onerror = (error) => {
@@ -1495,6 +1525,15 @@ function App() {
                   </div>
                   <div>
                     <strong>WS status:</strong> {wsStatus}
+                  </div>
+                  <div>
+                    <strong>Último evento WS:</strong> {lastWsEvent}
+                  </div>
+                  <div>
+                    <strong>Heartbeat count:</strong> {heartbeatCount ?? "-"}
+                  </div>
+                  <div>
+                    <strong>Heartbeat message:</strong> {heartbeatMessage}
                   </div>
                 </div>
               )}
