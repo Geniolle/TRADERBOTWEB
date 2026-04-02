@@ -5,10 +5,8 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
-  type CandlestickData,
   type IChartApi,
   type ISeriesApi,
-  type UTCTimestamp,
 } from "lightweight-charts";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
@@ -28,38 +26,20 @@ import {
 } from "./constants/chart";
 import {
   API_HTTP_BASE_URL,
-  API_WS_BASE_URL,
   FORCED_REALTIME_SYMBOL,
   FORCED_REALTIME_TIMEFRAME,
   FORCE_REALTIME_TEST,
 } from "./constants/config";
-import type {
-  CandleItem,
-  CandleTickState,
-  CatalogInstrument,
-  CatalogItemsResponse,
-  CatalogProductResponse,
-  CatalogProductsResponse,
-  CatalogProductSummary,
-  ChartCandleMeta,
-  FeedDiagnostics,
-  HealthResponse,
-  OverlayLine,
-  OverlayMarker,
-  RunDetailsResponse,
-  RunHistoryItem,
-  StrategyItem,
-  WsEnvelope,
-} from "./types/trading";
+import useApiHealth from "./hooks/useApiHealth";
+import useCandles from "./hooks/useCandles";
+import useMarketCatalog from "./hooks/useMarketCatalog";
+import useRealtimeFeed from "./hooks/useRealtimeFeed";
+import useRunDetails from "./hooks/useRunDetails";
+import useRunHistory from "./hooks/useRunHistory";
+import type { ChartCandleMeta, FeedDiagnostics, StrategyItem, OverlayLine, OverlayMarker } from "./types/trading";
 import { applyStableVisibleRange, getCaseAccentColor, toUtcTimestamp } from "./utils/chart";
+import { buildFallbackStartAt, buildRealtimeTestStartAt } from "./utils/candles";
 import {
-  buildFallbackStartAt,
-  buildRealtimeTestStartAt,
-  normalizeCandles,
-  upsertRealtimeCandle,
-} from "./utils/candles";
-import {
-  floorToMinuteIso,
   formatBooleanLike,
   formatDateTime,
   formatMaybeNumber,
@@ -68,296 +48,95 @@ import {
 } from "./utils/format";
 
 function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const { health, loadingHealth, healthError } = useApiHealth();
+
+  const {
+    selectedRunId,
+    setSelectedRunId,
+    runSearch,
+    setRunSearch,
+    filteredRuns,
+    loadingRuns,
+    runsError,
+  } = useRunHistory();
+
+  const {
+    runDetails,
+    selectedCaseId,
+    setSelectedCaseId,
+    loadingRunDetails,
+    runDetailsError,
+  } = useRunDetails(selectedRunId);
+
+  const {
+    marketTypes,
+    selectedMarketType,
+    setSelectedMarketType,
+    selectedCatalog,
+    setSelectedCatalog,
+    catalogSymbols,
+    selectedSymbol,
+    setSelectedSymbol,
+    availableCatalogs,
+    selectedMarketTypeLabel,
+    selectedCatalogLabel,
+    selectedSymbolData,
+    loadingMarketTypes,
+    loadingCatalogs,
+    loadingSymbols,
+    marketTypesError,
+    catalogsError,
+    symbolsError,
+  } = useMarketCatalog();
+
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
-  const [runs, setRuns] = useState<RunHistoryItem[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string>("");
-  const [runDetails, setRunDetails] = useState<RunDetailsResponse | null>(null);
-  const [candles, setCandles] = useState<CandleItem[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string>("");
-  const [chartSize, setChartSize] = useState({ width: 0, height: CHART_HEIGHT });
-  const [runSearch, setRunSearch] = useState("");
-
-  const [wsStatus, setWsStatus] = useState("disconnected");
-  const [lastWsEvent, setLastWsEvent] = useState("-");
-  const [heartbeatCount, setHeartbeatCount] = useState<number | null>(null);
-  const [heartbeatMessage, setHeartbeatMessage] = useState("-");
-  const [candlesRefreshCount, setCandlesRefreshCount] = useState<number | null>(null);
-  const [candlesRefreshReason, setCandlesRefreshReason] = useState("-");
-  const [lastCandleTick, setLastCandleTick] = useState<CandleTickState>(null);
-
-  const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
-  const [selectedMarketType, setSelectedMarketType] = useState("");
-  const [marketTypeDetails, setMarketTypeDetails] = useState<CatalogProductResponse | null>(
-    null
-  );
-  const [selectedCatalog, setSelectedCatalog] = useState("");
-  const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState("");
-
-  const [loadingHealth, setLoadingHealth] = useState(true);
   const [loadingStrategies, setLoadingStrategies] = useState(true);
-  const [loadingRuns, setLoadingRuns] = useState(true);
-  const [loadingRunDetails, setLoadingRunDetails] = useState(false);
-  const [loadingCandles, setLoadingCandles] = useState(false);
-  const [loadingMarketTypes, setLoadingMarketTypes] = useState(true);
-  const [loadingCatalogs, setLoadingCatalogs] = useState(false);
-  const [loadingSymbols, setLoadingSymbols] = useState(false);
-
-  const [healthError, setHealthError] = useState("");
   const [strategiesError, setStrategiesError] = useState("");
-  const [runsError, setRunsError] = useState("");
-  const [runDetailsError, setRunDetailsError] = useState("");
-  const [candlesError, setCandlesError] = useState("");
-  const [marketTypesError, setMarketTypesError] = useState("");
-  const [catalogsError, setCatalogsError] = useState("");
-  const [symbolsError, setSymbolsError] = useState("");
+
+  const [chartSize, setChartSize] = useState({ width: 0, height: CHART_HEIGHT });
 
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const loadCandlesRef = useRef<((showLoader?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
-    const loadInitialData = async () => {
-      const loadHealth = async () => {
-        try {
-          setLoadingHealth(true);
-          setHealthError("");
-          const response = await fetch(`${API_HTTP_BASE_URL}/health`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const data: HealthResponse = await response.json();
-          setHealth(data);
-        } catch (err) {
-          setHealthError(
-            err instanceof Error ? err.message : "Erro desconhecido ao ligar à API"
-          );
-        } finally {
-          setLoadingHealth(false);
-        }
-      };
+    let cancelled = false;
 
-      const loadStrategies = async () => {
-        try {
-          setLoadingStrategies(true);
-          setStrategiesError("");
-          const response = await fetch(`${API_HTTP_BASE_URL}/strategies`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const data: StrategyItem[] = await response.json();
+    const loadStrategies = async () => {
+      try {
+        setLoadingStrategies(true);
+        setStrategiesError("");
+
+        const response = await fetch(`${API_HTTP_BASE_URL}/strategies`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data: StrategyItem[] = await response.json();
+
+        if (!cancelled) {
           setStrategies(data);
-        } catch (err) {
+        }
+      } catch (err) {
+        if (!cancelled) {
           setStrategiesError(
             err instanceof Error ? err.message : "Erro desconhecido ao carregar estratégias"
           );
-        } finally {
+          setStrategies([]);
+        }
+      } finally {
+        if (!cancelled) {
           setLoadingStrategies(false);
         }
-      };
-
-      const loadRuns = async () => {
-        try {
-          setLoadingRuns(true);
-          setRunsError("");
-          const response = await fetch(`${API_HTTP_BASE_URL}/run-history?limit=10`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const data: RunHistoryItem[] = await response.json();
-          setRuns(data);
-
-          if (data.length > 0) {
-            const preferredRun =
-              data.find((item) => item.strategy_key && item.strategy_key.trim() !== "") ??
-              data[0];
-            setSelectedRunId(preferredRun.id);
-          } else {
-            setSelectedRunId("");
-          }
-        } catch (err) {
-          setRunsError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar histórico"
-          );
-        } finally {
-          setLoadingRuns(false);
-        }
-      };
-
-      const loadMarketTypes = async () => {
-        try {
-          setLoadingMarketTypes(true);
-          setMarketTypesError("");
-
-          const response = await fetch(`${API_HTTP_BASE_URL}/catalog/products`);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-          const data: CatalogProductsResponse = await response.json();
-          const products = Array.isArray(data.products) ? data.products : [];
-
-          setMarketTypes(products);
-          setSelectedMarketType("");
-          setMarketTypeDetails(null);
-          setSelectedCatalog("");
-          setCatalogSymbols([]);
-          setSelectedSymbol("");
-        } catch (err) {
-          setMarketTypesError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar tipos"
-          );
-        } finally {
-          setLoadingMarketTypes(false);
-        }
-      };
-
-      await Promise.all([loadHealth(), loadStrategies(), loadRuns(), loadMarketTypes()]);
+      }
     };
 
-    void loadInitialData();
+    void loadStrategies();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    const loadCatalogs = async () => {
-      if (!selectedMarketType) {
-        setMarketTypeDetails(null);
-        setSelectedCatalog("");
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-        return;
-      }
-
-      try {
-        setLoadingCatalogs(true);
-        setCatalogsError("");
-
-        const response = await fetch(
-          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}`
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data: CatalogProductResponse = await response.json();
-        setMarketTypeDetails(data);
-        setSelectedCatalog("");
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-      } catch (err) {
-        setCatalogsError(
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar catálogos"
-        );
-        setMarketTypeDetails(null);
-        setSelectedCatalog("");
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-      } finally {
-        setLoadingCatalogs(false);
-      }
-    };
-
-    void loadCatalogs();
-  }, [selectedMarketType]);
-
-  useEffect(() => {
-    const loadSymbols = async () => {
-      if (!selectedMarketType || !selectedCatalog) {
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-        return;
-      }
-
-      try {
-        setLoadingSymbols(true);
-        setSymbolsError("");
-
-        const response = await fetch(
-          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}/subproducts/${selectedCatalog}`
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data: CatalogItemsResponse = await response.json();
-        const items = Array.isArray(data.items) ? data.items : [];
-
-        setCatalogSymbols(items);
-        setSelectedSymbol("");
-      } catch (err) {
-        setSymbolsError(
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar símbolos"
-        );
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-      } finally {
-        setLoadingSymbols(false);
-      }
-    };
-
-    void loadSymbols();
-  }, [selectedMarketType, selectedCatalog]);
-
-  useEffect(() => {
-    const loadRunDetails = async () => {
-      if (!selectedRunId) {
-        setRunDetails(null);
-        setSelectedCaseId("");
-        return;
-      }
-
-      try {
-        setLoadingRunDetails(true);
-        setRunDetailsError("");
-
-        const response = await fetch(`${API_HTTP_BASE_URL}/run-details/${selectedRunId}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data: RunDetailsResponse = await response.json();
-        setRunDetails(data);
-
-        if (data.cases.length > 0) {
-          setSelectedCaseId((prev) => {
-            const exists = data.cases.some((item) => item.id === prev);
-            return exists ? prev : data.cases[0].id;
-          });
-        } else {
-          setSelectedCaseId("");
-        }
-      } catch (err) {
-        setRunDetailsError(
-          err instanceof Error
-            ? err.message
-            : "Erro desconhecido ao carregar detalhes do run"
-        );
-      } finally {
-        setLoadingRunDetails(false);
-      }
-    };
-
-    void loadRunDetails();
-  }, [selectedRunId]);
-
-  const filteredRuns = useMemo(() => {
-    const term = runSearch.trim().toLowerCase();
-    if (!term) return runs;
-
-    return runs.filter((run) => {
-      return (
-        run.id.toLowerCase().includes(term) ||
-        (run.strategy_key ?? "").toLowerCase().includes(term) ||
-        run.symbol.toLowerCase().includes(term) ||
-        run.timeframe.toLowerCase().includes(term) ||
-        run.status.toLowerCase().includes(term)
-      );
-    });
-  }, [runs, runSearch]);
-
-  const availableCatalogs = useMemo(() => {
-    return marketTypeDetails?.subproducts ?? [];
-  }, [marketTypeDetails]);
-
-  const selectedMarketTypeLabel = useMemo(() => {
-    return marketTypes.find((item) => item.code === selectedMarketType)?.label ?? "-";
-  }, [marketTypes, selectedMarketType]);
-
-  const selectedCatalogLabel = useMemo(() => {
-    return availableCatalogs.find((item) => item.code === selectedCatalog)?.label ?? "-";
-  }, [availableCatalogs, selectedCatalog]);
-
-  const selectedSymbolData = useMemo(() => {
-    return catalogSymbols.find((item) => item.symbol === selectedSymbol) ?? null;
-  }, [catalogSymbols, selectedSymbol]);
 
   const effectiveChartSymbol = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
@@ -387,190 +166,33 @@ function App() {
     return new Date().toISOString();
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const {
+    candles,
+    setCandles,
+    loadingCandles,
+    candlesError,
+    reloadCandles,
+  } = useCandles({
+    symbol: effectiveChartSymbol,
+    timeframe: effectiveChartTimeframe,
+    startAt: effectiveChartStartAt,
+    endAt: effectiveChartEndAt,
+  });
 
-    loadCandlesRef.current = async (showLoader = false) => {
-      if (!effectiveChartSymbol || !effectiveChartTimeframe) {
-        if (!cancelled) {
-          setCandles([]);
-          setCandlesError("");
-          setLoadingCandles(false);
-        }
-        return;
-      }
-
-      try {
-        if (!cancelled && showLoader) {
-          setLoadingCandles(true);
-        }
-
-        if (!cancelled) {
-          setCandlesError("");
-        }
-
-        const params = new URLSearchParams({
-          symbol: effectiveChartSymbol,
-          timeframe: effectiveChartTimeframe,
-          start_at: effectiveChartStartAt,
-          end_at: effectiveChartEndAt,
-          limit: "500",
-        });
-
-        const response = await fetch(`${API_HTTP_BASE_URL}/candles?${params.toString()}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data: CandleItem[] = await response.json();
-
-        if (!cancelled) {
-          setCandles(normalizeCandles(data));
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setCandlesError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
-          );
-          setCandles([]);
-        }
-      } finally {
-        if (!cancelled && showLoader) {
-          setLoadingCandles(false);
-        }
-      }
-    };
-
-    void loadCandlesRef.current(true);
-
-    return () => {
-      cancelled = true;
-      loadCandlesRef.current = null;
-    };
-  }, [
+  const {
+    wsStatus,
+    lastWsEvent,
+    heartbeatCount,
+    heartbeatMessage,
+    candlesRefreshCount,
+    candlesRefreshReason,
+    lastCandleTick,
+  } = useRealtimeFeed({
     effectiveChartSymbol,
     effectiveChartTimeframe,
-    effectiveChartStartAt,
-    effectiveChartEndAt,
-  ]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const socket = new WebSocket(API_WS_BASE_URL);
-
-    socket.onopen = () => {
-      if (!isMounted) return;
-      setWsStatus("connected");
-      setLastWsEvent("connected");
-      console.log("[WS] connected");
-      socket.send("frontend_connected");
-    };
-
-    socket.onmessage = (event) => {
-      if (!isMounted) return;
-
-      console.log("[WS] message:", event.data);
-
-      try {
-        const parsed: WsEnvelope = JSON.parse(event.data);
-        const nextEvent = parsed.event ?? "unknown";
-        setLastWsEvent(nextEvent);
-
-        if (nextEvent === "heartbeat") {
-          const countValue = parsed.data?.count;
-          const messageValue = parsed.data?.message;
-
-          setHeartbeatCount(
-            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
-          );
-          setHeartbeatMessage(typeof messageValue === "string" ? messageValue : "-");
-          return;
-        }
-
-        if (nextEvent === "candles_refresh") {
-          const countValue = parsed.data?.count;
-          const reasonValue = parsed.data?.reason;
-
-          setCandlesRefreshCount(
-            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
-          );
-          setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
-
-          if (!FORCE_REALTIME_TEST) {
-            void loadCandlesRef.current?.(false);
-          }
-
-          return;
-        }
-
-        if (nextEvent === "candle_tick") {
-          const openTimeValue = parsed.data?.open_time;
-          const symbolValue = parsed.data?.symbol;
-          const timeframeValue = parsed.data?.timeframe;
-          const openValue = Number(parsed.data?.open);
-          const highValue = Number(parsed.data?.high);
-          const lowValue = Number(parsed.data?.low);
-          const closeValue = Number(parsed.data?.close);
-          const countValue = Number(parsed.data?.count);
-
-          const normalizedOpenTime =
-            typeof openTimeValue === "string" ? floorToMinuteIso(openTimeValue) : "-";
-
-          const nextTick: NonNullable<CandleTickState> = {
-            symbol: typeof symbolValue === "string" ? symbolValue : "-",
-            timeframe: typeof timeframeValue === "string" ? timeframeValue : "-",
-            open_time: normalizedOpenTime,
-            open: openValue,
-            high: highValue,
-            low: lowValue,
-            close: closeValue,
-            count: countValue,
-            source: typeof parsed.data?.source === "string" ? parsed.data.source : null,
-            provider:
-              typeof parsed.data?.provider === "string" ? parsed.data.provider : null,
-            market_session:
-              typeof parsed.data?.market_session === "string"
-                ? parsed.data.market_session
-                : null,
-            timezone:
-              typeof parsed.data?.timezone === "string" ? parsed.data.timezone : null,
-            is_delayed:
-              typeof parsed.data?.is_delayed === "boolean"
-                ? parsed.data.is_delayed
-                : null,
-            is_mock:
-              typeof parsed.data?.is_mock === "boolean" ? parsed.data.is_mock : null,
-          };
-
-          setLastCandleTick(nextTick);
-
-          if (
-            nextTick.symbol === effectiveChartSymbol &&
-            nextTick.timeframe === effectiveChartTimeframe
-          ) {
-            setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
-          }
-        }
-      } catch (error) {
-        console.error("[WS] failed to parse message:", error);
-      }
-    };
-
-    socket.onerror = (error) => {
-      if (!isMounted) return;
-      setWsStatus("error");
-      console.error("[WS] error:", error);
-    };
-
-    socket.onclose = () => {
-      if (!isMounted) return;
-      setWsStatus("closed");
-      console.log("[WS] closed");
-    };
-
-    return () => {
-      isMounted = false;
-      socket.close();
-    };
-  }, [effectiveChartSymbol, effectiveChartTimeframe]);
+    setCandles,
+    reloadCandles,
+  });
 
   const candleMeta = useMemo<ChartCandleMeta[]>(() => {
     return candles
@@ -592,7 +214,7 @@ function App() {
       );
   }, [candles]);
 
-  const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
+  const chartData = useMemo(() => {
     return candleMeta.map((item) => ({
       time: item.time,
       open: item.open,
