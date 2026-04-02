@@ -269,6 +269,7 @@ function App() {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const loadCandlesRef = useRef<((showLoader?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -480,62 +481,6 @@ function App() {
     loadRunDetails();
   }, [selectedRunId]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const socket = new WebSocket(API_WS_BASE_URL);
-
-    socket.onopen = () => {
-      if (!isMounted) return;
-      setWsStatus("connected");
-      setLastWsEvent("connected");
-      console.log("[WS] connected");
-      socket.send("frontend_connected");
-    };
-
-    socket.onmessage = (event) => {
-      if (!isMounted) return;
-
-      console.log("[WS] message:", event.data);
-
-      try {
-        const parsed: WsEnvelope = JSON.parse(event.data);
-        const nextEvent = parsed.event ?? "unknown";
-        setLastWsEvent(nextEvent);
-
-        if (nextEvent === "heartbeat") {
-          const countValue = parsed.data?.count;
-          const messageValue = parsed.data?.message;
-
-          setHeartbeatCount(
-            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
-          );
-          setHeartbeatMessage(
-            typeof messageValue === "string" ? messageValue : "-"
-          );
-        }
-      } catch (error) {
-        console.error("[WS] failed to parse message:", error);
-      }
-    };
-
-    socket.onerror = (error) => {
-      if (!isMounted) return;
-      setWsStatus("error");
-      console.error("[WS] error:", error);
-    };
-
-    socket.onclose = () => {
-      if (!isMounted) return;
-      setWsStatus("closed");
-      console.log("[WS] closed");
-    };
-
-    return () => {
-      isMounted = false;
-      socket.close();
-    };
-  }, []);
-
   const filteredRuns = useMemo(() => {
     const term = runSearch.trim().toLowerCase();
     if (!term) return runs;
@@ -594,7 +539,7 @@ function App() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadCandles = async (showLoader = false) => {
+    loadCandlesRef.current = async (showLoader = false) => {
       if (!effectiveChartSymbol) {
         if (!cancelled) {
           setCandles([]);
@@ -640,15 +585,16 @@ function App() {
       }
     };
 
-    loadCandles(true);
+    void loadCandlesRef.current(true);
 
     const intervalId = window.setInterval(() => {
-      loadCandles(false);
-    }, 5000);
+      void loadCandlesRef.current?.(false);
+    }, 15000);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      loadCandlesRef.current = null;
     };
   }, [
     effectiveChartSymbol,
@@ -656,6 +602,62 @@ function App() {
     effectiveChartStartAt,
     effectiveChartEndAt,
   ]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const socket = new WebSocket(API_WS_BASE_URL);
+
+    socket.onopen = () => {
+      if (!isMounted) return;
+      setWsStatus("connected");
+      setLastWsEvent("connected");
+      console.log("[WS] connected");
+      socket.send("frontend_connected");
+    };
+
+    socket.onmessage = (event) => {
+      if (!isMounted) return;
+
+      console.log("[WS] message:", event.data);
+
+      try {
+        const parsed: WsEnvelope = JSON.parse(event.data);
+        const nextEvent = parsed.event ?? "unknown";
+        setLastWsEvent(nextEvent);
+
+        if (nextEvent === "heartbeat") {
+          const countValue = parsed.data?.count;
+          const messageValue = parsed.data?.message;
+
+          setHeartbeatCount(
+            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
+          );
+          setHeartbeatMessage(typeof messageValue === "string" ? messageValue : "-");
+
+          void loadCandlesRef.current?.(false);
+        }
+      } catch (error) {
+        console.error("[WS] failed to parse message:", error);
+      }
+    };
+
+    socket.onerror = (error) => {
+      if (!isMounted) return;
+      setWsStatus("error");
+      console.error("[WS] error:", error);
+    };
+
+    socket.onclose = () => {
+      if (!isMounted) return;
+      setWsStatus("closed");
+      console.log("[WS] closed");
+    };
+
+    return () => {
+      isMounted = false;
+      socket.close();
+    };
+  }, []);
 
   const candleMeta = useMemo<ChartCandleMeta[]>(() => {
     return candles
@@ -1518,7 +1520,7 @@ function App() {
                     <strong>Timeframe:</strong> {effectiveChartTimeframe}
                   </div>
                   <div>
-                    <strong>Atualização:</strong> a cada 5 segundos
+                    <strong>Atualização:</strong> heartbeat WS + fallback 15s
                   </div>
                   <div>
                     <strong>WS:</strong> {API_WS_BASE_URL}
