@@ -12,8 +12,14 @@ import {
 } from "lightweight-charts";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
+import SelectedCaseCard from "./components/cases/SelectedCaseCard";
+import CandlesChartCard from "./components/chart/CandlesChartCard";
+import ChartDiagnosticsCard from "./components/diagnostics/ChartDiagnosticsCard";
 import MarketFiltersCard from "./components/market/MarketFiltersCard";
 import RunHistoryCard from "./components/runs/RunHistoryCard";
+import RunCasesCard from "./components/runs/RunCasesCard";
+import RunMetricsCard from "./components/runs/RunMetricsCard";
+import RunSummaryCard from "./components/runs/RunSummaryCard";
 import {
   CHART_BAR_SPACING,
   CHART_HEIGHT,
@@ -1083,472 +1089,44 @@ function App() {
               gap: 18,
             }}
           >
-            <div style={mainCardStyle}>
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 20,
-                  textAlign: "center",
-                  fontSize: 24,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                Análise do run selecionado
-              </h2>
+            <RunSummaryCard
+              mainCardStyle={mainCardStyle}
+              selectedRunId={selectedRunId}
+              loadingRunDetails={loadingRunDetails}
+              runDetailsError={runDetailsError}
+              runDetails={runDetails}
+            />
 
-              {!selectedRunId && <p>Nenhum run selecionado.</p>}
+            <CandlesChartCard
+              mainCardStyle={mainCardStyle}
+              chartContainerRef={chartContainerRef}
+              loadingCandles={loadingCandles}
+              candlesError={candlesError}
+              chartData={chartData}
+              candles={candles}
+              overlays={overlays}
+              selectedMarketTypeLabel={selectedMarketTypeLabel}
+              selectedCatalogLabel={selectedCatalogLabel}
+              effectiveChartSymbol={effectiveChartSymbol}
+              effectiveChartTimeframe={effectiveChartTimeframe}
+              selectedSymbolData={selectedSymbolData}
+              wsStatus={wsStatus}
+              lastWsEvent={lastWsEvent}
+              heartbeatCount={heartbeatCount}
+              heartbeatMessage={heartbeatMessage}
+              candlesRefreshCount={candlesRefreshCount}
+              candlesRefreshReason={candlesRefreshReason}
+              lastCandleTick={lastCandleTick}
+              legendCloseColor={legendCloseColor}
+            />
 
-              {selectedRunId && loadingRunDetails && <p>A carregar detalhes do run...</p>}
-
-              {selectedRunId && !loadingRunDetails && runDetailsError && (
-                <div>
-                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
-                    Erro ao carregar detalhes do run
-                  </p>
-                  <p>{runDetailsError}</p>
-                </div>
-              )}
-
-              {selectedRunId && !loadingRunDetails && !runDetailsError && runDetails && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 14,
-                    fontSize: 15,
-                    color: "#334155",
-                  }}
-                >
-                  <div>
-                    <strong>ID:</strong> {runDetails.run.id}
-                  </div>
-                  <div>
-                    <strong>Strategy:</strong> {runDetails.run.strategy_key ?? "(sem strategy_key)"}
-                  </div>
-                  <div>
-                    <strong>Symbol:</strong> {runDetails.run.symbol}
-                  </div>
-                  <div>
-                    <strong>Timeframe:</strong> {runDetails.run.timeframe}
-                  </div>
-                  <div>
-                    <strong>Status:</strong> {runDetails.run.status}
-                  </div>
-                  <div>
-                    <strong>Mode:</strong> {runDetails.run.mode}
-                  </div>
-                  <div>
-                    <strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}
-                  </div>
-                  <div>
-                    <strong>End:</strong> {formatDateTime(runDetails.run.end_at)}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={mainCardStyle}>
-              <h2
-                style={{
-                  marginTop: 0,
-                  marginBottom: 16,
-                  textAlign: "center",
-                  fontSize: 22,
-                  fontWeight: 700,
-                  color: "#0f172a",
-                }}
-              >
-                Gráfico de candles
-              </h2>
-
-              {!loadingCandles && !candlesError && (
-                <div
-                  style={{
-                    marginBottom: 16,
-                    textAlign: "center",
-                    fontSize: 14,
-                    color: "#475569",
-                    lineHeight: 1.7,
-                  }}
-                >
-                  <div>
-                    <strong>Modo teste realtime:</strong>{" "}
-                    {FORCE_REALTIME_TEST ? "ativo" : "desligado"}
-                  </div>
-                  <div>
-                    <strong>Mercado:</strong> {selectedMarketTypeLabel}
-                    <span style={{ margin: "0 8px" }}>•</span>
-                    <strong>Catálogo:</strong> {selectedCatalogLabel}
-                  </div>
-                  <div>
-                    <strong>Símbolo do gráfico:</strong> {effectiveChartSymbol || "-"}
-                    {selectedSymbolData ? (
-                      <>
-                        <span style={{ margin: "0 8px" }}>•</span>
-                        {selectedSymbolData.display_name}
-                      </>
-                    ) : null}
-                  </div>
-                  <div>
-                    <strong>Timeframe:</strong> {effectiveChartTimeframe || "-"}
-                  </div>
-                  <div>
-                    <strong>Atualização:</strong> candle_tick direto
-                  </div>
-                  <div>
-                    <strong>WS:</strong> {API_WS_BASE_URL}
-                  </div>
-                  <div>
-                    <strong>WS status:</strong> {wsStatus}
-                  </div>
-                  <div>
-                    <strong>Último evento WS:</strong> {lastWsEvent}
-                  </div>
-                  <div>
-                    <strong>Heartbeat count:</strong> {heartbeatCount ?? "-"}
-                  </div>
-                  <div>
-                    <strong>Heartbeat message:</strong> {heartbeatMessage}
-                  </div>
-                  <div>
-                    <strong>Candles refresh count:</strong> {candlesRefreshCount ?? "-"}
-                  </div>
-                  <div>
-                    <strong>Candles refresh reason:</strong> {candlesRefreshReason}
-                  </div>
-                  <div>
-                    <strong>Último candle tick:</strong>{" "}
-                    {lastCandleTick ? formatDateTime(lastCandleTick.open_time) : "-"}
-                  </div>
-                  <div>
-                    <strong>Tick símbolo:</strong> {lastCandleTick?.symbol ?? "-"}
-                    <span style={{ margin: "0 8px" }}>•</span>
-                    <strong>Tick timeframe:</strong> {lastCandleTick?.timeframe ?? "-"}
-                  </div>
-                  <div>
-                    <strong>Tick OHLC:</strong>{" "}
-                    {lastCandleTick
-                      ? `${lastCandleTick.open.toFixed(5)} / ${lastCandleTick.high.toFixed(
-                          5
-                        )} / ${lastCandleTick.low.toFixed(5)} / ${lastCandleTick.close.toFixed(5)}`
-                      : "-"}
-                  </div>
-                  <div>
-                    <strong>Tick count:</strong> {lastCandleTick?.count ?? "-"}
-                  </div>
-                </div>
-              )}
-
-              {loadingCandles && <p>A carregar candles...</p>}
-
-              {!loadingCandles && candlesError && (
-                <div>
-                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
-                    Erro ao carregar candles
-                  </p>
-                  <p>{candlesError}</p>
-                </div>
-              )}
-
-              <div style={{ width: "100%" }}>
-                <div
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    height: CHART_HEIGHT,
-                    border: "1px solid #dbe2ea",
-                    borderRadius: 14,
-                    background: "#fff",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    ref={chartContainerRef}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                    }}
-                  />
-
-                  {!loadingCandles && !candlesError && chartData.length === 0 && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        background: "rgba(255,255,255,0.82)",
-                        color: "#475569",
-                        fontSize: 16,
-                        fontWeight: 600,
-                        zIndex: 2,
-                      }}
-                    >
-                      Sem candles para este símbolo no período selecionado.
-                    </div>
-                  )}
-
-                  {!loadingCandles && !candlesError && chartData.length > 0 && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        pointerEvents: "none",
-                      }}
-                    >
-                      {overlays.lines.map((line) => (
-                        <div
-                          key={line.id}
-                          style={{
-                            position: "absolute",
-                            left: 0,
-                            right: 0,
-                            top: line.top,
-                            transform: "translateY(-50%)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              borderTop: line.dashed
-                                ? `2px dashed ${line.color}`
-                                : `2px solid ${line.color}`,
-                              width: "100%",
-                            }}
-                          />
-                          <div
-                            style={{
-                              position: "absolute",
-                              right: 8,
-                              top: -10,
-                              background: line.color,
-                              color: "#fff",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: "2px 6px",
-                              borderRadius: 999,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {line.label} {line.value.toFixed(2)}
-                          </div>
-                        </div>
-                      ))}
-
-                      {overlays.markers.map((marker) => (
-                        <div
-                          key={marker.id}
-                          style={{
-                            position: "absolute",
-                            left: marker.left,
-                            top: marker.top,
-                            transform: "translate(-50%, -50%)",
-                          }}
-                          title={`${marker.label} | ${marker.price.toFixed(2)} | ${marker.timeLabel}`}
-                        >
-                          <div
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: "50%",
-                              background: marker.color,
-                              border: "2px solid #ffffff",
-                              boxShadow: "0 0 0 1px rgba(0,0,0,0.15)",
-                              margin: "0 auto",
-                            }}
-                          />
-                          <div
-                            style={{
-                              marginTop: 4,
-                              padding: "2px 6px",
-                              borderRadius: 999,
-                              background: marker.color,
-                              color: "#fff",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              whiteSpace: "nowrap",
-                              textAlign: "center",
-                              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                            }}
-                          >
-                            {marker.label}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {!loadingCandles && !candlesError && chartData.length > 0 && (
-                <>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                      gap: 12,
-                      marginTop: 18,
-                      marginBottom: 18,
-                      fontSize: 14,
-                      color: "#475569",
-                      textAlign: "center",
-                    }}
-                  >
-                    <div>
-                      <strong>Total candles:</strong> {candles.length}
-                    </div>
-                    <div>
-                      <strong>Primeiro candle:</strong> {candles[0].open_time}
-                    </div>
-                    <div>
-                      <strong>Último candle:</strong> {candles[candles.length - 1].open_time}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      marginTop: 14,
-                      fontSize: 12,
-                      justifyContent: "center",
-                    }}
-                  >
-                    <span>
-                      <strong>Legenda:</strong>
-                    </span>
-                    <span style={{ color: "#7c3aed" }}>TRG = Trigger</span>
-                    <span style={{ color: "#2563eb" }}>ENT = Entry</span>
-                    <span style={{ color: legendCloseColor }}>CLS = Close</span>
-                    <span style={{ color: "#16a34a" }}>Linha verde = Target</span>
-                    <span style={{ color: "#dc2626" }}>Linha vermelha = Invalidation</span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div style={mainCardStyle}>
-              <h2 style={sectionTitleStyle}>Diagnóstico técnico do feed</h2>
-
-              <div
-                style={{
-                  marginBottom: 14,
-                  fontSize: 14,
-                  color: "#475569",
-                  lineHeight: 1.6,
-                }}
-              >
-                Este painel existe para validar se o preço divergente vem de provider,
-                sessão, timezone, delayed feed ou mock feed.
-              </div>
-
-              <div style={debugGridStyle}>
-                <div style={debugItemStyle}>
-                  <div>
-                    <strong>Symbol:</strong> {feedDiagnostics.symbol}
-                  </div>
-                  <div>
-                    <strong>Timeframe:</strong> {feedDiagnostics.timeframe}
-                  </div>
-                  <div>
-                    <strong>Total candles:</strong> {feedDiagnostics.totalCandles}
-                  </div>
-                  <div>
-                    <strong>Último close:</strong> {feedDiagnostics.lastClose}
-                  </div>
-                  <div>
-                    <strong>Range OHLC:</strong> {feedDiagnostics.priceRange}
-                  </div>
-                </div>
-
-                <div style={debugItemStyle}>
-                  <div>
-                    <strong>Primeiro candle UTC:</strong> {feedDiagnostics.firstCandleUtc}
-                  </div>
-                  <div>
-                    <strong>Primeiro candle local:</strong> {feedDiagnostics.firstCandleLocal}
-                  </div>
-                  <div>
-                    <strong>Último candle UTC:</strong> {feedDiagnostics.lastCandleUtc}
-                  </div>
-                  <div>
-                    <strong>Último candle local:</strong> {feedDiagnostics.lastCandleLocal}
-                  </div>
-                  <div>
-                    <strong>Timezone runtime:</strong> {feedDiagnostics.runtimeTimezone}
-                  </div>
-                </div>
-
-                <div style={debugItemStyle}>
-                  <div>
-                    <strong>Candle source:</strong> {feedDiagnostics.candleSource}
-                  </div>
-                  <div>
-                    <strong>Candle provider:</strong> {feedDiagnostics.candleProvider}
-                  </div>
-                  <div>
-                    <strong>Candle session:</strong> {feedDiagnostics.candleSession}
-                  </div>
-                  <div>
-                    <strong>Candle timezone:</strong> {feedDiagnostics.candleTimezone}
-                  </div>
-                  <div>
-                    <strong>Candle delayed:</strong> {feedDiagnostics.candleIsDelayed}
-                  </div>
-                  <div>
-                    <strong>Candle mock:</strong> {feedDiagnostics.candleIsMock}
-                  </div>
-                </div>
-
-                <div style={debugItemStyle}>
-                  <div>
-                    <strong>Último tick UTC:</strong> {feedDiagnostics.lastTickUtc}
-                  </div>
-                  <div>
-                    <strong>Último tick local:</strong> {feedDiagnostics.lastTickLocal}
-                  </div>
-                  <div>
-                    <strong>Tick source:</strong> {feedDiagnostics.tickSource}
-                  </div>
-                  <div>
-                    <strong>Tick provider:</strong> {feedDiagnostics.tickProvider}
-                  </div>
-                  <div>
-                    <strong>Tick session:</strong> {feedDiagnostics.tickSession}
-                  </div>
-                  <div>
-                    <strong>Tick timezone:</strong> {feedDiagnostics.tickTimezone}
-                  </div>
-                  <div>
-                    <strong>Tick delayed:</strong> {feedDiagnostics.tickIsDelayed}
-                  </div>
-                  <div>
-                    <strong>Tick mock:</strong> {feedDiagnostics.tickIsMock}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 12,
-                  borderRadius: 12,
-                  background: "#fff7ed",
-                  border: "1px solid #fdba74",
-                  color: "#9a3412",
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                }}
-              >
-                Se <strong>provider</strong>, <strong>session</strong>, <strong>timezone</strong>,{" "}
-                <strong>delayed</strong> ou <strong>mock</strong> vierem como “-”, então o
-                backend ainda não está a enviar essa informação. Nesse caso, o próximo ajuste
-                tem de ser no endpoint <strong>/candles</strong> e no evento websocket{" "}
-                <strong>candle_tick</strong>.
-              </div>
-            </div>
+            <ChartDiagnosticsCard
+              mainCardStyle={mainCardStyle}
+              sectionTitleStyle={sectionTitleStyle}
+              debugGridStyle={debugGridStyle}
+              debugItemStyle={debugItemStyle}
+              feedDiagnostics={feedDiagnostics}
+            />
 
             <div
               style={{
@@ -1557,177 +1135,27 @@ function App() {
                 gap: 18,
               }}
             >
-              <div style={mainCardStyle}>
-                <h2 style={sectionTitleStyle}>Case selecionado</h2>
+              <SelectedCaseCard
+                mainCardStyle={mainCardStyle}
+                sectionTitleStyle={sectionTitleStyle}
+                runDetails={runDetails}
+                selectedCaseId={selectedCaseId}
+              />
 
-                {!selectedCase && <p>Nenhum case selecionado.</p>}
-
-                {selectedCase && (
-                  <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
-                    <div>
-                      <strong>ID:</strong> {selectedCase.id}
-                    </div>
-                    <div>
-                      <strong>Status:</strong> {selectedCase.status}
-                    </div>
-                    <div>
-                      <strong>Outcome:</strong> {selectedCase.outcome ?? "-"}
-                    </div>
-                    <div>
-                      <strong>Entry Price:</strong> {selectedCase.entry_price}
-                    </div>
-                    <div>
-                      <strong>Target Price:</strong> {selectedCase.target_price}
-                    </div>
-                    <div>
-                      <strong>Invalidation Price:</strong> {selectedCase.invalidation_price}
-                    </div>
-                    <div>
-                      <strong>Close Price:</strong> {selectedCase.close_price ?? "-"}
-                    </div>
-                    <div>
-                      <strong>Trigger Time:</strong> {formatDateTime(selectedCase.trigger_time)}
-                    </div>
-                    <div>
-                      <strong>Entry Time:</strong> {formatDateTime(selectedCase.entry_time)}
-                    </div>
-                    <div>
-                      <strong>Close Time:</strong> {formatDateTime(selectedCase.close_time)}
-                    </div>
-                    <div>
-                      <strong>Bars To Resolution:</strong> {selectedCase.bars_to_resolution}
-                    </div>
-                    <div>
-                      <strong>MFE:</strong> {selectedCase.max_favorable_excursion}
-                    </div>
-                    <div>
-                      <strong>MAE:</strong> {selectedCase.max_adverse_excursion}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div style={mainCardStyle}>
-                <h2 style={sectionTitleStyle}>Métricas</h2>
-
-                {!runDetails?.metrics && <p>Sem métricas.</p>}
-
-                {runDetails?.metrics && (
-                  <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
-                    <div>
-                      <strong>Total Cases:</strong> {runDetails.metrics.total_cases}
-                    </div>
-                    <div>
-                      <strong>Total Hits:</strong> {runDetails.metrics.total_hits}
-                    </div>
-                    <div>
-                      <strong>Total Fails:</strong> {runDetails.metrics.total_fails}
-                    </div>
-                    <div>
-                      <strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}
-                    </div>
-                    <div>
-                      <strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}
-                    </div>
-                    <div>
-                      <strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}
-                    </div>
-                    <div>
-                      <strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}
-                    </div>
-                    <div>
-                      <strong>Avg Bars To Resolution:</strong>{" "}
-                      {runDetails.metrics.avg_bars_to_resolution}
-                    </div>
-                    <div>
-                      <strong>Avg Time To Resolution Seconds:</strong>{" "}
-                      {runDetails.metrics.avg_time_to_resolution_seconds}
-                    </div>
-                    <div>
-                      <strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}
-                    </div>
-                    <div>
-                      <strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <RunMetricsCard
+                mainCardStyle={mainCardStyle}
+                sectionTitleStyle={sectionTitleStyle}
+                runDetails={runDetails}
+              />
             </div>
 
-            <div style={mainCardStyle}>
-              <h2 style={sectionTitleStyle}>Cases</h2>
-
-              {!runDetails && <p>Sem dados do run.</p>}
-
-              {runDetails && runDetails.cases.length === 0 && <p>Sem cases neste run.</p>}
-
-              {runDetails && runDetails.cases.length > 0 && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  {runDetails.cases.map((item) => {
-                    const isSelected = item.id === selectedCaseId;
-                    const accent = getCaseAccentColor(item);
-
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => setSelectedCaseId(item.id)}
-                        style={{
-                          textAlign: "left",
-                          border: isSelected ? `2px solid ${accent}` : "1px solid #dbe2ea",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: isSelected ? "#fafafa" : "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            marginBottom: 8,
-                            wordBreak: "break-word",
-                            color: "#0f172a",
-                          }}
-                        >
-                          {item.id}
-                        </div>
-                        <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
-                          <div>
-                            <strong>Status:</strong> {item.status}
-                          </div>
-                          <div>
-                            <strong>Outcome:</strong> {item.outcome ?? "-"}
-                          </div>
-                          <div>
-                            <strong>Entry:</strong> {item.entry_price}
-                          </div>
-                          <div>
-                            <strong>Target:</strong> {item.target_price}
-                          </div>
-                          <div>
-                            <strong>Invalidation:</strong> {item.invalidation_price}
-                          </div>
-                          <div>
-                            <strong>Trigger:</strong> {formatDateTime(item.trigger_time)}
-                          </div>
-                          <div>
-                            <strong>Entry Time:</strong> {formatDateTime(item.entry_time)}
-                          </div>
-                          <div>
-                            <strong>Close Time:</strong> {formatDateTime(item.close_time)}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <RunCasesCard
+              mainCardStyle={mainCardStyle}
+              sectionTitleStyle={sectionTitleStyle}
+              runDetails={runDetails}
+              selectedCaseId={selectedCaseId}
+              setSelectedCaseId={setSelectedCaseId}
+            />
 
             <div style={mainCardStyle}>
               <h2 style={sectionTitleStyle}>Estratégias disponíveis</h2>
