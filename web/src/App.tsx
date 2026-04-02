@@ -1,3 +1,5 @@
+// src/App.tsx
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -193,6 +195,12 @@ const FORCE_REALTIME_TEST = true;
 const FORCED_REALTIME_SYMBOL = "AAPL";
 const FORCED_REALTIME_TIMEFRAME = "1m";
 
+const CHART_HEIGHT = 680;
+const CHART_VISIBLE_BARS = 80;
+const CHART_RIGHT_OFFSET = 12;
+const CHART_BAR_SPACING = 12;
+const CHART_MIN_BAR_SPACING = 6;
+
 function toUtcTimestamp(value: string): UTCTimestamp {
   return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
@@ -296,6 +304,15 @@ function upsertRealtimeCandle(
   return normalizeCandles([...previous, nextCandle]);
 }
 
+function applyStableVisibleRange(chart: IChartApi, totalBars: number): void {
+  const visibleBars = CHART_VISIBLE_BARS;
+  const effectiveBars = Math.max(totalBars, visibleBars);
+  const to = effectiveBars - 1 + CHART_RIGHT_OFFSET;
+  const from = to - visibleBars + 1;
+
+  chart.timeScale().setVisibleLogicalRange({ from, to });
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
@@ -304,7 +321,7 @@ function App() {
   const [runDetails, setRunDetails] = useState<RunDetailsResponse | null>(null);
   const [candles, setCandles] = useState<CandleItem[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
-  const [chartSize, setChartSize] = useState({ width: 0, height: 680 });
+  const [chartSize, setChartSize] = useState({ width: 0, height: CHART_HEIGHT });
   const [runSearch, setRunSearch] = useState("");
 
   const [wsStatus, setWsStatus] = useState("disconnected");
@@ -856,7 +873,7 @@ function App() {
 
     const xFromIndex = (index: number) => {
       if (candleMeta.length === 1) return leftPadding + plotWidth / 2;
-      return leftPadding + (index / (candleMeta.length - 1)) * plotWidth;
+      return leftPadding + (index / Math.max(candleMeta.length - 1, 1)) * plotWidth;
     };
 
     const yFromPrice = (price: number) => {
@@ -991,7 +1008,7 @@ function App() {
 
     const container = chartContainerRef.current;
     const width = Math.max(container.clientWidth, 300);
-    const height = 680;
+    const height = CHART_HEIGHT;
 
     if (!chartRef.current) {
       const chart = createChart(container, {
@@ -1012,6 +1029,12 @@ function App() {
           borderColor: "#dbe2ea",
           timeVisible: true,
           secondsVisible: true,
+          rightOffset: CHART_RIGHT_OFFSET,
+          barSpacing: CHART_BAR_SPACING,
+          minBarSpacing: CHART_MIN_BAR_SPACING,
+          fixLeftEdge: false,
+          fixRightEdge: false,
+          lockVisibleTimeRangeOnResize: true,
         },
         localization: {
           priceFormatter: (price: number) => price.toFixed(2),
@@ -1034,9 +1057,9 @@ function App() {
     chartRef.current.applyOptions({ width, height });
     setChartSize({ width, height });
 
-    if (chartData.length > 0 && candleSeriesRef.current) {
+    if (chartData.length > 0 && candleSeriesRef.current && chartRef.current) {
       candleSeriesRef.current.setData(chartData);
-      chartRef.current.timeScale().fitContent();
+      applyStableVisibleRange(chartRef.current, chartData.length);
       chartRef.current.timeScale().scrollToRealTime();
     }
 
@@ -1044,11 +1067,11 @@ function App() {
       if (!chartContainerRef.current || !chartRef.current) return;
 
       const nextWidth = Math.max(chartContainerRef.current.clientWidth, 300);
-      chartRef.current.applyOptions({ width: nextWidth, height: 680 });
-      setChartSize({ width: nextWidth, height: 680 });
+      chartRef.current.applyOptions({ width: nextWidth, height: CHART_HEIGHT });
+      setChartSize({ width: nextWidth, height: CHART_HEIGHT });
 
       if (chartData.length > 0) {
-        chartRef.current.timeScale().fitContent();
+        applyStableVisibleRange(chartRef.current, chartData.length);
         chartRef.current.timeScale().scrollToRealTime();
       }
     };
@@ -1711,7 +1734,7 @@ function App() {
                   style={{
                     position: "relative",
                     width: "100%",
-                    height: 680,
+                    height: CHART_HEIGHT,
                     border: "1px solid #dbe2ea",
                     borderRadius: 14,
                     background: "#fff",
