@@ -18,6 +18,7 @@ import RunHistoryCard from "./components/runs/RunHistoryCard";
 import RunCasesCard from "./components/runs/RunCasesCard";
 import RunMetricsCard from "./components/runs/RunMetricsCard";
 import RunSummaryCard from "./components/runs/RunSummaryCard";
+import StrategiesCard from "./components/strategies/StrategiesCard";
 import {
   CHART_BAR_SPACING,
   CHART_HEIGHT,
@@ -25,7 +26,6 @@ import {
   CHART_RIGHT_OFFSET,
 } from "./constants/chart";
 import {
-  API_HTTP_BASE_URL,
   FORCED_REALTIME_SYMBOL,
   FORCED_REALTIME_TIMEFRAME,
   FORCE_REALTIME_TEST,
@@ -36,7 +36,13 @@ import useMarketCatalog from "./hooks/useMarketCatalog";
 import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
 import useRunHistory from "./hooks/useRunHistory";
-import type { ChartCandleMeta, FeedDiagnostics, StrategyItem, OverlayLine, OverlayMarker } from "./types/trading";
+import useStrategies from "./hooks/useStrategies";
+import type {
+  ChartCandleMeta,
+  FeedDiagnostics,
+  OverlayLine,
+  OverlayMarker,
+} from "./types/trading";
 import { applyStableVisibleRange, getCaseAccentColor, toUtcTimestamp } from "./utils/chart";
 import { buildFallbackStartAt, buildRealtimeTestStartAt } from "./utils/candles";
 import {
@@ -89,54 +95,13 @@ function App() {
     symbolsError,
   } = useMarketCatalog();
 
-  const [strategies, setStrategies] = useState<StrategyItem[]>([]);
-  const [loadingStrategies, setLoadingStrategies] = useState(true);
-  const [strategiesError, setStrategiesError] = useState("");
+  const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
   const [chartSize, setChartSize] = useState({ width: 0, height: CHART_HEIGHT });
 
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadStrategies = async () => {
-      try {
-        setLoadingStrategies(true);
-        setStrategiesError("");
-
-        const response = await fetch(`${API_HTTP_BASE_URL}/strategies`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data: StrategyItem[] = await response.json();
-
-        if (!cancelled) {
-          setStrategies(data);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setStrategiesError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar estratégias"
-          );
-          setStrategies([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingStrategies(false);
-        }
-      }
-    };
-
-    void loadStrategies();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const effectiveChartSymbol = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
@@ -779,70 +744,13 @@ function App() {
               setSelectedCaseId={setSelectedCaseId}
             />
 
-            <div style={mainCardStyle}>
-              <h2 style={sectionTitleStyle}>Estratégias disponíveis</h2>
-
-              {loadingStrategies && <p>A carregar estratégias...</p>}
-
-              {!loadingStrategies && strategiesError && (
-                <div>
-                  <p style={{ color: "#dc2626", fontWeight: "bold" }}>
-                    Erro ao carregar estratégias
-                  </p>
-                  <p>{strategiesError}</p>
-                </div>
-              )}
-
-              {!loadingStrategies && !strategiesError && strategies.length === 0 && (
-                <p>Nenhuma estratégia encontrada.</p>
-              )}
-
-              {!loadingStrategies && !strategiesError && strategies.length > 0 && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  {strategies.map((strategy) => (
-                    <div
-                      key={strategy.key}
-                      style={{
-                        border: "1px solid #dbe2ea",
-                        borderRadius: 12,
-                        padding: 12,
-                        background: "#fff",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 700,
-                          marginBottom: 8,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {strategy.name}
-                      </div>
-                      <div style={{ fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
-                        <div>
-                          <strong>Key:</strong> {strategy.key}
-                        </div>
-                        <div>
-                          <strong>Version:</strong> {strategy.version}
-                        </div>
-                        <div>
-                          <strong>Category:</strong> {strategy.category}
-                        </div>
-                        <div>
-                          <strong>Description:</strong> {strategy.description}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <StrategiesCard
+              mainCardStyle={mainCardStyle}
+              sectionTitleStyle={sectionTitleStyle}
+              strategies={strategies}
+              loadingStrategies={loadingStrategies}
+              strategiesError={strategiesError}
+            />
           </div>
         </main>
       </div>
