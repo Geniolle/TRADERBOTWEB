@@ -210,6 +210,16 @@ function getCaseAccentColor(item?: RunDetailsCase | null): string {
   return "#7c3aed";
 }
 
+function buildFallbackStartAt(): string {
+  const date = new Date();
+  date.setDate(date.getDate() - 30);
+  return date.toISOString();
+}
+
+function buildFallbackEndAt(): string {
+  return new Date().toISOString();
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
@@ -466,44 +476,6 @@ function App() {
     loadRunDetails();
   }, [selectedRunId]);
 
-  useEffect(() => {
-    const loadCandles = async () => {
-      if (!runDetails?.run) {
-        setCandles([]);
-        return;
-      }
-
-      try {
-        setLoadingCandles(true);
-        setCandlesError("");
-
-        const params = new URLSearchParams({
-          symbol: runDetails.run.symbol,
-          timeframe: runDetails.run.timeframe,
-          start_at: runDetails.run.start_at,
-          end_at: runDetails.run.end_at,
-          limit: "500",
-        });
-
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/v1/candles?${params.toString()}`
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const data: CandleItem[] = await response.json();
-        setCandles(data);
-      } catch (err) {
-        setCandlesError(
-          err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
-        );
-      } finally {
-        setLoadingCandles(false);
-      }
-    };
-
-    loadCandles();
-  }, [runDetails]);
-
   const filteredRuns = useMemo(() => {
     const term = runSearch.trim().toLowerCase();
     if (!term) return runs;
@@ -534,6 +506,67 @@ function App() {
   const selectedSymbolData = useMemo(() => {
     return catalogSymbols.find((item) => item.symbol === selectedSymbol) ?? null;
   }, [catalogSymbols, selectedSymbol]);
+
+  const effectiveChartSymbol = useMemo(() => {
+    if (selectedSymbol) return selectedSymbol;
+    return runDetails?.run.symbol ?? "";
+  }, [selectedSymbol, runDetails]);
+
+  const effectiveChartTimeframe = useMemo(() => {
+    return runDetails?.run.timeframe ?? "1h";
+  }, [runDetails]);
+
+  const effectiveChartStartAt = useMemo(() => {
+    return runDetails?.run.start_at ?? buildFallbackStartAt();
+  }, [runDetails]);
+
+  const effectiveChartEndAt = useMemo(() => {
+    return runDetails?.run.end_at ?? buildFallbackEndAt();
+  }, [runDetails]);
+
+  useEffect(() => {
+    const loadCandles = async () => {
+      if (!effectiveChartSymbol) {
+        setCandles([]);
+        return;
+      }
+
+      try {
+        setLoadingCandles(true);
+        setCandlesError("");
+
+        const params = new URLSearchParams({
+          symbol: effectiveChartSymbol,
+          timeframe: effectiveChartTimeframe,
+          start_at: effectiveChartStartAt,
+          end_at: effectiveChartEndAt,
+          limit: "500",
+        });
+
+        const response = await fetch(
+          `http://127.0.0.1:8000/api/v1/candles?${params.toString()}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data: CandleItem[] = await response.json();
+        setCandles(data);
+      } catch (err) {
+        setCandlesError(
+          err instanceof Error ? err.message : "Erro desconhecido ao carregar candles"
+        );
+        setCandles([]);
+      } finally {
+        setLoadingCandles(false);
+      }
+    };
+
+    loadCandles();
+  }, [
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    effectiveChartStartAt,
+    effectiveChartEndAt,
+  ]);
 
   const candleMeta = useMemo<ChartCandleMeta[]>(() => {
     return candles
@@ -739,89 +772,86 @@ function App() {
   }, [selectedCase, candleMeta, chartSize, priceBounds]);
 
   useEffect(() => {
-    if (!chartContainerRef.current || chartData.length === 0) {
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-        candleSeriesRef.current = null;
-      }
-      return;
-    }
+    if (!chartContainerRef.current) return;
 
     const container = chartContainerRef.current;
-
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-      candleSeriesRef.current = null;
-    }
-
     const width = Math.max(container.clientWidth, 300);
     const height = 680;
 
+    if (!chartRef.current) {
+      const chart = createChart(container, {
+        width,
+        height,
+        layout: {
+          background: { type: ColorType.Solid, color: "#ffffff" },
+          textColor: "#222222",
+        },
+        grid: {
+          vertLines: { color: "#eef2f7" },
+          horzLines: { color: "#eef2f7" },
+        },
+        rightPriceScale: {
+          borderColor: "#dbe2ea",
+        },
+        timeScale: {
+          borderColor: "#dbe2ea",
+          timeVisible: true,
+          secondsVisible: false,
+        },
+        localization: {
+          priceFormatter: (price: number) => price.toFixed(2),
+        },
+      });
+
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: "#16a34a",
+        downColor: "#dc2626",
+        wickUpColor: "#16a34a",
+        wickDownColor: "#dc2626",
+        borderUpColor: "#16a34a",
+        borderDownColor: "#dc2626",
+      });
+
+      chartRef.current = chart;
+      candleSeriesRef.current = candleSeries;
+    }
+
+    chartRef.current.applyOptions({ width, height });
     setChartSize({ width, height });
 
-    const chart = createChart(container, {
-      width,
-      height,
-      layout: {
-        background: { type: ColorType.Solid, color: "#ffffff" },
-        textColor: "#222222",
-      },
-      grid: {
-        vertLines: { color: "#eef2f7" },
-        horzLines: { color: "#eef2f7" },
-      },
-      rightPriceScale: {
-        borderColor: "#dbe2ea",
-      },
-      timeScale: {
-        borderColor: "#dbe2ea",
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      localization: {
-        priceFormatter: (price: number) => price.toFixed(2),
-      },
-    });
-
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#16a34a",
-      downColor: "#dc2626",
-      wickUpColor: "#16a34a",
-      wickDownColor: "#dc2626",
-      borderUpColor: "#16a34a",
-      borderDownColor: "#dc2626",
-    });
-
-    candleSeries.setData(chartData);
-    chart.timeScale().fitContent();
-
-    chartRef.current = chart;
-    candleSeriesRef.current = candleSeries;
+    if (chartData.length > 0 && candleSeriesRef.current) {
+      candleSeriesRef.current.setData(chartData);
+      chartRef.current.timeScale().fitContent();
+    }
 
     const handleResize = () => {
       if (!chartContainerRef.current || !chartRef.current) return;
 
       const nextWidth = Math.max(chartContainerRef.current.clientWidth, 300);
-
-      chartRef.current.applyOptions({ width: nextWidth });
-      chartRef.current.timeScale().fitContent();
+      chartRef.current.applyOptions({ width: nextWidth, height: 680 });
       setChartSize({ width: nextWidth, height: 680 });
+
+      if (chartData.length > 0) {
+        chartRef.current.timeScale().fitContent();
+      }
     };
 
     window.addEventListener("resize", handleResize);
 
     return () => {
       window.removeEventListener("resize", handleResize);
+    };
+  }, [chartData]);
 
+  useEffect(() => {
+    return () => {
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
         candleSeriesRef.current = null;
       }
     };
-  }, [chartData]);
+  }, []);
 
   const legendCloseColor = getCaseAccentColor(selectedCase);
 
@@ -1345,13 +1375,16 @@ function App() {
                     <strong>Catálogo:</strong> {selectedCatalogLabel}
                   </div>
                   <div>
-                    <strong>Símbolo selecionado:</strong> {selectedSymbol || "-"}
+                    <strong>Símbolo do gráfico:</strong> {effectiveChartSymbol || "-"}
                     {selectedSymbolData ? (
                       <>
                         <span style={{ margin: "0 8px" }}>•</span>
                         {selectedSymbolData.display_name}
                       </>
                     ) : null}
+                  </div>
+                  <div>
+                    <strong>Timeframe:</strong> {effectiveChartTimeframe}
                   </div>
                 </div>
               )}
@@ -1367,9 +1400,135 @@ function App() {
                 </div>
               )}
 
-              {!loadingCandles && !candlesError && candles.length === 0 && (
-                <p>Sem candles para este run.</p>
-              )}
+              <div style={{ width: "100%" }}>
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    height: 680,
+                    border: "1px solid #dbe2ea",
+                    borderRadius: 14,
+                    background: "#fff",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    ref={chartContainerRef}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                    }}
+                  />
+
+                  {!loadingCandles && !candlesError && candles.length === 0 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(255,255,255,0.82)",
+                        color: "#475569",
+                        fontSize: 16,
+                        fontWeight: 600,
+                        zIndex: 2,
+                      }}
+                    >
+                      Sem candles para este símbolo no período selecionado.
+                    </div>
+                  )}
+
+                  {!loadingCandles && !candlesError && candles.length > 0 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {overlays.lines.map((line) => (
+                        <div
+                          key={line.id}
+                          style={{
+                            position: "absolute",
+                            left: 0,
+                            right: 0,
+                            top: line.top,
+                            transform: "translateY(-50%)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              borderTop: line.dashed
+                                ? `2px dashed ${line.color}`
+                                : `2px solid ${line.color}`,
+                              width: "100%",
+                            }}
+                          />
+                          <div
+                            style={{
+                              position: "absolute",
+                              right: 8,
+                              top: -10,
+                              background: line.color,
+                              color: "#fff",
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: "2px 6px",
+                              borderRadius: 999,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {line.label} {line.value.toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+
+                      {overlays.markers.map((marker) => (
+                        <div
+                          key={marker.id}
+                          style={{
+                            position: "absolute",
+                            left: marker.left,
+                            top: marker.top,
+                            transform: "translate(-50%, -50%)",
+                          }}
+                          title={`${marker.label} | ${marker.price.toFixed(2)} | ${marker.timeLabel}`}
+                        >
+                          <div
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: "50%",
+                              background: marker.color,
+                              border: "2px solid #ffffff",
+                              boxShadow: "0 0 0 1px rgba(0,0,0,0.15)",
+                              margin: "0 auto",
+                            }}
+                          />
+                          <div
+                            style={{
+                              marginTop: 4,
+                              padding: "2px 6px",
+                              borderRadius: 999,
+                              background: marker.color,
+                              color: "#fff",
+                              fontSize: 10,
+                              fontWeight: 700,
+                              whiteSpace: "nowrap",
+                              textAlign: "center",
+                              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                            }}
+                          >
+                            {marker.label}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {!loadingCandles && !candlesError && candles.length > 0 && (
                 <>
@@ -1378,6 +1537,7 @@ function App() {
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
                       gap: 12,
+                      marginTop: 18,
                       marginBottom: 18,
                       fontSize: 14,
                       color: "#475569",
@@ -1388,115 +1548,6 @@ function App() {
                     <div><strong>Primeiro candle:</strong> {candles[0].open_time}</div>
                     <div>
                       <strong>Último candle:</strong> {candles[candles.length - 1].open_time}
-                    </div>
-                  </div>
-
-                  <div style={{ width: "100%" }}>
-                    <div
-                      style={{
-                        position: "relative",
-                        width: "100%",
-                        height: 680,
-                        border: "1px solid #dbe2ea",
-                        borderRadius: 14,
-                        background: "#fff",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        ref={chartContainerRef}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                        }}
-                      />
-
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          pointerEvents: "none",
-                        }}
-                      >
-                        {overlays.lines.map((line) => (
-                          <div
-                            key={line.id}
-                            style={{
-                              position: "absolute",
-                              left: 0,
-                              right: 0,
-                              top: line.top,
-                              transform: "translateY(-50%)",
-                            }}
-                          >
-                            <div
-                              style={{
-                                borderTop: line.dashed
-                                  ? `2px dashed ${line.color}`
-                                  : `2px solid ${line.color}`,
-                                width: "100%",
-                              }}
-                            />
-                            <div
-                              style={{
-                                position: "absolute",
-                                right: 8,
-                                top: -10,
-                                background: line.color,
-                                color: "#fff",
-                                fontSize: 10,
-                                fontWeight: 700,
-                                padding: "2px 6px",
-                                borderRadius: 999,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {line.label} {line.value.toFixed(2)}
-                            </div>
-                          </div>
-                        ))}
-
-                        {overlays.markers.map((marker) => (
-                          <div
-                            key={marker.id}
-                            style={{
-                              position: "absolute",
-                              left: marker.left,
-                              top: marker.top,
-                              transform: "translate(-50%, -50%)",
-                            }}
-                            title={`${marker.label} | ${marker.price.toFixed(2)} | ${marker.timeLabel}`}
-                          >
-                            <div
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: "50%",
-                                background: marker.color,
-                                border: "2px solid #ffffff",
-                                boxShadow: "0 0 0 1px rgba(0,0,0,0.15)",
-                                margin: "0 auto",
-                              }}
-                            />
-                            <div
-                              style={{
-                                marginTop: 4,
-                                padding: "2px 6px",
-                                borderRadius: 999,
-                                background: marker.color,
-                                color: "#fff",
-                                fontSize: 10,
-                                fontWeight: 700,
-                                whiteSpace: "nowrap",
-                                textAlign: "center",
-                                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                              }}
-                            >
-                              {marker.label}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
                     </div>
                   </div>
 
