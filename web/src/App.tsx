@@ -113,20 +113,6 @@ function App() {
     endAt: effectiveChartEndAt,
   });
 
-  const initialDerived = useChartDerivedData({
-    candles,
-    runDetails,
-    selectedCaseId,
-    chartSize: { width: 0, height: 0 },
-    effectiveChartSymbol,
-    effectiveChartTimeframe,
-    lastCandleTick: null,
-  });
-
-  const { chartContainerRef, chartSize } = useCandlestickChart({
-    chartData: initialDerived.chartData,
-  });
-
   const {
     wsStatus,
     lastWsEvent,
@@ -142,12 +128,11 @@ function App() {
     reloadCandles,
   });
 
-  const {
-    chartData,
-    feedDiagnostics,
-    overlays,
-    legendCloseColor,
-  } = useChartDerivedData({
+  const { chartContainerRef, chartSize, chartData } = useCandlestickChart({
+    candles,
+  });
+
+  const { feedDiagnostics, overlays, legendCloseColor } = useChartDerivedData({
     candles,
     runDetails,
     selectedCaseId,

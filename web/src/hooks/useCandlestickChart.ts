@@ -1,13 +1,13 @@
 // src/hooks/useCandlestickChart.ts
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
   createChart,
+  type CandlestickData,
   type IChartApi,
   type ISeriesApi,
-  type CandlestickData,
   type UTCTimestamp,
 } from "lightweight-charts";
 
@@ -17,10 +17,11 @@ import {
   CHART_MIN_BAR_SPACING,
   CHART_RIGHT_OFFSET,
 } from "../constants/chart";
-import { applyStableVisibleRange } from "../utils/chart";
+import type { CandleItem } from "../types/trading";
+import { applyStableVisibleRange, toUtcTimestamp } from "../utils/chart";
 
 type UseCandlestickChartParams = {
-  chartData: CandlestickData<UTCTimestamp>[];
+  candles: CandleItem[];
 };
 
 type UseCandlestickChartResult = {
@@ -29,10 +30,11 @@ type UseCandlestickChartResult = {
     width: number;
     height: number;
   };
+  chartData: CandlestickData<UTCTimestamp>[];
 };
 
 function useCandlestickChart({
-  chartData,
+  candles,
 }: UseCandlestickChartParams): UseCandlestickChartResult {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -42,6 +44,24 @@ function useCandlestickChart({
     width: 0,
     height: CHART_HEIGHT,
   });
+
+  const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
+    return candles
+      .map((item) => ({
+        time: toUtcTimestamp(item.open_time),
+        open: Number(item.open),
+        high: Number(item.high),
+        low: Number(item.low),
+        close: Number(item.close),
+      }))
+      .filter(
+        (item) =>
+          Number.isFinite(item.open) &&
+          Number.isFinite(item.high) &&
+          Number.isFinite(item.low) &&
+          Number.isFinite(item.close)
+      );
+  }, [candles]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -147,6 +167,7 @@ function useCandlestickChart({
   return {
     chartContainerRef,
     chartSize,
+    chartData,
   };
 }
 

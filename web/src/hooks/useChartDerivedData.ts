@@ -1,18 +1,16 @@
 // src/hooks/useChartDerivedData.ts
 
 import { useMemo } from "react";
-import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 
 import type {
   CandleItem,
   CandleTickState,
-  ChartCandleMeta,
   FeedDiagnostics,
   OverlayLine,
   OverlayMarker,
   RunDetailsResponse,
 } from "../types/trading";
-import { getCaseAccentColor, toUtcTimestamp } from "../utils/chart";
+import { getCaseAccentColor } from "../utils/chart";
 import {
   formatBooleanLike,
   formatDateTime,
@@ -35,14 +33,6 @@ type UseChartDerivedDataParams = {
 };
 
 type UseChartDerivedDataResult = {
-  candleMeta: ChartCandleMeta[];
-  chartData: CandlestickData<UTCTimestamp>[];
-  selectedCase: RunDetailsResponse["cases"][number] | null;
-  priceBounds: {
-    min: number;
-    max: number;
-    range: number;
-  };
   feedDiagnostics: FeedDiagnostics;
   overlays: {
     markers: OverlayMarker[];
@@ -60,12 +50,11 @@ function useChartDerivedData({
   effectiveChartTimeframe,
   lastCandleTick,
 }: UseChartDerivedDataParams): UseChartDerivedDataResult {
-  const candleMeta = useMemo<ChartCandleMeta[]>(() => {
+  const candleMeta = useMemo(() => {
     return candles
       .map((item) => ({
         openTime: item.open_time,
         closeTime: item.close_time,
-        time: toUtcTimestamp(item.open_time),
         open: Number(item.open),
         high: Number(item.high),
         low: Number(item.low),
@@ -79,16 +68,6 @@ function useChartDerivedData({
           Number.isFinite(item.close)
       );
   }, [candles]);
-
-  const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
-    return candleMeta.map((item) => ({
-      time: item.time,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-    }));
-  }, [candleMeta]);
 
   const selectedCase = useMemo(() => {
     if (!runDetails || !selectedCaseId) return null;
@@ -314,10 +293,6 @@ function useChartDerivedData({
   }, [selectedCase]);
 
   return {
-    candleMeta,
-    chartData,
-    selectedCase,
-    priceBounds,
     feedDiagnostics,
     overlays,
     legendCloseColor,
