@@ -238,6 +238,8 @@ function App() {
   const [lastWsEvent, setLastWsEvent] = useState("-");
   const [heartbeatCount, setHeartbeatCount] = useState<number | null>(null);
   const [heartbeatMessage, setHeartbeatMessage] = useState("-");
+  const [candlesRefreshCount, setCandlesRefreshCount] = useState<number | null>(null);
+  const [candlesRefreshReason, setCandlesRefreshReason] = useState("-");
 
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
   const [selectedMarketType, setSelectedMarketType] = useState("");
@@ -589,7 +591,7 @@ function App() {
 
     const intervalId = window.setInterval(() => {
       void loadCandlesRef.current?.(false);
-    }, 15000);
+    }, 30000);
 
     return () => {
       cancelled = true;
@@ -633,6 +635,17 @@ function App() {
             typeof countValue === "number" ? countValue : Number(countValue ?? 0)
           );
           setHeartbeatMessage(typeof messageValue === "string" ? messageValue : "-");
+          return;
+        }
+
+        if (nextEvent === "candles_refresh") {
+          const countValue = parsed.data?.count;
+          const reasonValue = parsed.data?.reason;
+
+          setCandlesRefreshCount(
+            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
+          );
+          setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
 
           void loadCandlesRef.current?.(false);
         }
@@ -1520,7 +1533,7 @@ function App() {
                     <strong>Timeframe:</strong> {effectiveChartTimeframe}
                   </div>
                   <div>
-                    <strong>Atualização:</strong> heartbeat WS + fallback 15s
+                    <strong>Atualização:</strong> candles_refresh WS + fallback 30s
                   </div>
                   <div>
                     <strong>WS:</strong> {API_WS_BASE_URL}
@@ -1536,6 +1549,12 @@ function App() {
                   </div>
                   <div>
                     <strong>Heartbeat message:</strong> {heartbeatMessage}
+                  </div>
+                  <div>
+                    <strong>Candles refresh count:</strong> {candlesRefreshCount ?? "-"}
+                  </div>
+                  <div>
+                    <strong>Candles refresh reason:</strong> {candlesRefreshReason}
                   </div>
                 </div>
               )}
