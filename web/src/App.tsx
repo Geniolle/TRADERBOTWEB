@@ -101,6 +101,11 @@ type CandleItem = {
   close: string;
   volume: string;
   source: string | null;
+  provider?: string | null;
+  market_session?: string | null;
+  timezone?: string | null;
+  is_delayed?: boolean | null;
+  is_mock?: boolean | null;
 };
 
 type ChartCandleMeta = {
@@ -186,14 +191,47 @@ type CandleTickState = {
   low: number;
   close: number;
   count: number;
+  source?: string | null;
+  provider?: string | null;
+  market_session?: string | null;
+  timezone?: string | null;
+  is_delayed?: boolean | null;
+  is_mock?: boolean | null;
 } | null;
+
+type FeedDiagnostics = {
+  symbol: string;
+  timeframe: string;
+  totalCandles: number;
+  firstCandleUtc: string;
+  lastCandleUtc: string;
+  firstCandleLocal: string;
+  lastCandleLocal: string;
+  lastClose: string;
+  priceRange: string;
+  candleSource: string;
+  candleProvider: string;
+  candleSession: string;
+  candleTimezone: string;
+  candleIsDelayed: string;
+  candleIsMock: string;
+  lastTickUtc: string;
+  lastTickLocal: string;
+  tickSource: string;
+  tickProvider: string;
+  tickSession: string;
+  tickTimezone: string;
+  tickIsDelayed: string;
+  tickIsMock: string;
+  runtimeTimezone: string;
+};
 
 const API_HTTP_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const API_WS_BASE_URL = "ws://127.0.0.1:8000/api/v1/ws";
 
 const FORCE_REALTIME_TEST = true;
-const FORCED_REALTIME_SYMBOL = "AAPL";
-const FORCED_REALTIME_TIMEFRAME = "1m";
+const FORCED_REALTIME_SYMBOL = "";
+const FORCED_REALTIME_TIMEFRAME = "";
 
 const CHART_HEIGHT = 680;
 const CHART_VISIBLE_BARS = 80;
@@ -223,10 +261,32 @@ function formatDateTime(value: string | null): string {
   });
 }
 
+function formatUtcDateTime(value: string | null): string {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toISOString();
+}
+
 function parsePrice(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatMaybeNumber(value: number | null | undefined, decimals = 2): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toFixed(decimals);
+}
+
+function formatBooleanLike(value: boolean | null | undefined): string {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "-";
 }
 
 function floorToMinuteIso(value: string): string {
@@ -288,7 +348,12 @@ function upsertRealtimeCandle(
     low: tick.low.toString(),
     close: tick.close.toString(),
     volume: "0",
-    source: "websocket",
+    source: tick.source ?? "websocket",
+    provider: tick.provider ?? null,
+    market_session: tick.market_session ?? null,
+    timezone: tick.timezone ?? null,
+    is_delayed: tick.is_delayed ?? null,
+    is_mock: tick.is_mock ?? null,
   };
 
   const existingIndex = previous.findIndex(
@@ -768,6 +833,22 @@ function App() {
             low: lowValue,
             close: closeValue,
             count: countValue,
+            source:
+              typeof parsed.data?.source === "string" ? parsed.data.source : null,
+            provider:
+              typeof parsed.data?.provider === "string" ? parsed.data.provider : null,
+            market_session:
+              typeof parsed.data?.market_session === "string"
+                ? parsed.data.market_session
+                : null,
+            timezone:
+              typeof parsed.data?.timezone === "string" ? parsed.data.timezone : null,
+            is_delayed:
+              typeof parsed.data?.is_delayed === "boolean"
+                ? parsed.data.is_delayed
+                : null,
+            is_mock:
+              typeof parsed.data?.is_mock === "boolean" ? parsed.data.is_mock : null,
           };
 
           setLastCandleTick(nextTick);
@@ -848,6 +929,54 @@ function App() {
 
     return { min, max, range };
   }, [candleMeta]);
+
+  const feedDiagnostics = useMemo<FeedDiagnostics>(() => {
+    const firstCandle = candles[0] ?? null;
+    const lastCandle = candles[candles.length - 1] ?? null;
+    const runtimeTimezone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "-";
+
+    const minLow =
+      candleMeta.length > 0 ? Math.min(...candleMeta.map((item) => item.low)) : null;
+    const maxHigh =
+      candleMeta.length > 0 ? Math.max(...candleMeta.map((item) => item.high)) : null;
+
+    return {
+      symbol: effectiveChartSymbol || "-",
+      timeframe: effectiveChartTimeframe || "-",
+      totalCandles: candles.length,
+      firstCandleUtc: formatUtcDateTime(firstCandle?.open_time ?? null),
+      lastCandleUtc: formatUtcDateTime(lastCandle?.open_time ?? null),
+      firstCandleLocal: formatDateTime(firstCandle?.open_time ?? null),
+      lastCandleLocal: formatDateTime(lastCandle?.open_time ?? null),
+      lastClose: lastCandle ? formatMaybeNumber(Number(lastCandle.close), 5) : "-",
+      priceRange:
+        minLow !== null && maxHigh !== null
+          ? `${minLow.toFixed(5)} → ${maxHigh.toFixed(5)}`
+          : "-",
+      candleSource: lastCandle?.source ?? "-",
+      candleProvider: lastCandle?.provider ?? "-",
+      candleSession: lastCandle?.market_session ?? "-",
+      candleTimezone: lastCandle?.timezone ?? "-",
+      candleIsDelayed: formatBooleanLike(lastCandle?.is_delayed),
+      candleIsMock: formatBooleanLike(lastCandle?.is_mock),
+      lastTickUtc: formatUtcDateTime(lastCandleTick?.open_time ?? null),
+      lastTickLocal: formatDateTime(lastCandleTick?.open_time ?? null),
+      tickSource: lastCandleTick?.source ?? "-",
+      tickProvider: lastCandleTick?.provider ?? "-",
+      tickSession: lastCandleTick?.market_session ?? "-",
+      tickTimezone: lastCandleTick?.timezone ?? "-",
+      tickIsDelayed: formatBooleanLike(lastCandleTick?.is_delayed),
+      tickIsMock: formatBooleanLike(lastCandleTick?.is_mock),
+      runtimeTimezone,
+    };
+  }, [
+    candles,
+    candleMeta,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    lastCandleTick,
+  ]);
 
   const overlays = useMemo(() => {
     if (
@@ -1117,6 +1246,21 @@ function App() {
     fontSize: 18,
     fontWeight: 700,
     color: "#0f172a",
+  };
+
+  const debugGridStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 12,
+    fontSize: 14,
+    color: "#334155",
+  };
+
+  const debugItemStyle: React.CSSProperties = {
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 12,
+    background: "#f8fafc",
   };
 
   return (
@@ -1652,7 +1796,8 @@ function App() {
                   }}
                 >
                   <div>
-                    <strong>Modo teste realtime:</strong> {FORCE_REALTIME_TEST ? "ativo" : "desligado"}
+                    <strong>Modo teste realtime:</strong>{" "}
+                    {FORCE_REALTIME_TEST ? "ativo" : "desligado"}
                   </div>
                   <div>
                     <strong>Mercado:</strong> {selectedMarketTypeLabel}
@@ -1905,6 +2050,80 @@ function App() {
                   </div>
                 </>
               )}
+            </div>
+
+            <div style={mainCardStyle}>
+              <h2 style={sectionTitleStyle}>Diagnóstico técnico do feed</h2>
+
+              <div
+                style={{
+                  marginBottom: 14,
+                  fontSize: 14,
+                  color: "#475569",
+                  lineHeight: 1.6,
+                }}
+              >
+                Este painel existe para validar se o preço divergente vem de provider,
+                sessão, timezone, delayed feed ou mock feed.
+              </div>
+
+              <div style={debugGridStyle}>
+                <div style={debugItemStyle}>
+                  <div><strong>Symbol:</strong> {feedDiagnostics.symbol}</div>
+                  <div><strong>Timeframe:</strong> {feedDiagnostics.timeframe}</div>
+                  <div><strong>Total candles:</strong> {feedDiagnostics.totalCandles}</div>
+                  <div><strong>Último close:</strong> {feedDiagnostics.lastClose}</div>
+                  <div><strong>Range OHLC:</strong> {feedDiagnostics.priceRange}</div>
+                </div>
+
+                <div style={debugItemStyle}>
+                  <div><strong>Primeiro candle UTC:</strong> {feedDiagnostics.firstCandleUtc}</div>
+                  <div><strong>Primeiro candle local:</strong> {feedDiagnostics.firstCandleLocal}</div>
+                  <div><strong>Último candle UTC:</strong> {feedDiagnostics.lastCandleUtc}</div>
+                  <div><strong>Último candle local:</strong> {feedDiagnostics.lastCandleLocal}</div>
+                  <div><strong>Timezone runtime:</strong> {feedDiagnostics.runtimeTimezone}</div>
+                </div>
+
+                <div style={debugItemStyle}>
+                  <div><strong>Candle source:</strong> {feedDiagnostics.candleSource}</div>
+                  <div><strong>Candle provider:</strong> {feedDiagnostics.candleProvider}</div>
+                  <div><strong>Candle session:</strong> {feedDiagnostics.candleSession}</div>
+                  <div><strong>Candle timezone:</strong> {feedDiagnostics.candleTimezone}</div>
+                  <div><strong>Candle delayed:</strong> {feedDiagnostics.candleIsDelayed}</div>
+                  <div><strong>Candle mock:</strong> {feedDiagnostics.candleIsMock}</div>
+                </div>
+
+                <div style={debugItemStyle}>
+                  <div><strong>Último tick UTC:</strong> {feedDiagnostics.lastTickUtc}</div>
+                  <div><strong>Último tick local:</strong> {feedDiagnostics.lastTickLocal}</div>
+                  <div><strong>Tick source:</strong> {feedDiagnostics.tickSource}</div>
+                  <div><strong>Tick provider:</strong> {feedDiagnostics.tickProvider}</div>
+                  <div><strong>Tick session:</strong> {feedDiagnostics.tickSession}</div>
+                  <div><strong>Tick timezone:</strong> {feedDiagnostics.tickTimezone}</div>
+                  <div><strong>Tick delayed:</strong> {feedDiagnostics.tickIsDelayed}</div>
+                  <div><strong>Tick mock:</strong> {feedDiagnostics.tickIsMock}</div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  padding: 12,
+                  borderRadius: 12,
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  color: "#9a3412",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                Se <strong>provider</strong>, <strong>session</strong>,{" "}
+                <strong>timezone</strong>, <strong>delayed</strong> ou{" "}
+                <strong>mock</strong> vierem como “-”, então o backend ainda não está a
+                enviar essa informação. Nesse caso, o próximo ajuste tem de ser no
+                endpoint <strong>/candles</strong> e no evento websocket{" "}
+                <strong>candle_tick</strong>.
+              </div>
             </div>
 
             <div
