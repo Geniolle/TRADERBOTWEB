@@ -189,6 +189,10 @@ type CandleTickState = {
 const API_HTTP_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const API_WS_BASE_URL = "ws://127.0.0.1:8000/api/v1/ws";
 
+const FORCE_REALTIME_TEST = true;
+const FORCED_REALTIME_SYMBOL = "AAPL";
+const FORCED_REALTIME_TIMEFRAME = "1m";
+
 function toUtcTimestamp(value: string): UTCTimestamp {
   return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
@@ -217,6 +221,16 @@ function parsePrice(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function floorToMinuteIso(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  date.setSeconds(0, 0);
+  return date.toISOString();
+}
+
 function getCaseAccentColor(item?: RunDetailsCase | null): string {
   if (!item) return "#64748b";
 
@@ -236,6 +250,52 @@ function buildFallbackStartAt(): string {
   return date.toISOString();
 }
 
+function buildRealtimeTestStartAt(): string {
+  const date = new Date();
+  date.setHours(date.getHours() - 3);
+  return date.toISOString();
+}
+
+function normalizeCandles(items: CandleItem[]): CandleItem[] {
+  return items
+    .slice()
+    .sort(
+      (a, b) => new Date(a.open_time).getTime() - new Date(b.open_time).getTime()
+    );
+}
+
+function upsertRealtimeCandle(
+  previous: CandleItem[],
+  tick: NonNullable<CandleTickState>
+): CandleItem[] {
+  const nextCandle: CandleItem = {
+    id: `ws-${tick.symbol}-${tick.timeframe}-${tick.open_time}`,
+    asset_id: null,
+    symbol: tick.symbol,
+    timeframe: tick.timeframe,
+    open_time: tick.open_time,
+    close_time: tick.open_time,
+    open: tick.open.toString(),
+    high: tick.high.toString(),
+    low: tick.low.toString(),
+    close: tick.close.toString(),
+    volume: "0",
+    source: "websocket",
+  };
+
+  const existingIndex = previous.findIndex(
+    (item) => item.open_time === tick.open_time
+  );
+
+  if (existingIndex >= 0) {
+    const updated = previous.slice();
+    updated[existingIndex] = nextCandle;
+    return normalizeCandles(updated);
+  }
+
+  return normalizeCandles([...previous, nextCandle]);
+}
+
 function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
@@ -246,6 +306,7 @@ function App() {
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
   const [chartSize, setChartSize] = useState({ width: 0, height: 680 });
   const [runSearch, setRunSearch] = useState("");
+
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [lastWsEvent, setLastWsEvent] = useState("-");
   const [heartbeatCount, setHeartbeatCount] = useState<number | null>(null);
@@ -377,7 +438,7 @@ function App() {
       await Promise.all([loadHealth(), loadStrategies(), loadRuns(), loadMarketTypes()]);
     };
 
-    loadInitialData();
+    void loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -417,7 +478,7 @@ function App() {
       }
     };
 
-    loadCatalogs();
+    void loadCatalogs();
   }, [selectedMarketType]);
 
   useEffect(() => {
@@ -453,7 +514,7 @@ function App() {
       }
     };
 
-    loadSymbols();
+    void loadSymbols();
   }, [selectedMarketType, selectedCatalog]);
 
   useEffect(() => {
@@ -493,7 +554,7 @@ function App() {
       }
     };
 
-    loadRunDetails();
+    void loadRunDetails();
   }, [selectedRunId]);
 
   const filteredRuns = useMemo(() => {
@@ -528,16 +589,20 @@ function App() {
   }, [catalogSymbols, selectedSymbol]);
 
   const effectiveChartSymbol = useMemo(() => {
+    if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
     if (selectedSymbol) return selectedSymbol;
     return runDetails?.run.symbol ?? "";
   }, [selectedSymbol, runDetails]);
 
   const effectiveChartTimeframe = useMemo(() => {
+    if (FORCE_REALTIME_TEST) return FORCED_REALTIME_TIMEFRAME;
     if (selectedSymbol) return "5m";
     return runDetails?.run.timeframe ?? "1h";
   }, [selectedSymbol, runDetails]);
 
   const effectiveChartStartAt = useMemo(() => {
+    if (FORCE_REALTIME_TEST) return buildRealtimeTestStartAt();
+
     if (selectedSymbol) {
       const date = new Date();
       date.setDate(date.getDate() - 2);
@@ -585,7 +650,7 @@ function App() {
         const data: CandleItem[] = await response.json();
 
         if (!cancelled) {
-          setCandles(data);
+          setCandles(normalizeCandles(data));
         }
       } catch (err) {
         if (!cancelled) {
@@ -602,13 +667,8 @@ function App() {
 
     void loadCandlesRef.current(true);
 
-    const intervalId = window.setInterval(() => {
-      void loadCandlesRef.current?.(false);
-    }, 30000);
-
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
       loadCandlesRef.current = null;
     };
   }, [
@@ -660,7 +720,10 @@ function App() {
           );
           setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
 
-          void loadCandlesRef.current?.(false);
+          if (!FORCE_REALTIME_TEST) {
+            void loadCandlesRef.current?.(false);
+          }
+
           return;
         }
 
@@ -674,16 +737,30 @@ function App() {
           const closeValue = Number(parsed.data?.close);
           const countValue = Number(parsed.data?.count);
 
-          setLastCandleTick({
+          const normalizedOpenTime =
+            typeof openTimeValue === "string"
+              ? floorToMinuteIso(openTimeValue)
+              : "-";
+
+          const nextTick: NonNullable<CandleTickState> = {
             symbol: typeof symbolValue === "string" ? symbolValue : "-",
             timeframe: typeof timeframeValue === "string" ? timeframeValue : "-",
-            open_time: typeof openTimeValue === "string" ? openTimeValue : "-",
+            open_time: normalizedOpenTime,
             open: openValue,
             high: highValue,
             low: lowValue,
             close: closeValue,
             count: countValue,
-          });
+          };
+
+          setLastCandleTick(nextTick);
+
+          if (
+            nextTick.symbol === effectiveChartSymbol &&
+            nextTick.timeframe === effectiveChartTimeframe
+          ) {
+            setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
+          }
         }
       } catch (error) {
         console.error("[WS] failed to parse message:", error);
@@ -706,7 +783,7 @@ function App() {
       isMounted = false;
       socket.close();
     };
-  }, []);
+  }, [effectiveChartSymbol, effectiveChartTimeframe]);
 
   const candleMeta = useMemo<ChartCandleMeta[]>(() => {
     return candles
@@ -770,12 +847,10 @@ function App() {
 
     const width = chartSize.width;
     const height = chartSize.height;
-
     const leftPadding = 12;
     const rightPadding = 70;
     const topPadding = 12;
     const bottomPadding = 24;
-
     const plotWidth = Math.max(width - leftPadding - rightPadding, 1);
     const plotHeight = Math.max(height - topPadding - bottomPadding, 1);
 
@@ -936,7 +1011,7 @@ function App() {
         timeScale: {
           borderColor: "#dbe2ea",
           timeVisible: true,
-          secondsVisible: false,
+          secondsVisible: true,
         },
         localization: {
           priceFormatter: (price: number) => price.toFixed(2),
@@ -962,6 +1037,7 @@ function App() {
     if (chartData.length > 0 && candleSeriesRef.current) {
       candleSeriesRef.current.setData(chartData);
       chartRef.current.timeScale().fitContent();
+      chartRef.current.timeScale().scrollToRealTime();
     }
 
     const handleResize = () => {
@@ -973,6 +1049,7 @@ function App() {
 
       if (chartData.length > 0) {
         chartRef.current.timeScale().fitContent();
+        chartRef.current.timeScale().scrollToRealTime();
       }
     };
 
@@ -1552,6 +1629,9 @@ function App() {
                   }}
                 >
                   <div>
+                    <strong>Modo teste realtime:</strong> {FORCE_REALTIME_TEST ? "ativo" : "desligado"}
+                  </div>
+                  <div>
                     <strong>Mercado:</strong> {selectedMarketTypeLabel}
                     <span style={{ margin: "0 8px" }}>•</span>
                     <strong>Catálogo:</strong> {selectedCatalogLabel}
@@ -1569,7 +1649,7 @@ function App() {
                     <strong>Timeframe:</strong> {effectiveChartTimeframe}
                   </div>
                   <div>
-                    <strong>Atualização:</strong> candles_refresh WS + fallback 30s
+                    <strong>Atualização:</strong> candle_tick direto
                   </div>
                   <div>
                     <strong>WS:</strong> {API_WS_BASE_URL}
@@ -1604,7 +1684,9 @@ function App() {
                   <div>
                     <strong>Tick OHLC:</strong>{" "}
                     {lastCandleTick
-                      ? `${lastCandleTick.open.toFixed(5)} / ${lastCandleTick.high.toFixed(5)} / ${lastCandleTick.low.toFixed(5)} / ${lastCandleTick.close.toFixed(5)}`
+                      ? `${lastCandleTick.open.toFixed(5)} / ${lastCandleTick.high.toFixed(
+                          5
+                        )} / ${lastCandleTick.low.toFixed(5)} / ${lastCandleTick.close.toFixed(5)}`
                       : "-"}
                   </div>
                   <div>
@@ -1644,7 +1726,7 @@ function App() {
                     }}
                   />
 
-                  {!loadingCandles && !candlesError && candles.length === 0 && (
+                  {!loadingCandles && !candlesError && chartData.length === 0 && (
                     <div
                       style={{
                         position: "absolute",
@@ -1663,7 +1745,7 @@ function App() {
                     </div>
                   )}
 
-                  {!loadingCandles && !candlesError && candles.length > 0 && (
+                  {!loadingCandles && !candlesError && chartData.length > 0 && (
                     <div
                       style={{
                         position: "absolute",
@@ -1754,7 +1836,7 @@ function App() {
                 </div>
               </div>
 
-              {!loadingCandles && !candlesError && candles.length > 0 && (
+              {!loadingCandles && !candlesError && chartData.length > 0 && (
                 <>
                   <div
                     style={{
