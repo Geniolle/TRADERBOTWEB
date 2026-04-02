@@ -175,6 +175,17 @@ type WsEnvelope = {
   data?: Record<string, unknown>;
 };
 
+type CandleTickState = {
+  symbol: string;
+  timeframe: string;
+  open_time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  count: number;
+} | null;
+
 const API_HTTP_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const API_WS_BASE_URL = "ws://127.0.0.1:8000/api/v1/ws";
 
@@ -196,6 +207,7 @@ function formatDateTime(value: string | null): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -240,6 +252,7 @@ function App() {
   const [heartbeatMessage, setHeartbeatMessage] = useState("-");
   const [candlesRefreshCount, setCandlesRefreshCount] = useState<number | null>(null);
   const [candlesRefreshReason, setCandlesRefreshReason] = useState("-");
+  const [lastCandleTick, setLastCandleTick] = useState<CandleTickState>(null);
 
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
   const [selectedMarketType, setSelectedMarketType] = useState("");
@@ -648,6 +661,29 @@ function App() {
           setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
 
           void loadCandlesRef.current?.(false);
+          return;
+        }
+
+        if (nextEvent === "candle_tick") {
+          const openTimeValue = parsed.data?.open_time;
+          const symbolValue = parsed.data?.symbol;
+          const timeframeValue = parsed.data?.timeframe;
+          const openValue = Number(parsed.data?.open);
+          const highValue = Number(parsed.data?.high);
+          const lowValue = Number(parsed.data?.low);
+          const closeValue = Number(parsed.data?.close);
+          const countValue = Number(parsed.data?.count);
+
+          setLastCandleTick({
+            symbol: typeof symbolValue === "string" ? symbolValue : "-",
+            timeframe: typeof timeframeValue === "string" ? timeframeValue : "-",
+            open_time: typeof openTimeValue === "string" ? openTimeValue : "-",
+            open: openValue,
+            high: highValue,
+            low: lowValue,
+            close: closeValue,
+            count: countValue,
+          });
         }
       } catch (error) {
         console.error("[WS] failed to parse message:", error);
@@ -1555,6 +1591,24 @@ function App() {
                   </div>
                   <div>
                     <strong>Candles refresh reason:</strong> {candlesRefreshReason}
+                  </div>
+                  <div>
+                    <strong>Último candle tick:</strong>{" "}
+                    {lastCandleTick ? formatDateTime(lastCandleTick.open_time) : "-"}
+                  </div>
+                  <div>
+                    <strong>Tick símbolo:</strong> {lastCandleTick?.symbol ?? "-"}
+                    <span style={{ margin: "0 8px" }}>•</span>
+                    <strong>Tick timeframe:</strong> {lastCandleTick?.timeframe ?? "-"}
+                  </div>
+                  <div>
+                    <strong>Tick OHLC:</strong>{" "}
+                    {lastCandleTick
+                      ? `${lastCandleTick.open.toFixed(5)} / ${lastCandleTick.high.toFixed(5)} / ${lastCandleTick.low.toFixed(5)} / ${lastCandleTick.close.toFixed(5)}`
+                      : "-"}
+                  </div>
+                  <div>
+                    <strong>Tick count:</strong> {lastCandleTick?.count ?? "-"}
                   </div>
                 </div>
               )}
