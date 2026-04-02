@@ -130,6 +130,46 @@ type OverlayLine = {
   dashed?: boolean;
 };
 
+type CatalogProductSummary = {
+  code: string;
+  label: string;
+  description: string;
+  total_subproducts: number;
+  total_items: number;
+};
+
+type CatalogProductsResponse = {
+  products: CatalogProductSummary[];
+};
+
+type CatalogInstrument = {
+  symbol: string;
+  display_name: string;
+  base_asset: string;
+  quote_asset: string;
+};
+
+type CatalogSubproduct = {
+  code: string;
+  label: string;
+  description: string;
+  items: CatalogInstrument[];
+};
+
+type CatalogProductResponse = {
+  code: string;
+  label: string;
+  description: string;
+  subproducts: CatalogSubproduct[];
+};
+
+type CatalogItemsResponse = {
+  product: string;
+  subproduct: string | null;
+  total_items: number;
+  items: CatalogInstrument[];
+};
+
 function toUtcTimestamp(value: string): UTCTimestamp {
   return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
@@ -178,20 +218,35 @@ function App() {
   const [runDetails, setRunDetails] = useState<RunDetailsResponse | null>(null);
   const [candles, setCandles] = useState<CandleItem[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string>("");
-  const [chartSize, setChartSize] = useState({ width: 0, height: 560 });
+  const [chartSize, setChartSize] = useState({ width: 0, height: 680 });
   const [runSearch, setRunSearch] = useState("");
+
+  const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
+  const [selectedMarketType, setSelectedMarketType] = useState("");
+  const [marketTypeDetails, setMarketTypeDetails] = useState<CatalogProductResponse | null>(
+    null
+  );
+  const [selectedCatalog, setSelectedCatalog] = useState("");
+  const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState("");
 
   const [loadingHealth, setLoadingHealth] = useState(true);
   const [loadingStrategies, setLoadingStrategies] = useState(true);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [loadingCandles, setLoadingCandles] = useState(false);
+  const [loadingMarketTypes, setLoadingMarketTypes] = useState(true);
+  const [loadingCatalogs, setLoadingCatalogs] = useState(false);
+  const [loadingSymbols, setLoadingSymbols] = useState(false);
 
   const [healthError, setHealthError] = useState("");
   const [strategiesError, setStrategiesError] = useState("");
   const [runsError, setRunsError] = useState("");
   const [runDetailsError, setRunDetailsError] = useState("");
   const [candlesError, setCandlesError] = useState("");
+  const [marketTypesError, setMarketTypesError] = useState("");
+  const [catalogsError, setCatalogsError] = useState("");
+  const [symbolsError, setSymbolsError] = useState("");
 
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -261,11 +316,113 @@ function App() {
         }
       };
 
-      await Promise.all([loadHealth(), loadStrategies(), loadRuns()]);
+      const loadMarketTypes = async () => {
+        try {
+          setLoadingMarketTypes(true);
+          setMarketTypesError("");
+
+          const response = await fetch("http://127.0.0.1:8000/api/v1/catalog/products");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const data: CatalogProductsResponse = await response.json();
+          const products = Array.isArray(data.products) ? data.products : [];
+
+          setMarketTypes(products);
+          setSelectedMarketType("");
+          setMarketTypeDetails(null);
+          setSelectedCatalog("");
+          setCatalogSymbols([]);
+          setSelectedSymbol("");
+        } catch (err) {
+          setMarketTypesError(
+            err instanceof Error ? err.message : "Erro desconhecido ao carregar tipos"
+          );
+        } finally {
+          setLoadingMarketTypes(false);
+        }
+      };
+
+      await Promise.all([loadHealth(), loadStrategies(), loadRuns(), loadMarketTypes()]);
     };
 
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const loadCatalogs = async () => {
+      if (!selectedMarketType) {
+        setMarketTypeDetails(null);
+        setSelectedCatalog("");
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+        return;
+      }
+
+      try {
+        setLoadingCatalogs(true);
+        setCatalogsError("");
+
+        const response = await fetch(
+          `http://127.0.0.1:8000/api/v1/catalog/products/${selectedMarketType}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data: CatalogProductResponse = await response.json();
+        setMarketTypeDetails(data);
+        setSelectedCatalog("");
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+      } catch (err) {
+        setCatalogsError(
+          err instanceof Error ? err.message : "Erro desconhecido ao carregar catálogos"
+        );
+        setMarketTypeDetails(null);
+        setSelectedCatalog("");
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+      } finally {
+        setLoadingCatalogs(false);
+      }
+    };
+
+    loadCatalogs();
+  }, [selectedMarketType]);
+
+  useEffect(() => {
+    const loadSymbols = async () => {
+      if (!selectedMarketType || !selectedCatalog) {
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+        return;
+      }
+
+      try {
+        setLoadingSymbols(true);
+        setSymbolsError("");
+
+        const response = await fetch(
+          `http://127.0.0.1:8000/api/v1/catalog/products/${selectedMarketType}/subproducts/${selectedCatalog}`
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data: CatalogItemsResponse = await response.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        setCatalogSymbols(items);
+        setSelectedSymbol("");
+      } catch (err) {
+        setSymbolsError(
+          err instanceof Error ? err.message : "Erro desconhecido ao carregar símbolos"
+        );
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+      } finally {
+        setLoadingSymbols(false);
+      }
+    };
+
+    loadSymbols();
+  }, [selectedMarketType, selectedCatalog]);
 
   useEffect(() => {
     const loadRunDetails = async () => {
@@ -361,6 +518,22 @@ function App() {
       );
     });
   }, [runs, runSearch]);
+
+  const availableCatalogs = useMemo(() => {
+    return marketTypeDetails?.subproducts ?? [];
+  }, [marketTypeDetails]);
+
+  const selectedMarketTypeLabel = useMemo(() => {
+    return marketTypes.find((item) => item.code === selectedMarketType)?.label ?? "-";
+  }, [marketTypes, selectedMarketType]);
+
+  const selectedCatalogLabel = useMemo(() => {
+    return availableCatalogs.find((item) => item.code === selectedCatalog)?.label ?? "-";
+  }, [availableCatalogs, selectedCatalog]);
+
+  const selectedSymbolData = useMemo(() => {
+    return catalogSymbols.find((item) => item.symbol === selectedSymbol) ?? null;
+  }, [catalogSymbols, selectedSymbol]);
 
   const candleMeta = useMemo<ChartCandleMeta[]>(() => {
     return candles
@@ -584,7 +757,7 @@ function App() {
     }
 
     const width = Math.max(container.clientWidth, 300);
-    const height = 560;
+    const height = 680;
 
     setChartSize({ width, height });
 
@@ -634,7 +807,7 @@ function App() {
 
       chartRef.current.applyOptions({ width: nextWidth });
       chartRef.current.timeScale().fitContent();
-      setChartSize({ width: nextWidth, height: 560 });
+      setChartSize({ width: nextWidth, height: 680 });
     };
 
     window.addEventListener("resize", handleResize);
@@ -693,9 +866,9 @@ function App() {
       >
         <aside
           style={{
-            width: 340,
-            minWidth: 340,
-            maxWidth: 340,
+            width: 300,
+            minWidth: 300,
+            maxWidth: 300,
             borderRight: "1px solid #dbe2ea",
             background: "#ffffff",
             boxSizing: "border-box",
@@ -748,6 +921,195 @@ function App() {
               }}
             >
               <div style={{ display: "grid", gap: 16 }}>
+                <div style={sidebarCardStyle}>
+                  <h2
+                    style={{
+                      marginTop: 0,
+                      marginBottom: 12,
+                      fontSize: 20,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Mercado
+                  </h2>
+
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div>
+                      <label
+                        htmlFor="market-type"
+                        style={{
+                          display: "block",
+                          marginBottom: 6,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#334155",
+                        }}
+                      >
+                        Tipo
+                      </label>
+
+                      <select
+                        id="market-type"
+                        value={selectedMarketType}
+                        onChange={(e) => setSelectedMarketType(e.target.value)}
+                        disabled={loadingMarketTypes || marketTypes.length === 0}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid #cbd5e1",
+                          outline: "none",
+                          fontSize: 14,
+                          background: "#fff",
+                        }}
+                      >
+                        <option value="">Selecione um tipo</option>
+                        {marketTypes.map((item) => (
+                          <option key={item.code} value={item.code}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="market-catalog"
+                        style={{
+                          display: "block",
+                          marginBottom: 6,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#334155",
+                        }}
+                      >
+                        Catálogo
+                      </label>
+
+                      <select
+                        id="market-catalog"
+                        value={selectedCatalog}
+                        onChange={(e) => setSelectedCatalog(e.target.value)}
+                        disabled={!selectedMarketType || loadingCatalogs || availableCatalogs.length === 0}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid #cbd5e1",
+                          outline: "none",
+                          fontSize: 14,
+                          background: "#fff",
+                        }}
+                      >
+                        <option value="">Selecione um catálogo</option>
+                        {availableCatalogs.map((item) => (
+                          <option key={item.code} value={item.code}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="market-symbol"
+                        style={{
+                          display: "block",
+                          marginBottom: 6,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "#334155",
+                        }}
+                      >
+                        Símbolo
+                      </label>
+
+                      <select
+                        id="market-symbol"
+                        value={selectedSymbol}
+                        onChange={(e) => setSelectedSymbol(e.target.value)}
+                        disabled={!selectedCatalog || loadingSymbols || catalogSymbols.length === 0}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: "1px solid #cbd5e1",
+                          outline: "none",
+                          fontSize: 14,
+                          background: "#fff",
+                        }}
+                      >
+                        <option value="">Selecione um símbolo</option>
+                        {catalogSymbols.map((item) => (
+                          <option key={item.symbol} value={item.symbol}>
+                            {item.symbol}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {loadingMarketTypes && <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>}
+
+                  {!loadingMarketTypes && marketTypesError && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ color: "#dc2626", fontWeight: "bold", marginBottom: 6 }}>
+                        Erro ao carregar tipos
+                      </p>
+                      <p style={{ margin: 0 }}>{marketTypesError}</p>
+                    </div>
+                  )}
+
+                  {!loadingCatalogs && catalogsError && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ color: "#dc2626", fontWeight: "bold", marginBottom: 6 }}>
+                        Erro ao carregar catálogos
+                      </p>
+                      <p style={{ margin: 0 }}>{catalogsError}</p>
+                    </div>
+                  )}
+
+                  {!loadingSymbols && symbolsError && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ color: "#dc2626", fontWeight: "bold", marginBottom: 6 }}>
+                        Erro ao carregar símbolos
+                      </p>
+                      <p style={{ margin: 0 }}>{symbolsError}</p>
+                    </div>
+                  )}
+
+                  {!loadingSymbols &&
+                    !symbolsError &&
+                    selectedMarketType &&
+                    selectedCatalog &&
+                    selectedSymbolData && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          color: "#475569",
+                        }}
+                      >
+                        <div>
+                          <strong>Tipo selecionado:</strong> {selectedMarketTypeLabel}
+                        </div>
+                        <div>
+                          <strong>Catálogo selecionado:</strong> {selectedCatalogLabel}
+                        </div>
+                        <div>
+                          <strong>Símbolo:</strong> {selectedSymbolData.symbol}
+                        </div>
+                        <div>
+                          <strong>Descrição:</strong> {selectedSymbolData.display_name}
+                        </div>
+                      </div>
+                    )}
+                </div>
+
                 <div style={sidebarCardStyle}>
                   <h2
                     style={{
@@ -893,9 +1255,9 @@ function App() {
           <div
             style={{
               width: "100%",
-              maxWidth: 1240,
-              margin: "0 auto",
-              padding: 24,
+              maxWidth: "none",
+              margin: 0,
+              padding: 16,
               boxSizing: "border-box",
               display: "grid",
               gap: 18,
@@ -967,6 +1329,33 @@ function App() {
                 Gráfico de candles
               </h2>
 
+              {!loadingCandles && !candlesError && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    textAlign: "center",
+                    fontSize: 14,
+                    color: "#475569",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  <div>
+                    <strong>Mercado:</strong> {selectedMarketTypeLabel}
+                    <span style={{ margin: "0 8px" }}>•</span>
+                    <strong>Catálogo:</strong> {selectedCatalogLabel}
+                  </div>
+                  <div>
+                    <strong>Símbolo selecionado:</strong> {selectedSymbol || "-"}
+                    {selectedSymbolData ? (
+                      <>
+                        <span style={{ margin: "0 8px" }}>•</span>
+                        {selectedSymbolData.display_name}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               {loadingCandles && <p>A carregar candles...</p>}
 
               {!loadingCandles && candlesError && (
@@ -1002,19 +1391,12 @@ function App() {
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      justifyContent: "center",
-                    }}
-                  >
+                  <div style={{ width: "100%" }}>
                     <div
                       style={{
                         position: "relative",
                         width: "100%",
-                        maxWidth: 920,
-                        height: 560,
+                        height: 680,
                         border: "1px solid #dbe2ea",
                         borderRadius: 14,
                         background: "#fff",
