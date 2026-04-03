@@ -10,7 +10,6 @@ import type {
 } from "../../types/trading";
 import { CHART_HEIGHT } from "../../constants/chart";
 import IndicatorMenu from "./IndicatorMenu";
-import ChartPriceBadges from "./ChartPriceBadges";
 import type { IndicatorSettings } from "../../hooks/useIndicatorSettings";
 
 type CandlesChartCardProps = {
@@ -210,8 +209,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
 
     if (currentPrice !== null && Number.isFinite(currentPrice)) {
       const ratio = (visualMax - currentPrice) / visualRange;
-      currentPriceTop =
-        topPadding + usableHeight * clamp(ratio, 0, 1);
+      currentPriceTop = topPadding + usableHeight * clamp(ratio, 0, 1);
     }
 
     return {
@@ -289,15 +287,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
             onSetBollingerStdDev={onSetBollingerStdDev}
           />
 
-          {!loadingCandles && !candlesError && (
-            <ChartPriceBadges
-              symbol={effectiveChartSymbol}
-              timeframe={effectiveChartTimeframe}
-              lastCandleTick={lastCandleTick}
-              lastClosePrice={lastClosePrice}
-            />
-          )}
-
           <div
             ref={chartContainerRef}
             style={{
@@ -339,28 +328,55 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                     {formatPrice(item.value)}
                   </div>
                 ))}
+              </div>
+            )}
 
-                {currentPrice !== null &&
-                  priceScaleData.currentPriceTop !== null && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        right: 8,
-                        top: priceScaleData.currentPriceTop,
-                        transform: "translateY(-50%)",
-                        background: "#16a34a",
-                        color: "#ffffff",
-                        padding: "2px 6px",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        whiteSpace: "nowrap",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                      }}
-                    >
-                      {formatPrice(currentPrice)}
-                    </div>
-                  )}
+          {!loadingCandles &&
+            !candlesError &&
+            chartData.length > 0 &&
+            currentPrice !== null &&
+            priceScaleData.currentPriceTop !== null && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  pointerEvents: "none",
+                  zIndex: 6,
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: priceScaleData.currentPriceTop,
+                    transform: "translateY(-50%)",
+                  }}
+                >
+                  <div
+                    style={{
+                      borderTop: "1px dashed #16a34a",
+                      width: "100%",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: -12,
+                      background: "#16a34a",
+                      color: "#ffffff",
+                      padding: "3px 8px",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                    }}
+                  >
+                    {formatPrice(currentPrice)}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -370,7 +386,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                 position: "absolute",
                 right: 12,
                 bottom: 12,
-                zIndex: 4,
+                zIndex: 7,
                 background: "rgba(15, 23, 42, 0.88)",
                 color: "#ffffff",
                 padding: "6px 10px",
@@ -412,6 +428,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                 position: "absolute",
                 inset: 0,
                 pointerEvents: "none",
+                zIndex: 4,
               }}
             >
               {overlays.lines.map((line) => (
@@ -520,7 +537,8 @@ function CandlesChartCard(props: CandlesChartCardProps) {
               <strong>Primeiro candle:</strong> {candles[0].open_time}
             </div>
             <div>
-              <strong>Último candle:</strong> {candles[candles.length - 1].open_time}
+              <strong>Último candle:</strong>{" "}
+              {candles[candles.length - 1].open_time}
             </div>
           </div>
 

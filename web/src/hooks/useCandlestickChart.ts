@@ -136,8 +136,8 @@ function useCandlestickChart({
         wickDownColor: "#dc2626",
         borderUpColor: "#16a34a",
         borderDownColor: "#dc2626",
-        priceLineVisible: true,
-        lastValueVisible: true,
+        priceLineVisible: false,
+        lastValueVisible: false,
       });
 
       chartRef.current = chart;
@@ -200,6 +200,9 @@ function useCandlestickChart({
         color: indicator.color,
         lineWidth: indicator.lineWidth ?? 2,
         lineStyle: indicator.lineStyle,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
       });
 
       seriesRef.setData(indicator.data);
