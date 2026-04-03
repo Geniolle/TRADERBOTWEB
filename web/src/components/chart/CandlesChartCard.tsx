@@ -1,4 +1,4 @@
-// src/components/chart/CandlesChartCard.tsx
+// web/src/components/chart/CandlesChartCard.tsx
 
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
@@ -141,9 +141,11 @@ function CandlesChartCard({
           <div>
             <strong>Tick OHLC:</strong>{" "}
             {lastCandleTick
-              ? `${lastCandleTick.open.toFixed(5)} / ${lastCandleTick.high.toFixed(
-                  5
-                )} / ${lastCandleTick.low.toFixed(5)} / ${lastCandleTick.close.toFixed(5)}`
+              ? `${Number(lastCandleTick.open).toFixed(5)} / ${Number(
+                  lastCandleTick.high
+                ).toFixed(5)} / ${Number(lastCandleTick.low).toFixed(5)} / ${Number(
+                  lastCandleTick.close
+                ).toFixed(5)}`
               : "-"}
           </div>
           <div>
@@ -243,7 +245,7 @@ function CandlesChartCard({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {line.label} {line.value.toFixed(2)}
+                    {line.label} {Number(line.value).toFixed(5)}
                   </div>
                 </div>
               ))}
@@ -257,7 +259,9 @@ function CandlesChartCard({
                     top: marker.top,
                     transform: "translate(-50%, -50%)",
                   }}
-                  title={`${marker.label} | ${marker.price.toFixed(2)} | ${marker.timeLabel}`}
+                  title={`${marker.label} | ${Number(marker.price).toFixed(
+                    5
+                  )} | ${marker.timeLabel}`}
                 >
                   <div
                     style={{

@@ -1,4 +1,4 @@
-// src/hooks/useCandlestickChart.ts
+// web/src/hooks/useCandlestickChart.ts
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -97,7 +97,7 @@ function useCandlestickChart({
           lockVisibleTimeRangeOnResize: true,
         },
         localization: {
-          priceFormatter: (price: number) => price.toFixed(2),
+          priceFormatter: (price: number) => price.toFixed(5),
         },
       });
 
