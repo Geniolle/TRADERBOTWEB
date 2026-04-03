@@ -61,15 +61,29 @@ function useRealtimeFeed({
   const [lastCandleTick, setLastCandleTick] = useState<CandleTickState>(null);
 
   useEffect(() => {
+    if (!effectiveChartSymbol || !effectiveChartTimeframe) {
+      return;
+    }
+
     let isMounted = true;
     const socket = new WebSocket(API_WS_BASE_URL);
 
     socket.onopen = () => {
       if (!isMounted) return;
+
       setWsStatus("connected");
       setLastWsEvent("connected");
       console.log("[WS] connected");
+
       socket.send("frontend_connected");
+
+      socket.send(
+        JSON.stringify({
+          action: "subscribe",
+          symbol: effectiveChartSymbol,
+          timeframe: effectiveChartTimeframe,
+        })
+      );
     };
 
     socket.onmessage = (event) => {
@@ -96,13 +110,19 @@ function useRealtimeFeed({
         if (nextEvent === "candles_refresh") {
           const countValue = parsed.data?.count;
           const reasonValue = parsed.data?.reason;
+          const symbolValue = parsed.data?.symbol;
+          const timeframeValue = parsed.data?.timeframe;
 
           setCandlesRefreshCount(
             typeof countValue === "number" ? countValue : Number(countValue ?? 0)
           );
           setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
 
-          if (!FORCE_REALTIME_TEST) {
+          if (
+            !FORCE_REALTIME_TEST &&
+            symbolValue === effectiveChartSymbol &&
+            timeframeValue === effectiveChartTimeframe
+          ) {
             void reloadCandles(false);
           }
 

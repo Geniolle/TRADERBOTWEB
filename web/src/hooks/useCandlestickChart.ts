@@ -121,9 +121,13 @@ function useCandlestickChart({
       candleSeriesRef.current.setData(chartData);
     }
 
-    if (chartData.length > 0 && chartRef.current) {
-      applyStableVisibleRange(chartRef.current, chartData.length);
-      chartRef.current.timeScale().scrollToRealTime();
+    if (chartRef.current) {
+      if (chartData.length > 0) {
+        applyStableVisibleRange(chartRef.current, chartData.length);
+        chartRef.current.timeScale().scrollToRealTime();
+      } else {
+        chartRef.current.timeScale().fitContent();
+      }
     }
 
     const handleResize = () => {
@@ -144,6 +148,8 @@ function useCandlestickChart({
       if (chartData.length > 0) {
         applyStableVisibleRange(chartRef.current, chartData.length);
         chartRef.current.timeScale().scrollToRealTime();
+      } else {
+        chartRef.current.timeScale().fitContent();
       }
     };
 
