@@ -3,13 +3,37 @@
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
 
 import { CHART_RIGHT_OFFSET, CHART_VISIBLE_BARS } from "../constants/chart";
-import type { RunDetailsCase } from "../types/trading";
 
-export function toUtcTimestamp(value: string): UTCTimestamp {
-  return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
+type CaseAccentItem = {
+  outcome?: string | null;
+  status?: string | null;
+};
+
+function hasExplicitTimezone(value: string): boolean {
+  return /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim());
 }
 
-export function getCaseAccentColor(item?: RunDetailsCase | null): string {
+export function toUtcTimestamp(value: string): UTCTimestamp {
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    throw new Error("toUtcTimestamp recebeu uma data vazia.");
+  }
+
+  const valueToParse = hasExplicitTimezone(normalizedValue)
+    ? normalizedValue
+    : `${normalizedValue}Z`;
+
+  const timestampMs = new Date(valueToParse).getTime();
+
+  if (!Number.isFinite(timestampMs)) {
+    throw new Error(`Data inválida em toUtcTimestamp: ${value}`);
+  }
+
+  return Math.floor(timestampMs / 1000) as UTCTimestamp;
+}
+
+export function getCaseAccentColor(item?: CaseAccentItem | null): string {
   if (!item) return "#64748b";
 
   const outcome = (item.outcome ?? "").toLowerCase();
