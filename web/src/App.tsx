@@ -1,14 +1,14 @@
-// src/App.tsx
+// web/src/App.tsx
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
 import SelectedCaseCard from "./components/cases/SelectedCaseCard";
 import CandlesChartCard from "./components/chart/CandlesChartCard";
 import ChartDiagnosticsCard from "./components/diagnostics/ChartDiagnosticsCard";
 import MarketFiltersCard from "./components/market/MarketFiltersCard";
-import RunHistoryCard from "./components/runs/RunHistoryCard";
 import RunCasesCard from "./components/runs/RunCasesCard";
+import RunHistoryCard from "./components/runs/RunHistoryCard";
 import RunMetricsCard from "./components/runs/RunMetricsCard";
 import RunSummaryCard from "./components/runs/RunSummaryCard";
 import StrategiesCard from "./components/strategies/StrategiesCard";
@@ -26,6 +26,33 @@ import useRunDetails from "./hooks/useRunDetails";
 import useRunHistory from "./hooks/useRunHistory";
 import useStrategies from "./hooks/useStrategies";
 import type { CandleItem } from "./types/trading";
+
+type TimeframeOption = {
+  value: string;
+  label: string;
+};
+
+const TIMEFRAME_STORAGE_KEY = "traderbot:selectedTimeframe";
+
+const TIMEFRAME_OPTIONS: TimeframeOption[] = [
+  { value: "1m", label: "1m" },
+  { value: "3m", label: "3m" },
+  { value: "5m", label: "5m" },
+  { value: "15m", label: "15m" },
+  { value: "30m", label: "30m" },
+  { value: "1h", label: "1h" },
+  { value: "4h", label: "4h" },
+  { value: "1d", label: "1d" },
+];
+
+function readStoredTimeframe(): string {
+  try {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(TIMEFRAME_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function App() {
   const { health, loadingHealth, healthError } = useApiHealth();
@@ -71,23 +98,62 @@ function App() {
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
+    readStoredTimeframe()
+  );
   const [realtimeCandles, setRealtimeCandles] = useState<CandleItem[]>([]);
 
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+
+      if (selectedTimeframe) {
+        window.localStorage.setItem(TIMEFRAME_STORAGE_KEY, selectedTimeframe);
+      } else {
+        window.localStorage.removeItem(TIMEFRAME_STORAGE_KEY);
+      }
+    } catch {
+      // Ignora erros de localStorage
+    }
+  }, [selectedTimeframe]);
+
+  const isSelectedTimeframeValid = useMemo(() => {
+    return TIMEFRAME_OPTIONS.some((item) => item.value === selectedTimeframe);
+  }, [selectedTimeframe]);
+
+  const effectiveSelectedTimeframe = useMemo(() => {
+    return isSelectedTimeframeValid ? selectedTimeframe : "";
+  }, [isSelectedTimeframeValid, selectedTimeframe]);
+
   const isMarketSelectionComplete = useMemo(() => {
-    return Boolean(selectedMarketType && selectedCatalog && selectedSymbol);
-  }, [selectedMarketType, selectedCatalog, selectedSymbol]);
+    if (FORCE_REALTIME_TEST) {
+      return Boolean(FORCED_REALTIME_SYMBOL && FORCED_REALTIME_TIMEFRAME);
+    }
+
+    return Boolean(
+      selectedMarketType &&
+        selectedCatalog &&
+        selectedSymbol &&
+        effectiveSelectedTimeframe
+    );
+  }, [
+    selectedMarketType,
+    selectedCatalog,
+    selectedSymbol,
+    effectiveSelectedTimeframe,
+  ]);
 
   const effectiveChartSymbol = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
-    if (isMarketSelectionComplete) return selectedSymbol;
-    return "";
+    if (!isMarketSelectionComplete) return "";
+    return selectedSymbol;
   }, [isMarketSelectionComplete, selectedSymbol]);
 
   const effectiveChartTimeframe = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_TIMEFRAME;
-    if (isMarketSelectionComplete) return "5m";
-    return "";
-  }, [isMarketSelectionComplete]);
+    if (!isMarketSelectionComplete) return "";
+    return effectiveSelectedTimeframe;
+  }, [isMarketSelectionComplete, effectiveSelectedTimeframe]);
 
   const candles = useMemo(() => {
     if (!effectiveChartSymbol || !effectiveChartTimeframe) {
@@ -261,6 +327,9 @@ function App() {
                   catalogSymbols={catalogSymbols}
                   selectedSymbol={selectedSymbol}
                   setSelectedSymbol={setSelectedSymbol}
+                  selectedTimeframe={effectiveSelectedTimeframe}
+                  setSelectedTimeframe={setSelectedTimeframe}
+                  timeframeOptions={TIMEFRAME_OPTIONS}
                   selectedMarketTypeLabel={selectedMarketTypeLabel}
                   selectedCatalogLabel={selectedCatalogLabel}
                   selectedSymbolData={selectedSymbolData}

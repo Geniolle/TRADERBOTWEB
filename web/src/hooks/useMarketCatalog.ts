@@ -1,4 +1,4 @@
-// src/hooks/useMarketCatalog.ts
+// web/src/hooks/useMarketCatalog.ts
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -18,42 +18,125 @@ const STORAGE_KEYS = {
 };
 
 function readStorage(key: string): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(key) ?? "";
+  try {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function writeStorage(key: string, value: string): void {
-  if (typeof window === "undefined") return;
+  try {
+    if (typeof window === "undefined") return;
 
-  if (value) {
-    window.localStorage.setItem(key, value);
-  } else {
-    window.localStorage.removeItem(key);
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // ignora erros de storage
   }
+}
+
+function normalizeProductsResponse(data: unknown): CatalogProductSummary[] {
+  if (!data || typeof data !== "object") return [];
+
+  const products = (data as CatalogProductsResponse).products;
+  if (!Array.isArray(products)) return [];
+
+  return products.filter(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      typeof item.code === "string" &&
+      typeof item.label === "string"
+  );
+}
+
+function normalizeProductResponse(data: unknown): CatalogProductResponse | null {
+  if (!data || typeof data !== "object") return null;
+
+  const candidate = data as CatalogProductResponse;
+
+  if (
+    typeof candidate.code !== "string" ||
+    typeof candidate.label !== "string" ||
+    !Array.isArray(candidate.subproducts)
+  ) {
+    return null;
+  }
+
+  return {
+    code: candidate.code,
+    label: candidate.label,
+    description:
+      typeof candidate.description === "string" ? candidate.description : "",
+    subproducts: candidate.subproducts.filter(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        typeof item.code === "string" &&
+        typeof item.label === "string" &&
+        Array.isArray(item.items)
+    ),
+  };
+}
+
+function normalizeItemsResponse(data: unknown): CatalogInstrument[] {
+  if (!data || typeof data !== "object") return [];
+
+  const items = (data as CatalogItemsResponse).items;
+  if (!Array.isArray(items)) return [];
+
+  return items.filter(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      typeof item.symbol === "string" &&
+      typeof item.display_name === "string"
+  );
+}
+
+async function safeFetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return response.json();
 }
 
 function useMarketCatalog() {
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
-  const [selectedMarketType, setSelectedMarketType] = useState(() =>
+  const [selectedMarketType, setSelectedMarketType] = useState<string>(() =>
     readStorage(STORAGE_KEYS.marketType)
   );
   const [marketTypeDetails, setMarketTypeDetails] =
     useState<CatalogProductResponse | null>(null);
-  const [selectedCatalog, setSelectedCatalog] = useState(() =>
+  const [selectedCatalog, setSelectedCatalog] = useState<string>(() =>
     readStorage(STORAGE_KEYS.catalog)
   );
   const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState(() =>
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(() =>
     readStorage(STORAGE_KEYS.symbol)
   );
 
-  const [loadingMarketTypes, setLoadingMarketTypes] = useState(true);
-  const [loadingCatalogs, setLoadingCatalogs] = useState(false);
-  const [loadingSymbols, setLoadingSymbols] = useState(false);
+  const [loadingMarketTypes, setLoadingMarketTypes] = useState<boolean>(true);
+  const [loadingCatalogs, setLoadingCatalogs] = useState<boolean>(false);
+  const [loadingSymbols, setLoadingSymbols] = useState<boolean>(false);
 
-  const [marketTypesError, setMarketTypesError] = useState("");
-  const [catalogsError, setCatalogsError] = useState("");
-  const [symbolsError, setSymbolsError] = useState("");
+  const [marketTypesError, setMarketTypesError] = useState<string>("");
+  const [catalogsError, setCatalogsError] = useState<string>("");
+  const [symbolsError, setSymbolsError] = useState<string>("");
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.marketType, selectedMarketType);
@@ -68,45 +151,46 @@ function useMarketCatalog() {
   }, [selectedSymbol]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    let isMounted = true;
 
     const loadMarketTypes = async () => {
       try {
         setLoadingMarketTypes(true);
         setMarketTypesError("");
 
-        const response = await fetch(`${API_HTTP_BASE_URL}/catalog/products`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const data = await safeFetchJson(
+          `${API_HTTP_BASE_URL}/catalog/products`,
+          controller.signal
+        );
 
-        const data: CatalogProductsResponse = await response.json();
-        const products = Array.isArray(data.products) ? data.products : [];
+        if (!isMounted) return;
 
-        if (cancelled) return;
-
+        const products = normalizeProductsResponse(data);
         setMarketTypes(products);
 
         const hasStoredMarketType = products.some(
           (item) => item.code === selectedMarketType
         );
 
-        if (!hasStoredMarketType && products.length > 0) {
+        if (!hasStoredMarketType) {
           setSelectedMarketType("");
           setMarketTypeDetails(null);
           setSelectedCatalog("");
           setCatalogSymbols([]);
           setSelectedSymbol("");
         }
-      } catch (err) {
-        if (!cancelled) {
-          setMarketTypesError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar tipos"
-          );
-          setMarketTypes([]);
-        }
+      } catch (error) {
+        if (!isMounted || controller.signal.aborted) return;
+
+        setMarketTypes([]);
+        setMarketTypesError(
+          error instanceof Error
+            ? error.message
+            : "Erro desconhecido ao carregar tipos"
+        );
       } finally {
-        if (!cancelled) {
+        if (isMounted) {
           setLoadingMarketTypes(false);
         }
       }
@@ -115,12 +199,14 @@ function useMarketCatalog() {
     void loadMarketTypes();
 
     return () => {
-      cancelled = true;
+      isMounted = false;
+      controller.abort();
     };
-  }, []);
+  }, [selectedMarketType]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    let isMounted = true;
 
     const loadCatalogs = async () => {
       if (!selectedMarketType) {
@@ -138,24 +224,22 @@ function useMarketCatalog() {
         setLoadingCatalogs(true);
         setCatalogsError("");
 
-        const response = await fetch(
-          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}`
+        const data = await safeFetchJson(
+          `${API_HTTP_BASE_URL}/catalog/products/${encodeURIComponent(selectedMarketType)}`,
+          controller.signal
         );
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+
+        if (!isMounted) return;
+
+        const normalized = normalizeProductResponse(data);
+
+        if (!normalized) {
+          throw new Error("Resposta inválida ao carregar catálogos");
         }
 
-        const data: CatalogProductResponse = await response.json();
+        setMarketTypeDetails(normalized);
 
-        if (cancelled) return;
-
-        setMarketTypeDetails(data);
-
-        const availableSubproducts = Array.isArray(data.subproducts)
-          ? data.subproducts
-          : [];
-
-        const hasStoredCatalog = availableSubproducts.some(
+        const hasStoredCatalog = normalized.subproducts.some(
           (item) => item.code === selectedCatalog
         );
 
@@ -164,19 +248,21 @@ function useMarketCatalog() {
           setCatalogSymbols([]);
           setSelectedSymbol("");
         }
-      } catch (err) {
-        if (!cancelled) {
-          setCatalogsError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar catálogos"
-          );
-          setMarketTypeDetails(null);
-          setSelectedCatalog("");
-          setCatalogSymbols([]);
-          setSelectedSymbol("");
-          setSymbolsError("");
-        }
+      } catch (error) {
+        if (!isMounted || controller.signal.aborted) return;
+
+        setMarketTypeDetails(null);
+        setSelectedCatalog("");
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+        setSymbolsError("");
+        setCatalogsError(
+          error instanceof Error
+            ? error.message
+            : "Erro desconhecido ao carregar catálogos"
+        );
       } finally {
-        if (!cancelled) {
+        if (isMounted) {
           setLoadingCatalogs(false);
         }
       }
@@ -185,12 +271,14 @@ function useMarketCatalog() {
     void loadCatalogs();
 
     return () => {
-      cancelled = true;
+      isMounted = false;
+      controller.abort();
     };
-  }, [selectedMarketType]);
+  }, [selectedMarketType, selectedCatalog]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    let isMounted = true;
 
     const loadSymbols = async () => {
       if (!selectedMarketType || !selectedCatalog) {
@@ -205,35 +293,37 @@ function useMarketCatalog() {
         setLoadingSymbols(true);
         setSymbolsError("");
 
-        const response = await fetch(
-          `${API_HTTP_BASE_URL}/catalog/products/${selectedMarketType}/subproducts/${selectedCatalog}`
+        const data = await safeFetchJson(
+          `${API_HTTP_BASE_URL}/catalog/products/${encodeURIComponent(
+            selectedMarketType
+          )}/subproducts/${encodeURIComponent(selectedCatalog)}`,
+          controller.signal
         );
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
 
-        const data: CatalogItemsResponse = await response.json();
-        const items = Array.isArray(data.items) ? data.items : [];
+        if (!isMounted) return;
 
-        if (cancelled) return;
-
+        const items = normalizeItemsResponse(data);
         setCatalogSymbols(items);
 
-        const hasStoredSymbol = items.some((item) => item.symbol === selectedSymbol);
+        const hasStoredSymbol = items.some(
+          (item) => item.symbol === selectedSymbol
+        );
 
         if (!hasStoredSymbol) {
           setSelectedSymbol("");
         }
-      } catch (err) {
-        if (!cancelled) {
-          setSymbolsError(
-            err instanceof Error ? err.message : "Erro desconhecido ao carregar símbolos"
-          );
-          setCatalogSymbols([]);
-          setSelectedSymbol("");
-        }
+      } catch (error) {
+        if (!isMounted || controller.signal.aborted) return;
+
+        setCatalogSymbols([]);
+        setSelectedSymbol("");
+        setSymbolsError(
+          error instanceof Error
+            ? error.message
+            : "Erro desconhecido ao carregar símbolos"
+        );
       } finally {
-        if (!cancelled) {
+        if (isMounted) {
           setLoadingSymbols(false);
         }
       }
@@ -242,9 +332,10 @@ function useMarketCatalog() {
     void loadSymbols();
 
     return () => {
-      cancelled = true;
+      isMounted = false;
+      controller.abort();
     };
-  }, [selectedMarketType, selectedCatalog]);
+  }, [selectedMarketType, selectedCatalog, selectedSymbol]);
 
   const availableCatalogs = useMemo(() => {
     return marketTypeDetails?.subproducts ?? [];
@@ -255,7 +346,9 @@ function useMarketCatalog() {
   }, [marketTypes, selectedMarketType]);
 
   const selectedCatalogLabel = useMemo(() => {
-    return availableCatalogs.find((item) => item.code === selectedCatalog)?.label ?? "-";
+    return (
+      availableCatalogs.find((item) => item.code === selectedCatalog)?.label ?? "-"
+    );
   }, [availableCatalogs, selectedCatalog]);
 
   const selectedSymbolData = useMemo(() => {

@@ -1,10 +1,15 @@
-// src/components/market/MarketFiltersCard.tsx
+// web/src/components/market/MarketFiltersCard.tsx
 
 import type {
   CatalogInstrument,
   CatalogProductSummary,
   CatalogSubproduct,
 } from "../../types/trading";
+
+type TimeframeOption = {
+  value: string;
+  label: string;
+};
 
 type MarketFiltersCardProps = {
   sidebarCardStyle: React.CSSProperties;
@@ -23,6 +28,9 @@ type MarketFiltersCardProps = {
   catalogSymbols: CatalogInstrument[];
   selectedSymbol: string;
   setSelectedSymbol: (value: string) => void;
+  selectedTimeframe: string;
+  setSelectedTimeframe: (value: string) => void;
+  timeframeOptions: TimeframeOption[];
   selectedMarketTypeLabel: string;
   selectedCatalogLabel: string;
   selectedSymbolData: CatalogInstrument | null;
@@ -45,6 +53,9 @@ function MarketFiltersCard({
   catalogSymbols,
   selectedSymbol,
   setSelectedSymbol,
+  selectedTimeframe,
+  setSelectedTimeframe,
+  timeframeOptions,
   selectedMarketTypeLabel,
   selectedCatalogLabel,
   selectedSymbolData,
@@ -163,7 +174,9 @@ function MarketFiltersCard({
             id="market-symbol"
             value={selectedSymbol}
             onChange={(e) => setSelectedSymbol(e.target.value)}
-            disabled={!selectedCatalog || loadingSymbols || catalogSymbols.length === 0}
+            disabled={
+              !selectedCatalog || loadingSymbols || catalogSymbols.length === 0
+            }
             style={{
               width: "100%",
               boxSizing: "border-box",
@@ -183,9 +196,50 @@ function MarketFiltersCard({
             ))}
           </select>
         </div>
+
+        <div>
+          <label
+            htmlFor="market-timeframe"
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#334155",
+            }}
+          >
+            Timeframe
+          </label>
+
+          <select
+            id="market-timeframe"
+            value={selectedTimeframe}
+            onChange={(e) => setSelectedTimeframe(e.target.value)}
+            disabled={!selectedSymbol}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #cbd5e1",
+              outline: "none",
+              fontSize: 14,
+              background: "#fff",
+            }}
+          >
+            <option value="">Selecione um timeframe</option>
+            {timeframeOptions.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {loadingMarketTypes && <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>}
+      {loadingMarketTypes && (
+        <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>
+      )}
 
       {!loadingMarketTypes && marketTypesError && (
         <div style={{ marginTop: 12 }}>
@@ -238,6 +292,9 @@ function MarketFiltersCard({
             </div>
             <div>
               <strong>Descrição:</strong> {selectedSymbolData.display_name}
+            </div>
+            <div>
+              <strong>Timeframe:</strong> {selectedTimeframe || "-"}
             </div>
           </div>
         )}
