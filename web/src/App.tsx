@@ -376,14 +376,6 @@ function App() {
               gap: 18,
             }}
           >
-            <RunSummaryCard
-              mainCardStyle={mainCardStyle}
-              selectedRunId={selectedRunId}
-              loadingRunDetails={loadingRunDetails}
-              runDetailsError={runDetailsError}
-              runDetails={runDetails}
-            />
-
             <CandlesChartCard
               mainCardStyle={mainCardStyle}
               chartContainerRef={chartContainerRef}
@@ -405,6 +397,14 @@ function App() {
               candlesRefreshReason={candlesRefreshReason}
               lastCandleTick={lastCandleTick}
               legendCloseColor={legendCloseColor}
+            />
+
+            <RunSummaryCard
+              mainCardStyle={mainCardStyle}
+              selectedRunId={selectedRunId}
+              loadingRunDetails={loadingRunDetails}
+              runDetailsError={runDetailsError}
+              runDetails={runDetails}
             />
 
             <ChartDiagnosticsCard
