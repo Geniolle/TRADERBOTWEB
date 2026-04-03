@@ -37,28 +37,36 @@ type CandlesChartCardProps = {
   legendCloseColor: string;
 };
 
-function CandlesChartCard({
-  mainCardStyle,
-  chartContainerRef,
-  loadingCandles,
-  candlesError,
-  chartData,
-  candles,
-  overlays,
-  selectedMarketTypeLabel,
-  selectedCatalogLabel,
-  effectiveChartSymbol,
-  effectiveChartTimeframe,
-  selectedSymbolData,
-  wsStatus,
-  lastWsEvent,
-  heartbeatCount,
-  heartbeatMessage,
-  candlesRefreshCount,
-  candlesRefreshReason,
-  lastCandleTick,
-  legendCloseColor,
-}: CandlesChartCardProps) {
+function CandlesChartCard(props: CandlesChartCardProps) {
+  const {
+    mainCardStyle,
+    chartContainerRef,
+    loadingCandles,
+    candlesError,
+    chartData,
+    candles,
+    overlays,
+    selectedMarketTypeLabel,
+    selectedCatalogLabel,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    wsStatus,
+    lastWsEvent,
+    heartbeatCount,
+    heartbeatMessage,
+    candlesRefreshCount,
+    candlesRefreshReason,
+    lastCandleTick,
+    legendCloseColor,
+  } = props;
+
+  const marketLine = [
+    selectedMarketTypeLabel || "-",
+    selectedCatalogLabel || "-",
+    effectiveChartSymbol || "-",
+    effectiveChartTimeframe || "-",
+  ].join(" / ");
+
   return (
     <div style={mainCardStyle}>
       <h2
@@ -85,27 +93,10 @@ function CandlesChartCard({
           }}
         >
           <div>
-            <strong>Modo teste realtime:</strong>{" "}
-            {FORCE_REALTIME_TEST ? "ativo" : "desligado"}
+            <strong>Mercado:</strong> {marketLine}
           </div>
-          <div>
-            <strong>Mercado:</strong> {selectedMarketTypeLabel}
-            <span style={{ margin: "0 8px" }}>•</span>
-            <strong>Catálogo:</strong> {selectedCatalogLabel}
-          </div>
-          <div>
-            <strong>Símbolo do gráfico:</strong> {effectiveChartSymbol || "-"}
-            {selectedSymbolData ? (
-              <>
-                <span style={{ margin: "0 8px" }}>•</span>
-                {selectedSymbolData.display_name}
-              </>
-            ) : null}
-          </div>
-          <div>
-            <strong>Timeframe:</strong> {effectiveChartTimeframe || "-"}
-          </div>
-          <div>
+
+          <div style={{ marginTop: 10 }}>
             <strong>Atualização:</strong> candle_tick direto
           </div>
           <div>
@@ -135,7 +126,7 @@ function CandlesChartCard({
           </div>
           <div>
             <strong>Tick símbolo:</strong> {lastCandleTick?.symbol ?? "-"}
-            <span style={{ margin: "0 8px" }}>•</span>
+            <span style={{ margin: "0 2px" }}>•</span>
             <strong>Tick timeframe:</strong> {lastCandleTick?.timeframe ?? "-"}
           </div>
           <div>
@@ -151,6 +142,12 @@ function CandlesChartCard({
           <div>
             <strong>Tick count:</strong> {lastCandleTick?.count ?? "-"}
           </div>
+
+          {FORCE_REALTIME_TEST && (
+            <div style={{ marginTop: 10 }}>
+              <strong>Modo teste realtime:</strong> ativo
+            </div>
+          )}
         </div>
       )}
 
