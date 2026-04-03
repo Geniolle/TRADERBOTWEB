@@ -17,7 +17,7 @@ type CandlesChartCardProps = {
   loadingCandles: boolean;
   candlesError: string;
   chartData: CandlestickData<UTCTimestamp>[];
-  candles: Array<{ open_time: string }>;
+  candles: Array<{ open_time: string; close?: string }>;
   overlays: {
     markers: OverlayMarker[];
     lines: OverlayLine[];

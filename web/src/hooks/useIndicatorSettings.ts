@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS: IndicatorSettings = {
   bollingerStdDev: 2,
 };
 
-function normalizeNumber(
+function clampNumber(
   value: unknown,
   fallback: number,
   min: number,
@@ -48,13 +48,13 @@ function loadStoredSettings(): IndicatorSettings {
       ema9: Boolean(parsed.ema9 ?? DEFAULT_SETTINGS.ema9),
       ema21: Boolean(parsed.ema21 ?? DEFAULT_SETTINGS.ema21),
       bollinger: Boolean(parsed.bollinger ?? DEFAULT_SETTINGS.bollinger),
-      bollingerPeriod: normalizeNumber(
+      bollingerPeriod: clampNumber(
         parsed.bollingerPeriod,
         DEFAULT_SETTINGS.bollingerPeriod,
         2,
         200
       ),
-      bollingerStdDev: normalizeNumber(
+      bollingerStdDev: clampNumber(
         parsed.bollingerStdDev,
         DEFAULT_SETTINGS.bollingerStdDev,
         0.1,
@@ -93,14 +93,14 @@ function useIndicatorSettings() {
   const setBollingerPeriod = (value: number) => {
     setSettings((previous) => ({
       ...previous,
-      bollingerPeriod: normalizeNumber(value, previous.bollingerPeriod, 2, 200),
+      bollingerPeriod: clampNumber(value, previous.bollingerPeriod, 2, 200),
     }));
   };
 
   const setBollingerStdDev = (value: number) => {
     setSettings((previous) => ({
       ...previous,
-      bollingerStdDev: normalizeNumber(value, previous.bollingerStdDev, 0.1, 10),
+      bollingerStdDev: clampNumber(value, previous.bollingerStdDev, 0.1, 10),
     }));
   };
 

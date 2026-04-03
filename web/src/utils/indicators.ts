@@ -28,25 +28,24 @@ export function calculateEMA(
 
   let ema: number | null = null;
   let seedSum = 0;
+  let seedCount = 0;
 
-  for (let index = 0; index < values.length; index += 1) {
-    const item = values[index];
+  for (const item of values) {
     const currentValue = Number(item.value);
-
     if (!isFiniteNumber(currentValue)) continue;
 
-    if (index < period - 1) {
+    if (seedCount < period) {
       seedSum += currentValue;
-      continue;
-    }
+      seedCount += 1;
 
-    if (index === period - 1) {
-      seedSum += currentValue;
-      ema = seedSum / period;
-      result.push({
-        time: item.time,
-        value: ema,
-      });
+      if (seedCount === period) {
+        ema = seedSum / period;
+        result.push({
+          time: item.time,
+          value: ema,
+        });
+      }
+
       continue;
     }
 
@@ -58,37 +57,6 @@ export function calculateEMA(
       time: item.time,
       value: ema,
     });
-  }
-
-  return result;
-}
-
-export function calculateSMA(
-  values: NumericPoint[],
-  period: number
-): NumericPoint[] {
-  if (!Array.isArray(values) || values.length === 0) return [];
-  if (!Number.isFinite(period) || period <= 0) return [];
-
-  const result: NumericPoint[] = [];
-  let rollingSum = 0;
-
-  for (let index = 0; index < values.length; index += 1) {
-    const current = Number(values[index].value);
-    if (!isFiniteNumber(current)) continue;
-
-    rollingSum += current;
-
-    if (index >= period) {
-      rollingSum -= Number(values[index - period].value);
-    }
-
-    if (index >= period - 1) {
-      result.push({
-        time: values[index].time,
-        value: rollingSum / period,
-      });
-    }
   }
 
   return result;

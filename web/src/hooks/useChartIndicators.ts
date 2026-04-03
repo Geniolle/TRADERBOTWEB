@@ -132,7 +132,9 @@ function useChartIndicators({
     if (settings.ema9) labels.push("EMA 9");
     if (settings.ema21) labels.push("EMA 21");
     if (settings.bollinger) {
-      labels.push(`Bollinger (${settings.bollingerPeriod}, ${settings.bollingerStdDev})`);
+      labels.push(
+        `Bollinger (${settings.bollingerPeriod}, ${settings.bollingerStdDev})`
+      );
     }
 
     return labels;

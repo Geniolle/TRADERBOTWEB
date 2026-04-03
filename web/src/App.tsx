@@ -100,8 +100,12 @@ function App() {
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
-  const { settings, setIndicatorEnabled, setBollingerPeriod, setBollingerStdDev } =
-    useIndicatorSettings();
+  const {
+    settings,
+    setIndicatorEnabled,
+    setBollingerPeriod,
+    setBollingerStdDev,
+  } = useIndicatorSettings();
 
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
     readStoredTimeframe()
