@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
+  LineSeries,
   createChart,
   type CandlestickData,
   type IChartApi,
@@ -19,9 +20,11 @@ import {
 } from "../constants/chart";
 import type { CandleItem } from "../types/trading";
 import { applyStableVisibleRange, toUtcTimestamp } from "../utils/chart";
+import type { ChartIndicatorSeries } from "./useChartIndicators";
 
 type UseCandlestickChartParams = {
   candles: CandleItem[];
+  indicatorSeries?: ChartIndicatorSeries[];
 };
 
 type UseCandlestickChartResult = {
@@ -35,10 +38,12 @@ type UseCandlestickChartResult = {
 
 function useCandlestickChart({
   candles,
+  indicatorSeries = [],
 }: UseCandlestickChartParams): UseCandlestickChartResult {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const [chartSize, setChartSize] = useState({
     width: 0,
@@ -114,20 +119,55 @@ function useCandlestickChart({
       candleSeriesRef.current = candleSeries;
     }
 
-    chartRef.current.applyOptions({ width, height });
+    const chart = chartRef.current;
+    const indicatorMap = indicatorSeriesRefs.current;
+
+    chart.applyOptions({ width, height });
     setChartSize({ width, height });
 
     if (candleSeriesRef.current) {
       candleSeriesRef.current.setData(chartData);
     }
 
-    if (chartRef.current) {
-      if (chartData.length > 0) {
-        applyStableVisibleRange(chartRef.current, chartData.length);
-        chartRef.current.timeScale().scrollToRealTime();
-      } else {
-        chartRef.current.timeScale().fitContent();
+    const incomingIds = new Set(indicatorSeries.map((item) => item.id));
+
+    for (const [seriesId, seriesRef] of indicatorMap.entries()) {
+      if (!incomingIds.has(seriesId)) {
+        chart.removeSeries(seriesRef);
+        indicatorMap.delete(seriesId);
       }
+    }
+
+    for (const indicator of indicatorSeries) {
+      let seriesRef = indicatorMap.get(indicator.id);
+
+      if (!seriesRef) {
+        seriesRef = chart.addSeries(LineSeries, {
+          color: indicator.color,
+          lineWidth: indicator.lineWidth ?? 2,
+          lineStyle: indicator.lineStyle,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+
+        indicatorMap.set(indicator.id, seriesRef);
+      }
+
+      seriesRef.applyOptions({
+        color: indicator.color,
+        lineWidth: indicator.lineWidth ?? 2,
+        lineStyle: indicator.lineStyle,
+      });
+
+      seriesRef.setData(indicator.data);
+    }
+
+    if (chartData.length > 0) {
+      applyStableVisibleRange(chart, chartData.length);
+      chart.timeScale().scrollToRealTime();
+    } else {
+      chart.timeScale().fitContent();
     }
 
     const handleResize = () => {
@@ -158,15 +198,20 @@ function useCandlestickChart({
     return () => {
       window.removeEventListener("resize", handleResize);
     };
-  }, [chartData]);
+  }, [chartData, indicatorSeries]);
 
   useEffect(() => {
+    const indicatorMap = indicatorSeriesRefs.current;
+
     return () => {
+      indicatorMap.clear();
+
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
-        candleSeriesRef.current = null;
       }
+
+      candleSeriesRef.current = null;
     };
   }, []);
 

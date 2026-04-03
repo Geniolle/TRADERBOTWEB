@@ -20,6 +20,8 @@ import {
 import useApiHealth from "./hooks/useApiHealth";
 import useCandlestickChart from "./hooks/useCandlestickChart";
 import useChartDerivedData from "./hooks/useChartDerivedData";
+import useChartIndicators from "./hooks/useChartIndicators";
+import useIndicatorSettings from "./hooks/useIndicatorSettings";
 import useMarketCatalog from "./hooks/useMarketCatalog";
 import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
@@ -97,6 +99,9 @@ function App() {
   } = useMarketCatalog();
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
+
+  const { settings, setIndicatorEnabled, setBollingerPeriod, setBollingerStdDev } =
+    useIndicatorSettings();
 
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
     readStoredTimeframe()
@@ -185,8 +190,15 @@ function App() {
     reloadCandles: async () => {},
   });
 
+  const { series: indicatorSeries, activeLabels: activeIndicatorLabels } =
+    useChartIndicators({
+      candles,
+      settings,
+    });
+
   const { chartContainerRef, chartSize, chartData } = useCandlestickChart({
     candles,
+    indicatorSeries,
   });
 
   const { feedDiagnostics, overlays, legendCloseColor } = useChartDerivedData({
@@ -397,6 +409,11 @@ function App() {
               candlesRefreshReason={candlesRefreshReason}
               lastCandleTick={lastCandleTick}
               legendCloseColor={legendCloseColor}
+              indicatorSettings={settings}
+              onSetIndicatorEnabled={setIndicatorEnabled}
+              onSetBollingerPeriod={setBollingerPeriod}
+              onSetBollingerStdDev={setBollingerStdDev}
+              activeIndicatorLabels={activeIndicatorLabels}
             />
 
             <RunSummaryCard

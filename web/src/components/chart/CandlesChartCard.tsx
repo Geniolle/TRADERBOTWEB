@@ -8,6 +8,8 @@ import type {
   OverlayMarker,
 } from "../../types/trading";
 import { CHART_HEIGHT } from "../../constants/chart";
+import IndicatorMenu from "./IndicatorMenu";
+import type { IndicatorSettings } from "../../hooks/useIndicatorSettings";
 
 type CandlesChartCardProps = {
   mainCardStyle: React.CSSProperties;
@@ -33,6 +35,14 @@ type CandlesChartCardProps = {
   candlesRefreshReason: string;
   lastCandleTick: unknown;
   legendCloseColor: string;
+  indicatorSettings: IndicatorSettings;
+  onSetIndicatorEnabled: (
+    key: "ema9" | "ema21" | "bollinger",
+    enabled: boolean
+  ) => void;
+  onSetBollingerPeriod: (value: number) => void;
+  onSetBollingerStdDev: (value: number) => void;
+  activeIndicatorLabels: string[];
 };
 
 function pad2(value: number): string {
@@ -104,9 +114,15 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     effectiveChartSymbol,
     effectiveChartTimeframe,
     legendCloseColor,
+    indicatorSettings,
+    onSetIndicatorEnabled,
+    onSetBollingerPeriod,
+    onSetBollingerStdDev,
+    activeIndicatorLabels,
   } = props;
 
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [isIndicatorMenuOpen, setIsIndicatorMenuOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -158,6 +174,12 @@ function CandlesChartCard(props: CandlesChartCardProps) {
           <div>
             <strong>Mercado:</strong> {marketLine}
           </div>
+
+          {activeIndicatorLabels.length > 0 && (
+            <div>
+              <strong>Indicadores:</strong> {activeIndicatorLabels.join(" • ")}
+            </div>
+          )}
         </div>
       )}
 
@@ -184,6 +206,15 @@ function CandlesChartCard(props: CandlesChartCardProps) {
             overflow: "hidden",
           }}
         >
+          <IndicatorMenu
+            isOpen={isIndicatorMenuOpen}
+            onToggleOpen={() => setIsIndicatorMenuOpen((previous) => !previous)}
+            settings={indicatorSettings}
+            onSetIndicatorEnabled={onSetIndicatorEnabled}
+            onSetBollingerPeriod={onSetBollingerPeriod}
+            onSetBollingerStdDev={onSetBollingerStdDev}
+          />
+
           <div
             ref={chartContainerRef}
             style={{
