@@ -87,8 +87,21 @@ function useCandlestickChart({
           vertLines: { color: "#eef2f7" },
           horzLines: { color: "#eef2f7" },
         },
+        leftPriceScale: {
+          visible: false,
+        },
         rightPriceScale: {
+          visible: true,
+          autoScale: true,
+          borderVisible: true,
           borderColor: "#dbe2ea",
+          scaleMargins: {
+            top: 0.08,
+            bottom: 0.08,
+          },
+          minimumWidth: 72,
+          entireTextOnly: true,
+          ticksVisible: true,
         },
         timeScale: {
           borderColor: "#dbe2ea",
@@ -104,6 +117,16 @@ function useCandlestickChart({
         localization: {
           priceFormatter: (price: number) => price.toFixed(5),
         },
+        crosshair: {
+          vertLine: {
+            visible: true,
+            labelVisible: true,
+          },
+          horzLine: {
+            visible: true,
+            labelVisible: true,
+          },
+        },
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -113,6 +136,8 @@ function useCandlestickChart({
         wickDownColor: "#dc2626",
         borderUpColor: "#16a34a",
         borderDownColor: "#dc2626",
+        priceLineVisible: true,
+        lastValueVisible: true,
       });
 
       chartRef.current = chart;
@@ -122,7 +147,24 @@ function useCandlestickChart({
     const chart = chartRef.current;
     const indicatorMap = indicatorSeriesRefs.current;
 
-    chart.applyOptions({ width, height });
+    chart.applyOptions({
+      width,
+      height,
+      rightPriceScale: {
+        visible: true,
+        autoScale: true,
+        borderVisible: true,
+        borderColor: "#dbe2ea",
+        scaleMargins: {
+          top: 0.08,
+          bottom: 0.08,
+        },
+        minimumWidth: 72,
+        entireTextOnly: true,
+        ticksVisible: true,
+      },
+    });
+
     setChartSize({ width, height });
 
     if (candleSeriesRef.current) {
@@ -178,6 +220,19 @@ function useCandlestickChart({
       chartRef.current.applyOptions({
         width: nextWidth,
         height: CHART_HEIGHT,
+        rightPriceScale: {
+          visible: true,
+          autoScale: true,
+          borderVisible: true,
+          borderColor: "#dbe2ea",
+          scaleMargins: {
+            top: 0.08,
+            bottom: 0.08,
+          },
+          minimumWidth: 72,
+          entireTextOnly: true,
+          ticksVisible: true,
+        },
       });
 
       setChartSize({

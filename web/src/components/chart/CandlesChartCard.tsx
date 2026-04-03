@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
+  CandleTickState,
   CatalogInstrument,
   OverlayLine,
   OverlayMarker,
 } from "../../types/trading";
 import { CHART_HEIGHT } from "../../constants/chart";
 import IndicatorMenu from "./IndicatorMenu";
+import ChartPriceBadges from "./ChartPriceBadges";
 import type { IndicatorSettings } from "../../hooks/useIndicatorSettings";
 
 type CandlesChartCardProps = {
@@ -33,7 +35,7 @@ type CandlesChartCardProps = {
   heartbeatMessage: string;
   candlesRefreshCount: number | null;
   candlesRefreshReason: string;
-  lastCandleTick: unknown;
+  lastCandleTick: CandleTickState;
   legendCloseColor: string;
   indicatorSettings: IndicatorSettings;
   onSetIndicatorEnabled: (
@@ -119,6 +121,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     onSetBollingerPeriod,
     onSetBollingerStdDev,
     activeIndicatorLabels,
+    lastCandleTick,
   } = props;
 
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -145,6 +148,14 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     const remainingMs = getRemainingToNextCandle(effectiveChartTimeframe, nowMs);
     return formatRemainingTime(remainingMs);
   }, [effectiveChartTimeframe, nowMs]);
+
+  const lastClosePrice = useMemo(() => {
+    const lastCandle = candles[candles.length - 1];
+    if (!lastCandle) return null;
+
+    const parsed = Number(lastCandle.close);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [candles]);
 
   return (
     <div style={mainCardStyle}>
@@ -214,6 +225,15 @@ function CandlesChartCard(props: CandlesChartCardProps) {
             onSetBollingerPeriod={onSetBollingerPeriod}
             onSetBollingerStdDev={onSetBollingerStdDev}
           />
+
+          {!loadingCandles && !candlesError && (
+            <ChartPriceBadges
+              symbol={effectiveChartSymbol}
+              timeframe={effectiveChartTimeframe}
+              lastCandleTick={lastCandleTick}
+              lastClosePrice={lastClosePrice}
+            />
+          )}
 
           <div
             ref={chartContainerRef}
