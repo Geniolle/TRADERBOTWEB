@@ -11,14 +11,41 @@ import type {
   CatalogProductSummary,
 } from "../types/trading";
 
+const STORAGE_KEYS = {
+  marketType: "traderbot:selectedMarketType",
+  catalog: "traderbot:selectedCatalog",
+  symbol: "traderbot:selectedSymbol",
+};
+
+function readStorage(key: string): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(key) ?? "";
+}
+
+function writeStorage(key: string, value: string): void {
+  if (typeof window === "undefined") return;
+
+  if (value) {
+    window.localStorage.setItem(key, value);
+  } else {
+    window.localStorage.removeItem(key);
+  }
+}
+
 function useMarketCatalog() {
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
-  const [selectedMarketType, setSelectedMarketType] = useState("");
+  const [selectedMarketType, setSelectedMarketType] = useState(() =>
+    readStorage(STORAGE_KEYS.marketType)
+  );
   const [marketTypeDetails, setMarketTypeDetails] =
     useState<CatalogProductResponse | null>(null);
-  const [selectedCatalog, setSelectedCatalog] = useState("");
+  const [selectedCatalog, setSelectedCatalog] = useState(() =>
+    readStorage(STORAGE_KEYS.catalog)
+  );
   const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState(() =>
+    readStorage(STORAGE_KEYS.symbol)
+  );
 
   const [loadingMarketTypes, setLoadingMarketTypes] = useState(true);
   const [loadingCatalogs, setLoadingCatalogs] = useState(false);
@@ -27,6 +54,18 @@ function useMarketCatalog() {
   const [marketTypesError, setMarketTypesError] = useState("");
   const [catalogsError, setCatalogsError] = useState("");
   const [symbolsError, setSymbolsError] = useState("");
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.marketType, selectedMarketType);
+  }, [selectedMarketType]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.catalog, selectedCatalog);
+  }, [selectedCatalog]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.symbol, selectedSymbol);
+  }, [selectedSymbol]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +86,18 @@ function useMarketCatalog() {
         if (cancelled) return;
 
         setMarketTypes(products);
-        setSelectedMarketType("");
-        setMarketTypeDetails(null);
-        setSelectedCatalog("");
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-        setCatalogsError("");
-        setSymbolsError("");
+
+        const hasStoredMarketType = products.some(
+          (item) => item.code === selectedMarketType
+        );
+
+        if (!hasStoredMarketType && products.length > 0) {
+          setSelectedMarketType("");
+          setMarketTypeDetails(null);
+          setSelectedCatalog("");
+          setCatalogSymbols([]);
+          setSelectedSymbol("");
+        }
       } catch (err) {
         if (!cancelled) {
           setMarketTypesError(
@@ -106,10 +150,20 @@ function useMarketCatalog() {
         if (cancelled) return;
 
         setMarketTypeDetails(data);
-        setSelectedCatalog("");
-        setCatalogSymbols([]);
-        setSelectedSymbol("");
-        setSymbolsError("");
+
+        const availableSubproducts = Array.isArray(data.subproducts)
+          ? data.subproducts
+          : [];
+
+        const hasStoredCatalog = availableSubproducts.some(
+          (item) => item.code === selectedCatalog
+        );
+
+        if (!hasStoredCatalog) {
+          setSelectedCatalog("");
+          setCatalogSymbols([]);
+          setSelectedSymbol("");
+        }
       } catch (err) {
         if (!cancelled) {
           setCatalogsError(
@@ -164,7 +218,12 @@ function useMarketCatalog() {
         if (cancelled) return;
 
         setCatalogSymbols(items);
-        setSelectedSymbol("");
+
+        const hasStoredSymbol = items.some((item) => item.symbol === selectedSymbol);
+
+        if (!hasStoredSymbol) {
+          setSelectedSymbol("");
+        }
       } catch (err) {
         if (!cancelled) {
           setSymbolsError(

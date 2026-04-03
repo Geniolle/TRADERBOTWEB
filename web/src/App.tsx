@@ -1,6 +1,6 @@
 // src/App.tsx
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
 import SelectedCaseCard from "./components/cases/SelectedCaseCard";
@@ -18,7 +18,6 @@ import {
   FORCE_REALTIME_TEST,
 } from "./constants/config";
 import useApiHealth from "./hooks/useApiHealth";
-import useCandles from "./hooks/useCandles";
 import useCandlestickChart from "./hooks/useCandlestickChart";
 import useChartDerivedData from "./hooks/useChartDerivedData";
 import useMarketCatalog from "./hooks/useMarketCatalog";
@@ -26,7 +25,7 @@ import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
 import useRunHistory from "./hooks/useRunHistory";
 import useStrategies from "./hooks/useStrategies";
-import { buildFallbackStartAt, buildRealtimeTestStartAt } from "./utils/candles";
+import type { CandleItem } from "./types/trading";
 
 function App() {
   const { health, loadingHealth, healthError } = useApiHealth();
@@ -72,44 +71,38 @@ function App() {
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
+  const [realtimeCandles, setRealtimeCandles] = useState<CandleItem[]>([]);
+
+  const isMarketSelectionComplete = useMemo(() => {
+    return Boolean(selectedMarketType && selectedCatalog && selectedSymbol);
+  }, [selectedMarketType, selectedCatalog, selectedSymbol]);
+
   const effectiveChartSymbol = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
-    if (selectedSymbol) return selectedSymbol;
-    return runDetails?.run.symbol ?? "";
-  }, [selectedSymbol, runDetails]);
+    if (isMarketSelectionComplete) return selectedSymbol;
+    return "";
+  }, [isMarketSelectionComplete, selectedSymbol]);
 
   const effectiveChartTimeframe = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_TIMEFRAME;
-    if (selectedSymbol) return "5m";
-    return runDetails?.run.timeframe ?? "1h";
-  }, [selectedSymbol, runDetails]);
+    if (isMarketSelectionComplete) return "5m";
+    return "";
+  }, [isMarketSelectionComplete]);
 
-  const effectiveChartStartAt = useMemo(() => {
-    if (FORCE_REALTIME_TEST) return buildRealtimeTestStartAt();
-
-    if (selectedSymbol) {
-      const date = new Date();
-      date.setDate(date.getDate() - 2);
-      return date.toISOString();
+  const candles = useMemo(() => {
+    if (!effectiveChartSymbol || !effectiveChartTimeframe) {
+      return [];
     }
 
-    return runDetails?.run.start_at ?? buildFallbackStartAt();
-  }, [selectedSymbol, runDetails]);
+    return realtimeCandles.filter(
+      (item) =>
+        item.symbol === effectiveChartSymbol &&
+        item.timeframe === effectiveChartTimeframe
+    );
+  }, [realtimeCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 
-  const effectiveChartEndAt = new Date().toISOString();
-
-  const {
-    candles,
-    setCandles,
-    loadingCandles,
-    candlesError,
-    reloadCandles,
-  } = useCandles({
-    symbol: effectiveChartSymbol,
-    timeframe: effectiveChartTimeframe,
-    startAt: effectiveChartStartAt,
-    endAt: effectiveChartEndAt,
-  });
+  const loadingCandles = false;
+  const candlesError = "";
 
   const {
     wsStatus,
@@ -122,8 +115,8 @@ function App() {
   } = useRealtimeFeed({
     effectiveChartSymbol,
     effectiveChartTimeframe,
-    setCandles,
-    reloadCandles,
+    setCandles: setRealtimeCandles,
+    reloadCandles: async () => {},
   });
 
   const { chartContainerRef, chartSize, chartData } = useCandlestickChart({

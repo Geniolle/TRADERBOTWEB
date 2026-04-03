@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { API_WS_BASE_URL, FORCE_REALTIME_TEST } from "../constants/config";
+import { API_WS_BASE_URL } from "../constants/config";
 import type { CandleTickState, WsEnvelope } from "../types/trading";
 import { upsertRealtimeCandle } from "../utils/candles";
 import { floorToMinuteIso } from "../utils/format";
@@ -50,7 +50,6 @@ function useRealtimeFeed({
   effectiveChartSymbol,
   effectiveChartTimeframe,
   setCandles,
-  reloadCandles,
 }: UseRealtimeFeedParams): UseRealtimeFeedResult {
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [lastWsEvent, setLastWsEvent] = useState("-");
@@ -94,12 +93,17 @@ function useRealtimeFeed({
       try {
         const parsed: WsEnvelope = JSON.parse(event.data);
         const nextEvent = parsed.event ?? "unknown";
-        setLastWsEvent(nextEvent);
+
+        if (nextEvent === "connected" || nextEvent === "subscribed" || nextEvent === "echo") {
+          setLastWsEvent(nextEvent);
+          return;
+        }
 
         if (nextEvent === "heartbeat") {
           const countValue = parsed.data?.count;
           const messageValue = parsed.data?.message;
 
+          setLastWsEvent("heartbeat");
           setHeartbeatCount(
             typeof countValue === "number" ? countValue : Number(countValue ?? 0)
           );
@@ -107,32 +111,67 @@ function useRealtimeFeed({
           return;
         }
 
+        const symbolValue =
+          typeof parsed.data?.symbol === "string" ? parsed.data.symbol : "";
+        const timeframeValue =
+          typeof parsed.data?.timeframe === "string" ? parsed.data.timeframe : "";
+
+        const isCurrentSubscription =
+          symbolValue === effectiveChartSymbol &&
+          timeframeValue === effectiveChartTimeframe;
+
         if (nextEvent === "candles_refresh") {
+          if (!isCurrentSubscription) {
+            return;
+          }
+
           const countValue = parsed.data?.count;
           const reasonValue = parsed.data?.reason;
-          const symbolValue = parsed.data?.symbol;
-          const timeframeValue = parsed.data?.timeframe;
 
+          setLastWsEvent("candles_refresh");
           setCandlesRefreshCount(
             typeof countValue === "number" ? countValue : Number(countValue ?? 0)
           );
           setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
+          return;
+        }
 
-          if (
-            !FORCE_REALTIME_TEST &&
-            symbolValue === effectiveChartSymbol &&
-            timeframeValue === effectiveChartTimeframe
-          ) {
-            void reloadCandles(false);
+        if (nextEvent === "provider_error") {
+          if (!isCurrentSubscription) {
+            return;
           }
+
+          setLastWsEvent("provider_error");
+          return;
+        }
+
+        if (nextEvent === "initial_candles") {
+          if (!isCurrentSubscription) {
+            return;
+          }
+
+          const items = Array.isArray(parsed.data?.candles) ? parsed.data.candles : [];
+          setLastWsEvent("initial_candles");
+
+          setCandles(() => {
+            return items.filter(
+              (item) =>
+                item &&
+                typeof item.symbol === "string" &&
+                typeof item.timeframe === "string" &&
+                typeof item.open_time === "string"
+            );
+          });
 
           return;
         }
 
         if (nextEvent === "candle_tick") {
+          if (!isCurrentSubscription) {
+            return;
+          }
+
           const openTimeValue = parsed.data?.open_time;
-          const symbolValue = parsed.data?.symbol;
-          const timeframeValue = parsed.data?.timeframe;
           const openValue = Number(parsed.data?.open);
           const highValue = Number(parsed.data?.high);
           const lowValue = Number(parsed.data?.low);
@@ -143,8 +182,8 @@ function useRealtimeFeed({
             typeof openTimeValue === "string" ? floorToMinuteIso(openTimeValue) : "-";
 
           const nextTick: NonNullable<CandleTickState> = {
-            symbol: typeof symbolValue === "string" ? symbolValue : "-",
-            timeframe: typeof timeframeValue === "string" ? timeframeValue : "-",
+            symbol: symbolValue || "-",
+            timeframe: timeframeValue || "-",
             open_time: normalizedOpenTime,
             open: openValue,
             high: highValue,
@@ -168,14 +207,9 @@ function useRealtimeFeed({
               typeof parsed.data?.is_mock === "boolean" ? parsed.data.is_mock : null,
           };
 
+          setLastWsEvent("candle_tick");
           setLastCandleTick(nextTick);
-
-          if (
-            nextTick.symbol === effectiveChartSymbol &&
-            nextTick.timeframe === effectiveChartTimeframe
-          ) {
-            setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
-          }
+          setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
         }
       } catch (error) {
         console.error("[WS] failed to parse message:", error);
@@ -198,7 +232,7 @@ function useRealtimeFeed({
       isMounted = false;
       socket.close();
     };
-  }, [effectiveChartSymbol, effectiveChartTimeframe, reloadCandles, setCandles]);
+  }, [effectiveChartSymbol, effectiveChartTimeframe, setCandles]);
 
   return {
     wsStatus,
