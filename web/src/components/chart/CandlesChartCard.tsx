@@ -2,14 +2,11 @@
 
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
-  CandleTickState,
   CatalogInstrument,
   OverlayLine,
   OverlayMarker,
 } from "../../types/trading";
 import { CHART_HEIGHT } from "../../constants/chart";
-import { API_WS_BASE_URL, FORCE_REALTIME_TEST } from "../../constants/config";
-import { formatDateTime } from "../../utils/format";
 
 type CandlesChartCardProps = {
   mainCardStyle: React.CSSProperties;
@@ -33,7 +30,7 @@ type CandlesChartCardProps = {
   heartbeatMessage: string;
   candlesRefreshCount: number | null;
   candlesRefreshReason: string;
-  lastCandleTick: CandleTickState;
+  lastCandleTick: unknown;
   legendCloseColor: string;
 };
 
@@ -50,13 +47,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     selectedCatalogLabel,
     effectiveChartSymbol,
     effectiveChartTimeframe,
-    wsStatus,
-    lastWsEvent,
-    heartbeatCount,
-    heartbeatMessage,
-    candlesRefreshCount,
-    candlesRefreshReason,
-    lastCandleTick,
     legendCloseColor,
   } = props;
 
@@ -95,59 +85,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
           <div>
             <strong>Mercado:</strong> {marketLine}
           </div>
-
-          <div style={{ marginTop: 10 }}>
-            <strong>Atualização:</strong> candle_tick direto
-          </div>
-          <div>
-            <strong>WS:</strong> {API_WS_BASE_URL}
-          </div>
-          <div>
-            <strong>WS status:</strong> {wsStatus}
-          </div>
-          <div>
-            <strong>Último evento WS:</strong> {lastWsEvent}
-          </div>
-          <div>
-            <strong>Heartbeat count:</strong> {heartbeatCount ?? "-"}
-          </div>
-          <div>
-            <strong>Heartbeat message:</strong> {heartbeatMessage}
-          </div>
-          <div>
-            <strong>Candles refresh count:</strong> {candlesRefreshCount ?? "-"}
-          </div>
-          <div>
-            <strong>Candles refresh reason:</strong> {candlesRefreshReason}
-          </div>
-          <div>
-            <strong>Último candle tick:</strong>{" "}
-            {lastCandleTick ? formatDateTime(lastCandleTick.open_time) : "-"}
-          </div>
-          <div>
-            <strong>Tick símbolo:</strong> {lastCandleTick?.symbol ?? "-"}
-            <span style={{ margin: "0 2px" }}>•</span>
-            <strong>Tick timeframe:</strong> {lastCandleTick?.timeframe ?? "-"}
-          </div>
-          <div>
-            <strong>Tick OHLC:</strong>{" "}
-            {lastCandleTick
-              ? `${Number(lastCandleTick.open).toFixed(5)} / ${Number(
-                  lastCandleTick.high
-                ).toFixed(5)} / ${Number(lastCandleTick.low).toFixed(5)} / ${Number(
-                  lastCandleTick.close
-                ).toFixed(5)}`
-              : "-"}
-          </div>
-          <div>
-            <strong>Tick count:</strong> {lastCandleTick?.count ?? "-"}
-          </div>
-
-          {FORCE_REALTIME_TEST && (
-            <div style={{ marginTop: 10 }}>
-              <strong>Modo teste realtime:</strong> ativo
-            </div>
-          )}
         </div>
       )}
 

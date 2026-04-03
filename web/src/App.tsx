@@ -405,6 +405,13 @@ function App() {
               loadingRunDetails={loadingRunDetails}
               runDetailsError={runDetailsError}
               runDetails={runDetails}
+              wsStatus={wsStatus}
+              lastWsEvent={lastWsEvent}
+              heartbeatCount={heartbeatCount}
+              heartbeatMessage={heartbeatMessage}
+              candlesRefreshCount={candlesRefreshCount}
+              candlesRefreshReason={candlesRefreshReason}
+              lastCandleTick={lastCandleTick}
             />
 
             <ChartDiagnosticsCard
