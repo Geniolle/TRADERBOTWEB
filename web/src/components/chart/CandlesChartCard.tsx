@@ -77,7 +77,10 @@ function timeframeToMilliseconds(timeframe: string): number | null {
   }
 }
 
-function getRemainingToNextCandle(timeframe: string, nowMs: number): number | null {
+function getRemainingToNextCandle(
+  timeframe: string,
+  nowMs: number
+): number | null {
   const intervalMs = timeframeToMilliseconds(timeframe);
   if (!intervalMs) return null;
 
@@ -100,6 +103,14 @@ function formatRemainingTime(remainingMs: number | null): string {
   }
 
   return `${pad2(minutes)}m ${pad2(seconds)}s`;
+}
+
+function formatPrice(value: number): string {
+  return value.toFixed(5);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function CandlesChartCard(props: CandlesChartCardProps) {
@@ -156,6 +167,58 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     const parsed = Number(lastCandle.close);
     return Number.isFinite(parsed) ? parsed : null;
   }, [candles]);
+
+  const currentPrice = useMemo(() => {
+    if (lastCandleTick && Number.isFinite(lastCandleTick.close)) {
+      return lastCandleTick.close;
+    }
+
+    return lastClosePrice;
+  }, [lastCandleTick, lastClosePrice]);
+
+  const priceScaleData = useMemo(() => {
+    if (chartData.length === 0) {
+      return {
+        levels: [] as Array<{ value: number; top: number }>,
+        currentPriceTop: null as number | null,
+      };
+    }
+
+    const minPrice = Math.min(...chartData.map((item) => item.low));
+    const maxPrice = Math.max(...chartData.map((item) => item.high));
+
+    const range = Math.max(maxPrice - minPrice, 0.00001);
+    const padding = range * 0.08;
+    const visualMin = minPrice - padding;
+    const visualMax = maxPrice + padding;
+    const visualRange = Math.max(visualMax - visualMin, 0.00001);
+
+    const topPadding = 10;
+    const bottomPadding = 10;
+    const usableHeight = CHART_HEIGHT - topPadding - bottomPadding;
+    const totalSteps = 12;
+
+    const levels = Array.from({ length: totalSteps + 1 }, (_, index) => {
+      const ratio = index / totalSteps;
+      const value = visualMax - visualRange * ratio;
+      const top = topPadding + usableHeight * ratio;
+
+      return { value, top };
+    });
+
+    let currentPriceTop: number | null = null;
+
+    if (currentPrice !== null && Number.isFinite(currentPrice)) {
+      const ratio = (visualMax - currentPrice) / visualRange;
+      currentPriceTop =
+        topPadding + usableHeight * clamp(ratio, 0, 1);
+    }
+
+    return {
+      levels,
+      currentPriceTop,
+    };
+  }, [chartData, currentPrice]);
 
   return (
     <div style={mainCardStyle}>
@@ -243,13 +306,71 @@ function CandlesChartCard(props: CandlesChartCardProps) {
             }}
           />
 
+          {!loadingCandles &&
+            !candlesError &&
+            priceScaleData.levels.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  right: 0,
+                  width: 74,
+                  height: "100%",
+                  pointerEvents: "none",
+                  zIndex: 3,
+                  background:
+                    "linear-gradient(to left, rgba(255,255,255,0.98), rgba(255,255,255,0.88), rgba(255,255,255,0))",
+                }}
+              >
+                {priceScaleData.levels.map((item, index) => (
+                  <div
+                    key={`${index}-${item.value.toFixed(5)}`}
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: item.top,
+                      transform: "translateY(-50%)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#334155",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatPrice(item.value)}
+                  </div>
+                ))}
+
+                {currentPrice !== null &&
+                  priceScaleData.currentPriceTop !== null && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        right: 8,
+                        top: priceScaleData.currentPriceTop,
+                        transform: "translateY(-50%)",
+                        background: "#16a34a",
+                        color: "#ffffff",
+                        padding: "2px 6px",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        whiteSpace: "nowrap",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                      }}
+                    >
+                      {formatPrice(currentPrice)}
+                    </div>
+                  )}
+              </div>
+            )}
+
           {!loadingCandles && !candlesError && effectiveChartTimeframe && (
             <div
               style={{
                 position: "absolute",
                 right: 12,
                 bottom: 12,
-                zIndex: 3,
+                zIndex: 4,
                 background: "rgba(15, 23, 42, 0.88)",
                 color: "#ffffff",
                 padding: "6px 10px",
@@ -315,7 +436,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                   <div
                     style={{
                       position: "absolute",
-                      right: 8,
+                      right: 84,
                       top: -10,
                       background: line.color,
                       color: "#fff",
