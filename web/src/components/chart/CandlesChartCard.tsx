@@ -1,5 +1,6 @@
 // web/src/components/chart/CandlesChartCard.tsx
 
+import { useEffect, useMemo, useState } from "react";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
   CatalogInstrument,
@@ -34,6 +35,61 @@ type CandlesChartCardProps = {
   legendCloseColor: string;
 };
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function timeframeToMilliseconds(timeframe: string): number | null {
+  const match = /^(\d+)([smhdw])$/i.exec(timeframe.trim());
+
+  if (!match) return null;
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  switch (unit) {
+    case "s":
+      return amount * 1000;
+    case "m":
+      return amount * 60 * 1000;
+    case "h":
+      return amount * 60 * 60 * 1000;
+    case "d":
+      return amount * 24 * 60 * 60 * 1000;
+    case "w":
+      return amount * 7 * 24 * 60 * 60 * 1000;
+    default:
+      return null;
+  }
+}
+
+function getRemainingToNextCandle(timeframe: string, nowMs: number): number | null {
+  const intervalMs = timeframeToMilliseconds(timeframe);
+  if (!intervalMs) return null;
+
+  const remainder = nowMs % intervalMs;
+  if (remainder === 0) return intervalMs;
+
+  return intervalMs - remainder;
+}
+
+function formatRemainingTime(remainingMs: number | null): string {
+  if (remainingMs === null) return "--m --s";
+
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
+  }
+
+  return `${pad2(minutes)}m ${pad2(seconds)}s`;
+}
+
 function CandlesChartCard(props: CandlesChartCardProps) {
   const {
     mainCardStyle,
@@ -50,12 +106,29 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     legendCloseColor,
   } = props;
 
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const marketLine = [
     selectedMarketTypeLabel || "-",
     selectedCatalogLabel || "-",
     effectiveChartSymbol || "-",
     effectiveChartTimeframe || "-",
   ].join(" / ");
+
+  const countdownText = useMemo(() => {
+    const remainingMs = getRemainingToNextCandle(effectiveChartTimeframe, nowMs);
+    return formatRemainingTime(remainingMs);
+  }, [effectiveChartTimeframe, nowMs]);
 
   return (
     <div style={mainCardStyle}>
@@ -118,6 +191,29 @@ function CandlesChartCard(props: CandlesChartCardProps) {
               height: "100%",
             }}
           />
+
+          {!loadingCandles && !candlesError && effectiveChartTimeframe && (
+            <div
+              style={{
+                position: "absolute",
+                right: 12,
+                bottom: 12,
+                zIndex: 3,
+                background: "rgba(15, 23, 42, 0.88)",
+                color: "#ffffff",
+                padding: "6px 10px",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 700,
+                letterSpacing: 0.2,
+                pointerEvents: "none",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {countdownText}
+            </div>
+          )}
 
           {!loadingCandles && !candlesError && chartData.length === 0 && (
             <div
