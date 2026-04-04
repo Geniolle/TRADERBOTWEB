@@ -196,7 +196,10 @@ function CandlesChartCard(props: CandlesChartCardProps) {
       {showFooter && (
         <>
           <ChartSummary candles={candles} />
-          <ChartLegend legendCloseColor={legendCloseColor} />
+          <ChartLegend
+            legendCloseColor={legendCloseColor}
+            showStrategyOverlays={showStrategyOverlays}
+          />
         </>
       )}
     </div>
