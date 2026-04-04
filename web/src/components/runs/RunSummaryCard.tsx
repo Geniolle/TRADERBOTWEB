@@ -1212,30 +1212,44 @@ function pairedInfoRow(
     >
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "flex-start",
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          gap: 10,
+          alignItems: "start",
           minWidth: 0,
         }}
       >
         <strong style={{ color: "#1e293b", flexShrink: 0 }}>{leftLabel}</strong>
-        <span style={{ color: "#334155", textAlign: "right", minWidth: 0 }}>
+        <span
+          style={{
+            color: "#334155",
+            textAlign: "left",
+            justifySelf: "start",
+            minWidth: 0,
+          }}
+        >
           {leftValue}
         </span>
       </div>
 
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "flex-start",
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          gap: 10,
+          alignItems: "start",
           minWidth: 0,
         }}
       >
         <strong style={{ color: "#1e293b", flexShrink: 0 }}>{rightLabel}</strong>
-        <span style={{ color: "#334155", textAlign: "right", minWidth: 0 }}>
+        <span
+          style={{
+            color: "#334155",
+            textAlign: "left",
+            justifySelf: "start",
+            minWidth: 0,
+          }}
+        >
           {rightValue}
         </span>
       </div>
