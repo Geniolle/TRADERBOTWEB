@@ -70,24 +70,6 @@ function App() {
   const { health, loadingHealth, healthError } = useApiHealth();
 
   const {
-    selectedRunId,
-    setSelectedRunId,
-    runSearch,
-    setRunSearch,
-    filteredRuns,
-    loadingRuns,
-    runsError,
-  } = useRunHistory();
-
-  const {
-    runDetails,
-    selectedCaseId,
-    setSelectedCaseId,
-    loadingRunDetails,
-    runDetailsError,
-  } = useRunDetails(selectedRunId);
-
-  const {
     marketTypes,
     selectedMarketType,
     setSelectedMarketType,
@@ -192,6 +174,33 @@ function App() {
     if (!isMarketSelectionComplete) return "";
     return effectiveSelectedTimeframe;
   }, [isMarketSelectionComplete, effectiveSelectedTimeframe]);
+
+  const {
+    selectedRunId,
+    setSelectedRunId,
+    runSearch,
+    setRunSearch,
+    filteredRuns,
+    loadingRuns,
+    runsError,
+    actionError,
+    isClearingRuns,
+    isCreatingRuns,
+    clearRuns,
+    createRuns,
+  } = useRunHistory({
+    selectedSymbol: effectiveChartSymbol,
+    selectedTimeframe: effectiveChartTimeframe,
+    strategies,
+  });
+
+  const {
+    runDetails,
+    selectedCaseId,
+    setSelectedCaseId,
+    loadingRunDetails,
+    runDetailsError,
+  } = useRunDetails(selectedRunId);
 
   const candles = useMemo(() => {
     if (!effectiveChartSymbol || !effectiveChartTimeframe) {
@@ -405,9 +414,15 @@ function App() {
                   setRunSearch={setRunSearch}
                   loadingRuns={loadingRuns}
                   runsError={runsError}
+                  actionError={actionError}
                   filteredRuns={filteredRuns}
                   selectedRunId={selectedRunId}
                   setSelectedRunId={setSelectedRunId}
+                  onClearRuns={clearRuns}
+                  onCreateRuns={createRuns}
+                  isClearingRuns={isClearingRuns}
+                  isCreatingRuns={isCreatingRuns}
+                  canCreateRuns={Boolean(effectiveChartSymbol && effectiveChartTimeframe)}
                 />
 
                 <ApiStatusCard

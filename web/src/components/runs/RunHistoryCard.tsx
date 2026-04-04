@@ -1,4 +1,4 @@
-// src/components/runs/RunHistoryCard.tsx
+// web/src/components/runs/RunHistoryCard.tsx
 
 import type { RunHistoryItem } from "../../types/trading";
 
@@ -8,9 +8,15 @@ type RunHistoryCardProps = {
   setRunSearch: (value: string) => void;
   loadingRuns: boolean;
   runsError: string;
+  actionError: string;
   filteredRuns: RunHistoryItem[];
   selectedRunId: string;
   setSelectedRunId: (value: string) => void;
+  onClearRuns: () => void;
+  onCreateRuns: () => void;
+  isClearingRuns: boolean;
+  isCreatingRuns: boolean;
+  canCreateRuns: boolean;
 };
 
 function RunHistoryCard({
@@ -19,9 +25,15 @@ function RunHistoryCard({
   setRunSearch,
   loadingRuns,
   runsError,
+  actionError,
   filteredRuns,
   selectedRunId,
   setSelectedRunId,
+  onClearRuns,
+  onCreateRuns,
+  isClearingRuns,
+  isCreatingRuns,
+  canCreateRuns,
 }: RunHistoryCardProps) {
   return (
     <div style={sidebarCardStyle}>
@@ -35,6 +47,52 @@ function RunHistoryCard({
       >
         Histórico de runs
       </h2>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <button
+          onClick={onClearRuns}
+          disabled={isClearingRuns || isCreatingRuns}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #dc2626",
+            background: isClearingRuns ? "#fee2e2" : "#fff",
+            color: "#b91c1c",
+            fontWeight: 700,
+            cursor: isClearingRuns || isCreatingRuns ? "not-allowed" : "pointer",
+            opacity: isClearingRuns || isCreatingRuns ? 0.7 : 1,
+          }}
+        >
+          {isClearingRuns ? "A limpar..." : "Limpar runs"}
+        </button>
+
+        <button
+          onClick={onCreateRuns}
+          disabled={!canCreateRuns || isCreatingRuns || isClearingRuns}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #0f172a",
+            background: isCreatingRuns ? "#e2e8f0" : "#0f172a",
+            color: isCreatingRuns ? "#0f172a" : "#fff",
+            fontWeight: 700,
+            cursor:
+              !canCreateRuns || isCreatingRuns || isClearingRuns
+                ? "not-allowed"
+                : "pointer",
+            opacity: !canCreateRuns || isCreatingRuns || isClearingRuns ? 0.7 : 1,
+          }}
+        >
+          {isCreatingRuns ? "A criar..." : "Criar runs"}
+        </button>
+      </div>
 
       <input
         value={runSearch}
@@ -51,6 +109,15 @@ function RunHistoryCard({
           fontSize: 14,
         }}
       />
+
+      {actionError && (
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ color: "#dc2626", fontWeight: "bold", margin: 0 }}>
+            Erro de ação
+          </p>
+          <p style={{ margin: "6px 0 0 0" }}>{actionError}</p>
+        </div>
+      )}
 
       {loadingRuns && <p style={{ margin: 0 }}>A carregar histórico...</p>}
 
@@ -121,10 +188,10 @@ function RunHistoryCard({
                     <strong>Strategy:</strong> {run.strategy_key ?? "-"}
                   </div>
                   <div>
-                    <strong>Candles:</strong> {run.total_candles_processed}
+                    <strong>Candles:</strong> {run.candles_count}
                   </div>
                   <div>
-                    <strong>Cases:</strong> {run.total_cases_opened}
+                    <strong>Cases:</strong> {run.cases_count}
                   </div>
                 </div>
               </button>

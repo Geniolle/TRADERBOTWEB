@@ -1,4 +1,4 @@
-// src/types/trading.ts
+// web/src/types/trading.ts
 
 export type CatalogProductSummary = {
   code: string;
@@ -199,11 +199,108 @@ export type RunMetricItem = {
   value: number | string | null;
 };
 
+export type AnalysisSnapshot = {
+  snapshot_version?: string;
+  trigger_context?: {
+    reference_time?: string | null;
+    reference_price?: string | null;
+    session?: string | null;
+    day_of_week?: string | null;
+    hour_of_day?: number | null;
+  };
+  trend?: {
+    ema_5?: string | null;
+    ema_10?: string | null;
+    ema_20?: string | null;
+    ema_30?: string | null;
+    ema_40?: string | null;
+    ema_alignment?: string | null;
+    price_vs_ema_20?: string | null;
+    price_vs_ema_40?: string | null;
+    ema_5_slope?: string | null;
+    ema_10_slope?: string | null;
+    ema_20_slope?: string | null;
+    ema_30_slope?: string | null;
+    ema_40_slope?: string | null;
+  };
+  bollinger?: {
+    period?: number | null;
+    stddev?: string | null;
+    upper?: string | null;
+    middle?: string | null;
+    lower?: string | null;
+    bandwidth?: string | null;
+    close_position_in_band?: string | null;
+    closed_below_lower_band?: boolean | null;
+    closed_above_upper_band?: boolean | null;
+    reentered_inside_band_long?: boolean | null;
+    reentered_inside_band_short?: boolean | null;
+  };
+  momentum?: {
+    rsi_14?: string | null;
+    rsi_zone?: string | null;
+    rsi_slope?: string | null;
+    macd_line?: string | null;
+    macd_signal?: string | null;
+    macd_histogram?: string | null;
+    macd_state?: string | null;
+    macd_histogram_slope?: string | null;
+  };
+  volatility?: {
+    atr_14?: string | null;
+    atr_regime?: string | null;
+    candle_range?: string | null;
+    candle_range_vs_atr?: string | null;
+  };
+  structure?: {
+    market_structure?: string | null;
+    entry_location?: string | null;
+    distance_to_recent_support?: string | null;
+    distance_to_recent_resistance?: string | null;
+    distance_to_ema_20?: string | null;
+    distance_to_ema_40?: string | null;
+  };
+  trigger_candle?: {
+    open?: string | null;
+    high?: string | null;
+    low?: string | null;
+    close?: string | null;
+    body_size?: string | null;
+    upper_wick?: string | null;
+    lower_wick?: string | null;
+    body_ratio?: string | null;
+    candle_type?: string | null;
+  };
+  patterns?: {
+    bb_reentry_long?: boolean | null;
+    bb_reentry_short?: boolean | null;
+    ema_trend_confirmed_long?: boolean | null;
+    ema_trend_confirmed_short?: boolean | null;
+    rsi_recovery_long?: boolean | null;
+    rsi_recovery_short?: boolean | null;
+    macd_confirmation_long?: boolean | null;
+    macd_confirmation_short?: boolean | null;
+    countertrend_long?: boolean | null;
+    countertrend_short?: boolean | null;
+  };
+};
+
+export type RunCaseMetadata = {
+  strategy_key?: string;
+  strategy_family?: string;
+  trade_bias?: string;
+  setup_type?: string;
+  close_reason?: string;
+  analysis_snapshot?: AnalysisSnapshot;
+  [key: string]: unknown;
+};
+
 export type RunCaseItem = {
   id: string;
   case_number?: number | null;
   side?: string | null;
   status?: string | null;
+  outcome?: string | null;
   trigger_price?: number | null;
   entry_price?: number | null;
   close_price?: number | null;
@@ -213,11 +310,14 @@ export type RunCaseItem = {
   trigger_candle_time?: string | null;
   entry_time?: string | null;
   close_time?: string | null;
-  metadata?: Record<string, unknown>;
+  bars_to_resolution?: number | null;
+  max_favorable_excursion?: string | number | null;
+  max_adverse_excursion?: string | number | null;
+  metadata?: RunCaseMetadata;
 };
 
 export type RunDetailsResponse = {
   run: RunSummary;
-  metrics: RunMetricItem[];
+  metrics: RunMetricItem[] | Record<string, unknown>;
   cases: RunCaseItem[];
 };
