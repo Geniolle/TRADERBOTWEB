@@ -79,6 +79,12 @@ function formatPrice(value: unknown): string {
   return numberValue.toFixed(5);
 }
 
+function formatDecimal(value: unknown, decimals = 2): string {
+  const numberValue = toNumber(value);
+  if (numberValue === null) return "-";
+  return numberValue.toFixed(decimals).replace(".", ",");
+}
+
 function readMetricNumber(metrics: unknown, key: string): number | null {
   if (!metrics || typeof metrics !== "object") return null;
   const raw = (metrics as Record<string, unknown>)[key];
@@ -268,6 +274,41 @@ function getGroupSnapshot(
   if (!group || typeof group !== "object") return null;
 
   return group as Record<string, unknown>;
+}
+
+function getSnapshotNestedValue(
+  snapshot: Record<string, unknown> | null,
+  path: string[]
+): unknown {
+  if (!snapshot) return null;
+
+  let current: unknown = snapshot;
+  for (const key of path) {
+    if (!current || typeof current !== "object") return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return current ?? null;
+}
+
+function getFirstSnapshotValue(
+  item: OutcomeLikeCase,
+  candidatePaths: string[][]
+): unknown {
+  const snapshot = getAnalysisSnapshot(item);
+
+  for (const path of candidatePaths) {
+    const value = getSnapshotNestedValue(snapshot, path);
+    if (
+      value !== null &&
+      value !== undefined &&
+      !(typeof value === "string" && value.trim() === "")
+    ) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 function getSimpleIfrContext(value: unknown): SimpleIfrContext {
@@ -1122,14 +1163,271 @@ function buildDevelopmentPotential(params: {
   };
 }
 
-function dividerLine() {
+function getUsefulSpaceToTargetText(
+  sideLabel: string,
+  supportDistanceInfo: SimpleTextContext,
+  resistanceDistanceInfo: SimpleTextContext
+): string {
+  if (sideLabel === "Compra") {
+    if (isNearZone(resistanceDistanceInfo.label)) {
+      return "Curto / Resistência muito perto";
+    }
+    return "Bom / Há espaço até à resistência";
+  }
+
+  if (sideLabel === "Venda") {
+    if (isNearZone(supportDistanceInfo.label)) {
+      return "Curto / Suporte muito perto";
+    }
+    return "Bom / Há espaço até ao suporte";
+  }
+
+  return "-";
+}
+
+function getAtrNotTooHighText(atrInfo: SimpleAtrContext): string {
+  if (atrInfo.volatility === "Alta") {
+    return "Não / Mercado agitado";
+  }
+
+  if (atrInfo.volatility === "Média") {
+    return "Sim / Volatilidade controlada";
+  }
+
+  if (atrInfo.volatility === "Baixa") {
+    return "Parcial / Mercado calmo";
+  }
+
+  return "-";
+}
+
+function getEma20NotTooAgainstText(
+  sideLabel: string,
+  ema20SlopeInfo: SimpleTextContext,
+  priceVsEma20Info: SimpleTextContext
+): string {
+  if (sideLabel === "Compra") {
+    if (
+      ema20SlopeInfo.label === "A subir" ||
+      priceVsEma20Info.label === "Acima"
+    ) {
+      return "Sim / EMA 20 não está muito contra";
+    }
+
+    if (ema20SlopeInfo.label === "Lateral") {
+      return "Parcial / EMA 20 neutra";
+    }
+
+    return "Não / EMA 20 ainda contra";
+  }
+
+  if (sideLabel === "Venda") {
+    if (
+      ema20SlopeInfo.label === "A descer" ||
+      priceVsEma20Info.label === "Abaixo"
+    ) {
+      return "Sim / EMA 20 não está muito contra";
+    }
+
+    if (ema20SlopeInfo.label === "Lateral") {
+      return "Parcial / EMA 20 neutra";
+    }
+
+    return "Não / EMA 20 ainda contra";
+  }
+
+  return "-";
+}
+
+function getNextCandleConfirmationText(item: OutcomeLikeCase): string {
+  const rawValue = getFirstSnapshotValue(item, [
+    ["post_trigger", "next_candle_confirmation"],
+    ["post_trigger", "next_candle_confirmed"],
+    ["post_trigger", "confirmation"],
+    ["trigger_candle", "next_candle_confirmation"],
+    ["trigger_candle", "next_candle_confirmed"],
+    ["confirmation", "next_candle"],
+    ["confirmation", "confirmed_next_candle"],
+  ]);
+
+  const numericValue = toNumber(rawValue);
+  const raw = String(rawValue ?? "").trim().toLowerCase();
+
+  if (typeof rawValue === "boolean") {
+    return rawValue ? "Sim / Candle seguinte confirmou" : "Não / Candle seguinte falhou";
+  }
+
+  if (numericValue !== null) {
+    if (numericValue > 0) return "Sim / Candle seguinte confirmou";
+    return "Não / Candle seguinte falhou";
+  }
+
+  if (!raw) {
+    return "Sem dados";
+  }
+
+  if (
+    raw.includes("true") ||
+    raw.includes("confirmed") ||
+    raw.includes("confirmado") ||
+    raw.includes("yes") ||
+    raw.includes("sim")
+  ) {
+    return "Sim / Candle seguinte confirmou";
+  }
+
+  if (
+    raw.includes("false") ||
+    raw.includes("failed") ||
+    raw.includes("no") ||
+    raw.includes("nao") ||
+    raw.includes("não")
+  ) {
+    return "Não / Candle seguinte falhou";
+  }
+
+  return String(rawValue);
+}
+
+function getVolumeIndicatorText(item: OutcomeLikeCase): string {
+  const rawValue = getFirstSnapshotValue(item, [
+    ["volume", "signal"],
+    ["volume", "context"],
+    ["volume", "relative_state"],
+    ["volume", "relative_volume"],
+    ["volume", "ratio"],
+    ["volume", "zscore"],
+    ["momentum", "volume_signal"],
+    ["momentum", "volume_ratio"],
+  ]);
+
+  const numericValue = toNumber(rawValue);
+  const raw = String(rawValue ?? "").trim().toLowerCase();
+
+  if (numericValue !== null) {
+    if (numericValue >= 1.5) {
+      return `${formatDecimal(numericValue)} / Volume forte`;
+    }
+    if (numericValue >= 1) {
+      return `${formatDecimal(numericValue)} / Volume normal`;
+    }
+    return `${formatDecimal(numericValue)} / Volume fraco`;
+  }
+
+  if (!raw) return "Sem dados";
+
+  if (raw.includes("high") || raw.includes("alto") || raw.includes("strong")) {
+    return "Alto / Volume relevante";
+  }
+
+  if (raw.includes("low") || raw.includes("baixo") || raw.includes("weak")) {
+    return "Baixo / Volume fraco";
+  }
+
+  if (raw.includes("normal") || raw.includes("medium") || raw.includes("médio")) {
+    return "Normal / Volume equilibrado";
+  }
+
+  return String(rawValue);
+}
+
+function getVwapIndicatorText(
+  sideLabel: string,
+  item: OutcomeLikeCase
+): string {
+  const rawValue = getFirstSnapshotValue(item, [
+    ["vwap", "state"],
+    ["vwap", "signal"],
+    ["trend", "price_vs_vwap"],
+    ["trend", "vwap_state"],
+    ["structure", "price_vs_vwap"],
+  ]);
+
+  const raw = String(rawValue ?? "").trim().toLowerCase();
+
+  if (!raw) return "Sem dados";
+
+  if (sideLabel === "Compra") {
+    if (raw.includes("above") || raw.includes("acima") || raw.includes("recovered")) {
+      return "Favorável / Preço recuperou VWAP";
+    }
+
+    if (raw.includes("below") || raw.includes("abaixo")) {
+      return "Contra / Preço abaixo da VWAP";
+    }
+  }
+
+  if (sideLabel === "Venda") {
+    if (raw.includes("below") || raw.includes("abaixo") || raw.includes("lost")) {
+      return "Favorável / Preço perdeu VWAP";
+    }
+
+    if (raw.includes("above") || raw.includes("acima")) {
+      return "Contra / Preço acima da VWAP";
+    }
+  }
+
+  return String(rawValue);
+}
+
+function getBandDistanceIndicatorText(item: OutcomeLikeCase): string {
+  const rawValue = getFirstSnapshotValue(item, [
+    ["bollinger", "z_score"],
+    ["bollinger", "zscore"],
+    ["bollinger", "distance_from_band"],
+    ["bollinger", "distance_outside_band"],
+    ["bollinger", "band_distance_ratio"],
+  ]);
+
+  const numericValue = toNumber(rawValue);
+  if (numericValue !== null) {
+    if (Math.abs(numericValue) >= 2) {
+      return `${formatDecimal(numericValue)} / Afastamento forte`;
+    }
+    if (Math.abs(numericValue) >= 1) {
+      return `${formatDecimal(numericValue)} / Afastamento moderado`;
+    }
+    return `${formatDecimal(numericValue)} / Afastamento curto`;
+  }
+
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return "Sem dados";
+
+  return raw;
+}
+
+function getAdxIndicatorText(item: OutcomeLikeCase): string {
+  const rawValue = getFirstSnapshotValue(item, [
+    ["trend", "adx"],
+    ["trend", "adx_14"],
+    ["structure", "adx"],
+    ["structure", "adx_14"],
+  ]);
+
+  const numericValue = toNumber(rawValue);
+  if (numericValue !== null) {
+    if (numericValue >= 30) {
+      return `${formatDecimal(numericValue)} / Tendência forte`;
+    }
+    if (numericValue >= 20) {
+      return `${formatDecimal(numericValue)} / Tendência moderada`;
+    }
+    return `${formatDecimal(numericValue)} / Tendência fraca`;
+  }
+
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return "Sem dados";
+
+  return raw;
+}
+
+function sectionSeparator() {
   return (
     <div
       style={{
-        height: 1,
-        background: "#e2e8f0",
-        margin: "12px 0",
-        width: "100%",
+        marginTop: 14,
+        marginBottom: 14,
+        borderTop: "1px solid #e2e8f0",
       }}
     />
   );
@@ -1434,6 +1732,23 @@ function outcomeListCard(
               atrInfo,
             });
 
+            const usefulSpaceText = getUsefulSpaceToTargetText(
+              sideLabel,
+              supportDistanceInfo,
+              resistanceDistanceInfo
+            );
+            const atrNotTooHighText = getAtrNotTooHighText(atrInfo);
+            const ema20NotAgainstText = getEma20NotTooAgainstText(
+              sideLabel,
+              ema20SlopeInfo,
+              priceVsEma20Info
+            );
+            const nextCandleConfirmationText = getNextCandleConfirmationText(item);
+            const volumeIndicatorText = getVolumeIndicatorText(item);
+            const vwapIndicatorText = getVwapIndicatorText(sideLabel, item);
+            const bandDistanceText = getBandDistanceIndicatorText(item);
+            const adxText = getAdxIndicatorText(item);
+
             const rightMetrics = (
               <div
                 style={{
@@ -1511,7 +1826,7 @@ function outcomeListCard(
                     )}
                   </div>
 
-                  {dividerLine()}
+                  {sectionSeparator()}
 
                   {sectionTitle("Contexto principal")}
                   <div style={{ display: "grid", gap: 6 }}>
@@ -1553,7 +1868,7 @@ function outcomeListCard(
                     )}
                   </div>
 
-                  {dividerLine()}
+                  {sectionSeparator()}
 
                   {sectionTitle("Localização do preço")}
                   <div style={{ display: "grid", gap: 6 }}>
@@ -1575,7 +1890,7 @@ function outcomeListCard(
                     )}
                   </div>
 
-                  {dividerLine()}
+                  {sectionSeparator()}
 
                   {sectionTitle("Momento e gatilho")}
                   <div style={{ display: "grid", gap: 6 }}>
@@ -1609,7 +1924,37 @@ function outcomeListCard(
                     )}
                   </div>
 
-                  {dividerLine()}
+                  {sectionSeparator()}
+
+                  {sectionTitle("Filtros prioritários")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow("Espaço útil até ao alvo:", usefulSpaceText)}
+                    {infoRow(
+                      "Qualidade do candle do gatilho:",
+                      buildCombinedValue(
+                        triggerCandleInfo.label,
+                        triggerCandleInfo.situation
+                      )
+                    )}
+                    {infoRow("ATR não muito alta:", atrNotTooHighText)}
+                    {infoRow("EMA 20 não muito contra:", ema20NotAgainstText)}
+                    {infoRow(
+                      "Confirmação no candle seguinte:",
+                      nextCandleConfirmationText
+                    )}
+                  </div>
+
+                  {sectionSeparator()}
+
+                  {sectionTitle("Indicadores extras")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow("Volume:", volumeIndicatorText)}
+                    {infoRow("VWAP:", vwapIndicatorText)}
+                    {infoRow("Distância da banda / z-score:", bandDistanceText)}
+                    {infoRow("ADX:", adxText)}
+                  </div>
+
+                  {sectionSeparator()}
 
                   {sectionTitle("Risco e ambiente")}
                   <div style={{ display: "grid", gap: 6 }}>
