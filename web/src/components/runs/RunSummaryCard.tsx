@@ -50,6 +50,12 @@ type ConfirmationResult = {
   conflicts: number;
 };
 
+type DevelopmentPotentialResult = {
+  potentialPercent: number | null;
+  positives: number;
+  negatives: number;
+};
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
 
@@ -767,83 +773,6 @@ function getSimpleBollingerContext(
   };
 }
 
-function buildSignalQuality(params: {
-  sideLabel: string;
-  structureInfo: SimpleTextContext;
-  emaAlignmentInfo: SimpleTextContext;
-  priceVsEma20Info: SimpleTextContext;
-  priceVsEma40Info: SimpleTextContext;
-  supportDistanceInfo: SimpleTextContext;
-  resistanceDistanceInfo: SimpleTextContext;
-  macdInfo: SimpleMacdContext;
-  triggerCandleInfo: SimpleTextContext;
-  bollingerInfo: SimpleTextContext;
-}): string {
-  const {
-    sideLabel,
-    structureInfo,
-    emaAlignmentInfo,
-    priceVsEma20Info,
-    priceVsEma40Info,
-    supportDistanceInfo,
-    resistanceDistanceInfo,
-    macdInfo,
-    triggerCandleInfo,
-    bollingerInfo,
-  } = params;
-
-  let score = 0;
-
-  if (sideLabel === "Compra") {
-    if (structureInfo.label === "Alta") score += 2;
-    if (emaAlignmentInfo.label === "Alta") score += 2;
-    if (priceVsEma20Info.label === "Acima") score += 1;
-    if (priceVsEma40Info.label === "Acima") score += 2;
-    if (macdInfo.direction === "Alta") score += 1;
-    if (bollingerInfo.label === "Confirma compra") score += 1;
-    if (
-      resistanceDistanceInfo.label === "Colado" ||
-      resistanceDistanceInfo.label === "Muito perto"
-    ) {
-      score -= 2;
-    }
-    if (
-      supportDistanceInfo.label === "Colado" ||
-      supportDistanceInfo.label === "Muito perto"
-    ) {
-      score += 1;
-    }
-  } else if (sideLabel === "Venda") {
-    if (structureInfo.label === "Queda") score += 2;
-    if (emaAlignmentInfo.label === "Queda") score += 2;
-    if (priceVsEma20Info.label === "Abaixo") score += 1;
-    if (priceVsEma40Info.label === "Abaixo") score += 2;
-    if (macdInfo.direction === "Queda") score += 1;
-    if (bollingerInfo.label === "Confirma venda") score += 1;
-    if (
-      supportDistanceInfo.label === "Colado" ||
-      supportDistanceInfo.label === "Muito perto"
-    ) {
-      score -= 2;
-    }
-    if (
-      resistanceDistanceInfo.label === "Colado" ||
-      resistanceDistanceInfo.label === "Muito perto"
-    ) {
-      score += 1;
-    }
-  }
-
-  if (triggerCandleInfo.label === "Bom") score += 1;
-  if (triggerCandleInfo.label === "Fraco") score -= 1;
-  if (structureInfo.label === "Lateral") score -= 1;
-  if (emaAlignmentInfo.label === "Misto") score -= 1;
-
-  if (score >= 6) return "Forte";
-  if (score >= 3) return "Moderado";
-  return "Fraco";
-}
-
 function isNearZone(label: string): boolean {
   return label === "Colado" || label === "Muito perto";
 }
@@ -895,7 +824,6 @@ function buildBbReversalConfirmation(params: {
     if (isConflict) conflicts += 1;
   };
 
-  // 1) Núcleo da estratégia: Bollinger / FF-FD
   if (
     (isLong && bollingerInfo.label === "Confirma compra") ||
     (isShort && bollingerInfo.label === "Confirma venda")
@@ -905,7 +833,6 @@ function buildBbReversalConfirmation(params: {
     addFactor(4, 0, true);
   }
 
-  // 2) Localização / compressão: foi o fator mais unânime nos hits
   const nearSupport = isNearZone(supportDistanceInfo.label);
   const nearResistance = isNearZone(resistanceDistanceInfo.label);
 
@@ -917,7 +844,6 @@ function buildBbReversalConfirmation(params: {
     addFactor(2, 0);
   }
 
-  // 3) Candle do gatilho: decisivo para validar a reação
   if (triggerCandleInfo.label === "Bom") {
     addFactor(2, 2);
   } else if (triggerCandleInfo.label === "Normal") {
@@ -926,7 +852,6 @@ function buildBbReversalConfirmation(params: {
     addFactor(2, 0, true);
   }
 
-  // 4) Tamanho do candle no contexto
   if (candleVsAtrInfo.label === "Forte") {
     addFactor(1, 1);
   } else if (candleVsAtrInfo.label === "Saudável") {
@@ -935,8 +860,6 @@ function buildBbReversalConfirmation(params: {
     addFactor(1, 0);
   }
 
-  // 5) Contexto estrutural para reversão:
-  // compra: queda ou lateral ajudam; venda: alta ou lateral ajudam
   if (
     structureInfo.label === "Lateral" ||
     (isLong && structureInfo.label === "Queda") ||
@@ -950,7 +873,6 @@ function buildBbReversalConfirmation(params: {
     addFactor(1, 0.25);
   }
 
-  // 6) IFR conta só quando realmente ajuda a reversão; neutro não penaliza
   if (isLong) {
     if (ifrInfo.strength === "Baixa" || ifrInfo.strength === "Fraqueza") {
       addFactor(1, 1);
@@ -967,7 +889,6 @@ function buildBbReversalConfirmation(params: {
     }
   }
 
-  // 7) MACD entra só como ajuste leve; não pode dominar a percentagem
   if (
     (isLong && macdInfo.direction === "Alta") ||
     (isShort && macdInfo.direction === "Queda")
@@ -987,6 +908,220 @@ function buildBbReversalConfirmation(params: {
   };
 }
 
+function buildDevelopmentPotential(params: {
+  sideLabel: string;
+  structureInfo: SimpleTextContext;
+  priceVsEma20Info: SimpleTextContext;
+  priceVsEma40Info: SimpleTextContext;
+  emaAlignmentInfo: SimpleTextContext;
+  ema20SlopeInfo: SimpleTextContext;
+  supportDistanceInfo: SimpleTextContext;
+  resistanceDistanceInfo: SimpleTextContext;
+  triggerCandleInfo: SimpleTextContext;
+  candleVsAtrInfo: SimpleTextContext;
+  macdInfo: SimpleMacdContext;
+  ifrInfo: SimpleIfrContext;
+  atrInfo: SimpleAtrContext;
+}): DevelopmentPotentialResult {
+  const {
+    sideLabel,
+    structureInfo,
+    priceVsEma20Info,
+    priceVsEma40Info,
+    emaAlignmentInfo,
+    ema20SlopeInfo,
+    supportDistanceInfo,
+    resistanceDistanceInfo,
+    triggerCandleInfo,
+    candleVsAtrInfo,
+    macdInfo,
+    ifrInfo,
+    atrInfo,
+  } = params;
+
+  const isLong = sideLabel === "Compra";
+  const isShort = sideLabel === "Venda";
+
+  if (!isLong && !isShort) {
+    return {
+      potentialPercent: null,
+      positives: 0,
+      negatives: 0,
+    };
+  }
+
+  let earned = 0;
+  let possible = 0;
+  let positives = 0;
+  let negatives = 0;
+
+  const addFactor = (maxWeight: number, gainedWeight: number, isNegative = false) => {
+    possible += maxWeight;
+    earned += Math.max(0, Math.min(gainedWeight, maxWeight));
+
+    if (gainedWeight >= maxWeight * 0.6) positives += 1;
+    if (isNegative) negatives += 1;
+  };
+
+  const barrierAgainst = isLong
+    ? isNearZone(resistanceDistanceInfo.label)
+    : isNearZone(supportDistanceInfo.label);
+
+  const protectionBehind = isLong
+    ? isNearZone(supportDistanceInfo.label)
+    : isNearZone(resistanceDistanceInfo.label);
+
+  if (barrierAgainst) {
+    addFactor(3, 0.2, true);
+  } else {
+    addFactor(3, 3);
+  }
+
+  if (protectionBehind) {
+    addFactor(1, 1);
+  } else {
+    addFactor(1, 0.4);
+  }
+
+  if (triggerCandleInfo.label === "Bom") {
+    addFactor(2.5, 2.5);
+  } else if (triggerCandleInfo.label === "Normal") {
+    addFactor(2.5, 0.9);
+  } else {
+    addFactor(2.5, 0.1, true);
+  }
+
+  if (candleVsAtrInfo.label === "Forte") {
+    addFactor(2, 2);
+  } else if (candleVsAtrInfo.label === "Saudável") {
+    addFactor(2, 1.5);
+  } else {
+    addFactor(2, 0.2, true);
+  }
+
+  if (atrInfo.volatility === "Média") {
+    addFactor(2.5, 2.5);
+  } else if (atrInfo.volatility === "Baixa") {
+    addFactor(2.5, 1.4);
+  } else if (atrInfo.volatility === "Alta") {
+    addFactor(2.5, 0.4, true);
+  }
+
+  if (isLong) {
+    if (ifrInfo.strength === "Neutro") {
+      addFactor(2, 2);
+    } else if (ifrInfo.strength === "Fraqueza") {
+      addFactor(2, 1.6);
+    } else if (ifrInfo.strength === "Baixa") {
+      addFactor(2, 1.1);
+    } else if (ifrInfo.strength === "Alta") {
+      addFactor(2, 0.5, true);
+    } else if (ifrInfo.strength === "Alta forte") {
+      addFactor(2, 0.2, true);
+    }
+  }
+
+  if (isShort) {
+    if (ifrInfo.strength === "Neutro") {
+      addFactor(2, 2);
+    } else if (ifrInfo.strength === "Alta") {
+      addFactor(2, 1.6);
+    } else if (ifrInfo.strength === "Alta forte") {
+      addFactor(2, 1.1);
+    } else if (ifrInfo.strength === "Fraqueza") {
+      addFactor(2, 0.5, true);
+    } else if (ifrInfo.strength === "Baixa") {
+      addFactor(2, 0.2, true);
+    }
+  }
+
+  if (
+    (isLong && macdInfo.direction === "Alta") ||
+    (isShort && macdInfo.direction === "Queda")
+  ) {
+    addFactor(2, 2);
+  } else if (macdInfo.direction === "Neutro") {
+    addFactor(2, 1);
+  } else if (
+    (isLong && macdInfo.direction === "Queda") ||
+    (isShort && macdInfo.direction === "Alta")
+  ) {
+    addFactor(2, 0.2, true);
+  }
+
+  if (
+    (isLong && ema20SlopeInfo.label === "A subir") ||
+    (isShort && ema20SlopeInfo.label === "A descer")
+  ) {
+    addFactor(2, 2);
+  } else if (ema20SlopeInfo.label === "Lateral") {
+    addFactor(2, 1);
+  } else if (
+    (isLong && ema20SlopeInfo.label === "A descer") ||
+    (isShort && ema20SlopeInfo.label === "A subir")
+  ) {
+    addFactor(2, 0.2, true);
+  }
+
+  if (
+    (isLong && priceVsEma20Info.label === "Acima") ||
+    (isShort && priceVsEma20Info.label === "Abaixo")
+  ) {
+    addFactor(2, 2);
+  } else if (
+    (isLong && priceVsEma20Info.label === "Abaixo") ||
+    (isShort && priceVsEma20Info.label === "Acima")
+  ) {
+    addFactor(2, 0.2, true);
+  }
+
+  if (
+    (isLong && priceVsEma40Info.label === "Acima") ||
+    (isShort && priceVsEma40Info.label === "Abaixo")
+  ) {
+    addFactor(1.2, 1.2);
+  } else if (
+    (isLong && priceVsEma40Info.label === "Abaixo") ||
+    (isShort && priceVsEma40Info.label === "Acima")
+  ) {
+    addFactor(1.2, 0.2, true);
+  }
+
+  if (
+    (isLong && emaAlignmentInfo.label === "Alta") ||
+    (isShort && emaAlignmentInfo.label === "Queda")
+  ) {
+    addFactor(1.8, 1.8);
+  } else if (emaAlignmentInfo.label === "Misto") {
+    addFactor(1.8, 0.9);
+  } else if (
+    (isLong && emaAlignmentInfo.label === "Queda") ||
+    (isShort && emaAlignmentInfo.label === "Alta")
+  ) {
+    addFactor(1.8, 0.2, true);
+  }
+
+  if (
+    (isLong && structureInfo.label === "Alta") ||
+    (isShort && structureInfo.label === "Queda")
+  ) {
+    addFactor(1.5, 1.5);
+  } else if (structureInfo.label === "Lateral") {
+    addFactor(1.5, 1);
+  } else if (
+    (isLong && structureInfo.label === "Queda") ||
+    (isShort && structureInfo.label === "Alta")
+  ) {
+    addFactor(1.5, 0.4, true);
+  }
+
+  return {
+    potentialPercent: possible > 0 ? (earned / possible) * 100 : null,
+    positives,
+    negatives,
+  };
+}
+
 function dividerLine() {
   return (
     <div
@@ -1000,7 +1135,7 @@ function dividerLine() {
   );
 }
 
-function sectionTitle(title: string, rightText?: string) {
+function sectionTitle(title: string, rightNode?: React.ReactNode) {
   return (
     <div
       style={{
@@ -1023,18 +1158,7 @@ function sectionTitle(title: string, rightText?: string) {
         {title}
       </div>
 
-      {rightText && (
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: "#0f172a",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {rightText}
-        </div>
-      )}
+      {rightNode && <div>{rightNode}</div>}
     </div>
   );
 }
@@ -1067,6 +1191,73 @@ function infoRow(label: string, value: string, highlight = false) {
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function pairedInfoRow(
+  leftLabel: string,
+  leftValue: string,
+  rightLabel: string,
+  rightValue: string
+) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 16,
+        alignItems: "start",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          minWidth: 0,
+        }}
+      >
+        <strong style={{ color: "#1e293b", flexShrink: 0 }}>{leftLabel}</strong>
+        <span style={{ color: "#334155", textAlign: "right", minWidth: 0 }}>
+          {leftValue}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          minWidth: 0,
+        }}
+      >
+        <strong style={{ color: "#1e293b", flexShrink: 0 }}>{rightLabel}</strong>
+        <span style={{ color: "#334155", textAlign: "right", minWidth: 0 }}>
+          {rightValue}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function metricBadge(label: string, value: string) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 12,
+        fontWeight: 700,
+        color: "#0f172a",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ color: "#64748b" }}>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
@@ -1201,19 +1392,6 @@ function outcomeListCard(
               bollinger?.close_position_in_band ?? null
             );
 
-            const signalQuality = buildSignalQuality({
-              sideLabel,
-              structureInfo,
-              emaAlignmentInfo,
-              priceVsEma20Info,
-              priceVsEma40Info,
-              supportDistanceInfo,
-              resistanceDistanceInfo,
-              macdInfo,
-              triggerCandleInfo,
-              bollingerInfo,
-            });
-
             const confirmation = buildBbReversalConfirmation({
               sideLabel,
               structureInfo,
@@ -1226,10 +1404,41 @@ function outcomeListCard(
               macdInfo,
             });
 
-            const decisionQuickInfo =
-              confirmation.confirmationPercent === null
-                ? undefined
-                : `Confirmação ${formatPercent(confirmation.confirmationPercent)}`;
+            const developmentPotential = buildDevelopmentPotential({
+              sideLabel,
+              structureInfo,
+              priceVsEma20Info,
+              priceVsEma40Info,
+              emaAlignmentInfo,
+              ema20SlopeInfo,
+              supportDistanceInfo,
+              resistanceDistanceInfo,
+              triggerCandleInfo,
+              candleVsAtrInfo,
+              macdInfo,
+              ifrInfo,
+              atrInfo,
+            });
+
+            const rightMetrics = (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                }}
+              >
+                {metricBadge(
+                  "Confirmação",
+                  formatPercent(confirmation.confirmationPercent)
+                )}
+                {metricBadge(
+                  "Desenvolvimento",
+                  formatPercent(developmentPotential.potentialPercent)
+                )}
+              </div>
+            );
 
             return (
               <div
@@ -1268,17 +1477,24 @@ function outcomeListCard(
                     borderBottom: `1px solid ${headerColors.borderBottom}`,
                   }}
                 >
-                  {sectionTitle("Decisão rápida", decisionQuickInfo)}
+                  {sectionTitle("Decisão rápida", rightMetrics)}
                 </div>
 
                 <div style={{ padding: 14 }}>
-                  <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "grid", gap: 8 }}>
                     {infoRow("Lado:", sideLabel, true)}
-                    {infoRow("Qualidade:", signalQuality, true)}
-                    {infoRow("Trigger:", formatDateTime(item.trigger_time ?? null))}
-                    {infoRow("Fechamento:", formatDateTime(item.close_time ?? null))}
-                    {infoRow("Entrada:", formatPrice(item.entry_price))}
-                    {infoRow("Saída:", formatPrice(item.close_price))}
+                    {pairedInfoRow(
+                      "Trigger:",
+                      formatDateTime(item.trigger_time ?? null),
+                      "Fechamento:",
+                      formatDateTime(item.close_time ?? null)
+                    )}
+                    {pairedInfoRow(
+                      "Entrada:",
+                      formatPrice(item.entry_price),
+                      "Saída:",
+                      formatPrice(item.close_price)
+                    )}
                   </div>
 
                   {dividerLine()}
