@@ -22,12 +22,24 @@ type OutcomeLikeCase = RunDetailsResponse["cases"][number] & {
   outcome?: string | null;
 };
 
+type RsiContext = {
+  value: number | null;
+  formattedValue: string;
+  label: string;
+  trend: string;
+  zone: string;
+  summary: string;
+};
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
+
   if (typeof value === "string") {
-    const parsed = Number(value);
+    const normalized = value.replace(",", ".").trim();
+    const parsed = Number(normalized);
     return Number.isFinite(parsed) ? parsed : null;
   }
+
   return null;
 }
 
@@ -42,6 +54,104 @@ function formatPrice(value: unknown): string {
   return numberValue.toFixed(5);
 }
 
+function formatRsiNumber(value: unknown): string {
+  const numericValue = toNumber(value);
+  if (numericValue === null) return "-";
+  return numericValue.toFixed(2).replace(".", ",");
+}
+
+function formatRsiContext(value: unknown): RsiContext {
+  const numericValue = toNumber(value);
+
+  if (numericValue === null) {
+    return {
+      value: null,
+      formattedValue: "-",
+      label: "Sem RSI",
+      trend: "Indefinida",
+      zone: "Sem dados",
+      summary: "RSI indisponível",
+    };
+  }
+
+  const formattedValue = numericValue.toFixed(2).replace(".", ",");
+
+  if (numericValue < 20) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Sobrevenda extrema",
+      trend: "Baixista forte",
+      zone: "Possível exaustão de queda",
+      summary: `RSI ${formattedValue} • Sobrevenda extrema • Baixista forte`,
+    };
+  }
+
+  if (numericValue < 30) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Sobrevenda",
+      trend: "Baixista",
+      zone: "Possível reversão",
+      summary: `RSI ${formattedValue} • Sobrevenda • Baixista`,
+    };
+  }
+
+  if (numericValue < 45) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Fraqueza",
+      trend: "Leve baixa",
+      zone: "Mercado fraco",
+      summary: `RSI ${formattedValue} • Fraqueza • Leve baixa`,
+    };
+  }
+
+  if (numericValue < 55) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Neutro",
+      trend: "Indefinida",
+      zone: "Equilíbrio",
+      summary: `RSI ${formattedValue} • Neutro • Equilíbrio`,
+    };
+  }
+
+  if (numericValue < 70) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Alta com força",
+      trend: "Altista",
+      zone: "Perto de sobrecompra",
+      summary: `RSI ${formattedValue} • Alta com força • Perto de sobrecompra`,
+    };
+  }
+
+  if (numericValue < 80) {
+    return {
+      value: numericValue,
+      formattedValue,
+      label: "Sobrecompra",
+      trend: "Altista forte",
+      zone: "Mercado esticado",
+      summary: `RSI ${formattedValue} • Sobrecompra • Mercado esticado`,
+    };
+  }
+
+  return {
+    value: numericValue,
+    formattedValue,
+    label: "Sobrecompra extrema",
+    trend: "Altista muito forte",
+    zone: "Exaustão provável",
+    summary: `RSI ${formattedValue} • Sobrecompra extrema • Exaustão provável`,
+  };
+}
+
 function readMetricNumber(metrics: unknown, key: string): number | null {
   if (!metrics || typeof metrics !== "object") return null;
   const raw = (metrics as Record<string, unknown>)[key];
@@ -54,9 +164,7 @@ function countCasesByOutcome(cases: OutcomeLikeCase[]) {
   let timeouts = 0;
 
   for (const item of cases) {
-    const outcome = String(item.outcome ?? "")
-      .trim()
-      .toLowerCase();
+    const outcome = String(item.outcome ?? "").trim().toLowerCase();
 
     if (outcome === "hit") {
       hits += 1;
@@ -96,19 +204,13 @@ function buildSummary(runDetails: RunDetailsResponse) {
   const totalTimeouts =
     readMetricNumber(metrics, "total_timeouts") ?? fallbackCounts.timeouts;
 
-  const computedHitRate =
-    totalCases > 0 ? (totalHits / totalCases) * 100 : 0;
-  const computedFailRate =
-    totalCases > 0 ? (totalFails / totalCases) * 100 : 0;
+  const computedHitRate = totalCases > 0 ? (totalHits / totalCases) * 100 : 0;
+  const computedFailRate = totalCases > 0 ? (totalFails / totalCases) * 100 : 0;
   const computedTimeoutRate =
     totalCases > 0 ? (totalTimeouts / totalCases) * 100 : 0;
 
-  const hitRate =
-    readMetricNumber(metrics, "hit_rate") ?? computedHitRate;
-
-  const failRate =
-    readMetricNumber(metrics, "fail_rate") ?? computedFailRate;
-
+  const hitRate = readMetricNumber(metrics, "hit_rate") ?? computedHitRate;
+  const failRate = readMetricNumber(metrics, "fail_rate") ?? computedFailRate;
   const timeoutRate =
     readMetricNumber(metrics, "timeout_rate") ?? computedTimeoutRate;
 
@@ -172,8 +274,12 @@ function buildOutcomeLists(cases: OutcomeLikeCase[]) {
   );
 
   const sortByTimeDesc = (a: OutcomeLikeCase, b: OutcomeLikeCase) => {
-    const aTime = new Date(a.close_time ?? a.entry_time ?? a.trigger_time ?? 0).getTime();
-    const bTime = new Date(b.close_time ?? b.entry_time ?? b.trigger_time ?? 0).getTime();
+    const aTime = new Date(
+      a.close_time ?? a.entry_time ?? a.trigger_time ?? 0
+    ).getTime();
+    const bTime = new Date(
+      b.close_time ?? b.entry_time ?? b.trigger_time ?? 0
+    ).getTime();
     return bTime - aTime;
   };
 
@@ -194,7 +300,6 @@ function getTradeSideLabel(item: OutcomeLikeCase): string {
       : "";
 
   const rawSide = String(item.side ?? "").trim().toLowerCase();
-
   const resolved = metadataTradeBias || rawSide;
 
   if (resolved === "long" || resolved === "buy" || resolved === "compra") {
@@ -206,6 +311,34 @@ function getTradeSideLabel(item: OutcomeLikeCase): string {
   }
 
   return "-";
+}
+
+function getCaseRsiAtValidation(item: OutcomeLikeCase): unknown {
+  if (!item.metadata || typeof item.metadata !== "object") {
+    return null;
+  }
+
+  const metadata = item.metadata as Record<string, unknown>;
+  const analysisSnapshot =
+    metadata.analysis_snapshot &&
+    typeof metadata.analysis_snapshot === "object"
+      ? (metadata.analysis_snapshot as Record<string, unknown>)
+      : null;
+
+  if (!analysisSnapshot) {
+    return null;
+  }
+
+  const momentum =
+    analysisSnapshot.momentum && typeof analysisSnapshot.momentum === "object"
+      ? (analysisSnapshot.momentum as Record<string, unknown>)
+      : null;
+
+  if (!momentum) {
+    return null;
+  }
+
+  return momentum.rsi_14 ?? null;
 }
 
 function outcomeListCard(
@@ -241,40 +374,65 @@ function outcomeListCard(
 
       {items.length > 0 && (
         <div style={{ display: "grid", gap: 10 }}>
-          {items.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                border: "1px solid #e2e8f0",
-                borderLeft: `4px solid ${accentColor}`,
-                borderRadius: 12,
-                padding: 12,
-                background: "#f8fafc",
-                fontSize: 14,
-                color: "#334155",
-                lineHeight: 1.6,
-              }}
-            >
-              <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
-                {item.id}
+          {items.map((item) => {
+            const rsiValue = getCaseRsiAtValidation(item);
+            const rsiInfo = formatRsiContext(rsiValue);
+
+            return (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderLeft: `4px solid ${accentColor}`,
+                  borderRadius: 12,
+                  padding: 12,
+                  background: "#f8fafc",
+                  fontSize: 14,
+                  color: "#334155",
+                  lineHeight: 1.6,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 700,
+                    color: "#0f172a",
+                    marginBottom: 6,
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {item.id}
+                </div>
+
+                <div>
+                  <strong>Lado:</strong> {getTradeSideLabel(item)}
+                </div>
+                <div>
+                  <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
+                </div>
+                <div>
+                  <strong>Fechamento:</strong> {formatDateTime(item.close_time ?? null)}
+                </div>
+                <div>
+                  <strong>Entrada:</strong> {formatPrice(item.entry_price)}
+                </div>
+                <div>
+                  <strong>Saída:</strong> {formatPrice(item.close_price)}
+                </div>
+                <div>
+                  <strong>RSI na validação:</strong> {formatRsiNumber(rsiValue)}
+                </div>
+                <div>
+                  <strong>Leitura RSI:</strong> {rsiInfo.label}
+                </div>
+                <div>
+                  <strong>Tendência RSI:</strong> {rsiInfo.trend}
+                </div>
+                <div>
+                  <strong>Zona RSI:</strong> {rsiInfo.zone}
+                </div>
               </div>
-              <div>
-                <strong>Lado:</strong> {getTradeSideLabel(item)}
-              </div>
-              <div>
-                <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
-              </div>
-              <div>
-                <strong>Fechamento:</strong> {formatDateTime(item.close_time ?? null)}
-              </div>
-              <div>
-                <strong>Entrada:</strong> {formatPrice(item.entry_price)}
-              </div>
-              <div>
-                <strong>Saída:</strong> {formatPrice(item.close_price)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -336,8 +494,7 @@ function RunSummaryCard({
               <strong>ID:</strong> {runDetails.run.id}
             </div>
             <div>
-              <strong>Strategy:</strong>{" "}
-              {runDetails.run.strategy_key ?? "(sem strategy_key)"}
+              <strong>Strategy:</strong> {runDetails.run.strategy_key ?? "(sem strategy_key)"}
             </div>
             <div>
               <strong>Symbol:</strong> {runDetails.run.symbol}
@@ -387,13 +544,11 @@ function RunSummaryCard({
               }}
             >
               <div>
-                <strong>Intervalo:</strong>{" "}
-                {formatDateTime(runDetails.run.start_at)} →{" "}
+                <strong>Intervalo:</strong> {formatDateTime(runDetails.run.start_at)} →{" "}
                 {formatDateTime(runDetails.run.end_at)}
               </div>
               <div>
-                <strong>Candles analisados:</strong>{" "}
-                {runDetails.run.candles_count ?? "-"}
+                <strong>Candles analisados:</strong> {runDetails.run.candles_count ?? "-"}
               </div>
             </div>
 

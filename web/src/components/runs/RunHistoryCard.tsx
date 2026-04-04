@@ -19,6 +19,126 @@ type RunHistoryCardProps = {
   canCreateRuns: boolean;
 };
 
+type RunHistoryCardItem = RunHistoryItem & {
+  rsi_at_validation?: number | string | null;
+};
+
+type RsiContext = {
+  value: number | null;
+  label: string;
+  trend: string;
+  zone: string;
+  summary: string;
+};
+
+function formatRsiNumber(value: number | string | null | undefined): string {
+  if (value == null || value === "") {
+    return "-";
+  }
+
+  const numericValue = Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return "-";
+  }
+
+  return numericValue.toFixed(2).replace(".", ",");
+}
+
+function formatRsiContext(value: number | string | null | undefined): RsiContext {
+  if (value == null || value === "") {
+    return {
+      value: null,
+      label: "Sem RSI",
+      trend: "Indefinida",
+      zone: "Sem dados",
+      summary: "RSI indisponível",
+    };
+  }
+
+  const numericValue = Number(value);
+
+  if (Number.isNaN(numericValue)) {
+    return {
+      value: null,
+      label: "Sem RSI",
+      trend: "Indefinida",
+      zone: "Sem dados",
+      summary: "RSI indisponível",
+    };
+  }
+
+  const valueText = numericValue.toFixed(2).replace(".", ",");
+
+  if (numericValue < 20) {
+    return {
+      value: numericValue,
+      label: "Sobrevenda extrema",
+      trend: "Baixista forte",
+      zone: "Possível exaustão de queda",
+      summary: `RSI ${valueText} • Sobrevenda extrema • Baixista forte`,
+    };
+  }
+
+  if (numericValue < 30) {
+    return {
+      value: numericValue,
+      label: "Sobrevenda",
+      trend: "Baixista",
+      zone: "Possível reversão",
+      summary: `RSI ${valueText} • Sobrevenda • Baixista`,
+    };
+  }
+
+  if (numericValue < 45) {
+    return {
+      value: numericValue,
+      label: "Fraqueza",
+      trend: "Leve baixa",
+      zone: "Mercado fraco",
+      summary: `RSI ${valueText} • Fraqueza • Leve baixa`,
+    };
+  }
+
+  if (numericValue < 55) {
+    return {
+      value: numericValue,
+      label: "Neutro",
+      trend: "Indefinida",
+      zone: "Equilíbrio",
+      summary: `RSI ${valueText} • Neutro • Equilíbrio`,
+    };
+  }
+
+  if (numericValue < 70) {
+    return {
+      value: numericValue,
+      label: "Alta com força",
+      trend: "Altista",
+      zone: "Perto de sobrecompra",
+      summary: `RSI ${valueText} • Alta com força • Perto de sobrecompra`,
+    };
+  }
+
+  if (numericValue < 80) {
+    return {
+      value: numericValue,
+      label: "Sobrecompra",
+      trend: "Altista forte",
+      zone: "Mercado esticado",
+      summary: `RSI ${valueText} • Sobrecompra • Mercado esticado`,
+    };
+  }
+
+  return {
+    value: numericValue,
+    label: "Sobrecompra extrema",
+    trend: "Altista muito forte",
+    zone: "Exaustão provável",
+    summary: `RSI ${valueText} • Sobrecompra extrema • Exaustão provável`,
+  };
+}
+
 function RunHistoryCard({
   sidebarCardStyle,
   runSearch,
@@ -138,6 +258,9 @@ function RunHistoryCard({
         <div style={{ display: "grid", gap: 12 }}>
           {filteredRuns.map((run) => {
             const selected = selectedRunId === run.id;
+            const runItem = run as RunHistoryCardItem;
+            const rsiInfo = formatRsiContext(runItem.rsi_at_validation);
+            const formattedRsi = formatRsiNumber(runItem.rsi_at_validation);
 
             return (
               <button
@@ -192,6 +315,18 @@ function RunHistoryCard({
                   </div>
                   <div>
                     <strong>Cases:</strong> {run.cases_count}
+                  </div>
+                  <div>
+                    <strong>RSI na validação:</strong> {formattedRsi}
+                  </div>
+                  <div>
+                    <strong>Leitura RSI:</strong> {rsiInfo.label}
+                  </div>
+                  <div>
+                    <strong>Tendência RSI:</strong> {rsiInfo.trend}
+                  </div>
+                  <div>
+                    <strong>Zona RSI:</strong> {rsiInfo.zone}
                   </div>
                 </div>
               </button>
