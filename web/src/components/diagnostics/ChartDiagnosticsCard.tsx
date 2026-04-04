@@ -10,6 +10,85 @@ type ChartDiagnosticsCardProps = {
   feedDiagnostics: FeedDiagnostics;
 };
 
+type CoverageStatus = {
+  level: "good" | "warning" | "danger";
+  title: string;
+  message: string;
+  background: string;
+  border: string;
+  color: string;
+};
+
+function parseDateValue(value: string): number | null {
+  if (!value || value === "-") return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
+  const now = Date.now();
+  const lastCloseMs = parseDateValue(feedDiagnostics.coverageLastCloseUtc);
+  const startMs = parseDateValue(feedDiagnostics.coverageStartUtc);
+  const endMs = parseDateValue(feedDiagnostics.coverageEndUtc);
+  const count = Number(feedDiagnostics.coverageCount || 0);
+  const mode = feedDiagnostics.coverageMode;
+
+  if (!count || !lastCloseMs || !startMs || !endMs) {
+    return {
+      level: "danger",
+      title: "Cobertura insuficiente",
+      message:
+        "A base local não devolveu candles suficientes para validar a janela pedida. O gráfico pode ficar vazio ou incompleto.",
+      background: "#fef2f2",
+      border: "#fca5a5",
+      color: "#991b1b",
+    };
+  }
+
+  const ageMinutes = (now - lastCloseMs) / 60000;
+  const requestedWindowMinutes = Math.max((endMs - startMs) / 60000, 1);
+  const averageSpacingMinutes = requestedWindowMinutes / Math.max(count, 1);
+
+  const isClearlyStale = ageMinutes > Math.max(averageSpacingMinutes * 6, 180);
+  const isSlightlyStale = ageMinutes > Math.max(averageSpacingMinutes * 3, 45);
+  const isCoverageThin =
+    (mode === "full" && count < 30) || (mode === "incremental" && count < 5);
+
+  if (isClearlyStale || isCoverageThin) {
+    return {
+      level: "danger",
+      title: "Cobertura crítica",
+      message:
+        "A cobertura local está curta ou antiga demais para esta seleção. O gráfico pode não refletir a ponta mais recente com confiança.",
+      background: "#fef2f2",
+      border: "#fca5a5",
+      color: "#991b1b",
+    };
+  }
+
+  if (isSlightlyStale) {
+    return {
+      level: "warning",
+      title: "Cobertura aceitável com atenção",
+      message:
+        "A base local ainda está utilizável, mas a ponta parece um pouco antiga. Convém observar se o sync incremental está a atualizar normalmente.",
+      background: "#fffbeb",
+      border: "#fcd34d",
+      color: "#92400e",
+    };
+  }
+
+  return {
+    level: "good",
+    title: "Cobertura saudável",
+    message:
+      "A cobertura local parece consistente com a janela pedida e a ponta recente não indica atraso relevante.",
+    background: "#ecfdf5",
+    border: "#86efac",
+    color: "#166534",
+  };
+}
+
 function ChartDiagnosticsCard({
   mainCardStyle,
   sectionTitleStyle,
@@ -17,6 +96,8 @@ function ChartDiagnosticsCard({
   debugItemStyle,
   feedDiagnostics,
 }: ChartDiagnosticsCardProps) {
+  const coverageStatus = getCoverageStatus(feedDiagnostics);
+
   return (
     <div style={mainCardStyle}>
       <h2 style={sectionTitleStyle}>Diagnóstico técnico do feed</h2>
@@ -30,7 +111,24 @@ function ChartDiagnosticsCard({
         }}
       >
         Este painel existe para validar se o preço divergente vem de provider,
-        sessão, timezone, delayed feed ou mock feed.
+        sessão, timezone, delayed feed, mock feed ou cobertura insuficiente da
+        base local.
+      </div>
+
+      <div
+        style={{
+          marginBottom: 16,
+          padding: 12,
+          borderRadius: 12,
+          background: coverageStatus.background,
+          border: `1px solid ${coverageStatus.border}`,
+          color: coverageStatus.color,
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        <strong>{coverageStatus.title}</strong>
+        <div>{coverageStatus.message}</div>
       </div>
 
       <div style={debugGridStyle}>
@@ -117,6 +215,42 @@ function ChartDiagnosticsCard({
             <strong>Tick mock:</strong> {feedDiagnostics.tickIsMock}
           </div>
         </div>
+
+        <div
+          style={{
+            ...debugItemStyle,
+            borderColor: coverageStatus.border,
+            background: coverageStatus.background,
+          }}
+        >
+          <div style={{ color: coverageStatus.color, marginBottom: 8 }}>
+            <strong>Status da cobertura:</strong> {coverageStatus.title}
+          </div>
+          <div>
+            <strong>Coverage mode:</strong> {feedDiagnostics.coverageMode}
+          </div>
+          <div>
+            <strong>Coverage count:</strong> {feedDiagnostics.coverageCount}
+          </div>
+          <div>
+            <strong>Coverage start UTC:</strong> {feedDiagnostics.coverageStartUtc}
+          </div>
+          <div>
+            <strong>Coverage end UTC:</strong> {feedDiagnostics.coverageEndUtc}
+          </div>
+          <div>
+            <strong>First open UTC:</strong> {feedDiagnostics.coverageFirstOpenUtc}
+          </div>
+          <div>
+            <strong>Last close UTC:</strong> {feedDiagnostics.coverageLastCloseUtc}
+          </div>
+          <div>
+            <strong>First open local:</strong> {feedDiagnostics.coverageFirstOpenLocal}
+          </div>
+          <div>
+            <strong>Last close local:</strong> {feedDiagnostics.coverageLastCloseLocal}
+          </div>
+        </div>
       </div>
 
       <div
@@ -134,8 +268,9 @@ function ChartDiagnosticsCard({
         Se <strong>provider</strong>, <strong>session</strong>,{" "}
         <strong>timezone</strong>, <strong>delayed</strong> ou <strong>mock</strong>{" "}
         vierem como “-”, então o backend ainda não está a enviar essa informação.
-        Nesse caso, o próximo ajuste tem de ser no endpoint <strong>/candles</strong>{" "}
-        e no evento websocket <strong>candle_tick</strong>.
+        Se <strong>coverage count</strong> estiver baixo ou <strong>last close UTC</strong>{" "}
+        ficar muito atrás do tempo atual, então o problema já não é só de feed:
+        pode ser cobertura insuficiente da base local ou falha no sync incremental.
       </div>
     </div>
   );

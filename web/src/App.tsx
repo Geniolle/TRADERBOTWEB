@@ -215,6 +215,7 @@ function App() {
 
   const {
     candles,
+    coverageMeta,
     setCandles,
     loadingCandles: loadingCandlesFromHttp,
     candlesError: candlesErrorFromHttp,
@@ -309,6 +310,7 @@ function App() {
 
   const { feedDiagnostics, overlays, legendCloseColor } = useChartDerivedData({
     candles,
+    coverageMeta,
     runDetails,
     selectedCaseId,
     chartSize,

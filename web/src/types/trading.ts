@@ -71,6 +71,17 @@ export type CandleListResponse = {
   items: CandleItem[];
 };
 
+export type CandleCoverageMeta = {
+  symbol: string;
+  timeframe: string;
+  mode: "full" | "incremental";
+  count: number;
+  start_at: string;
+  end_at: string;
+  first_open_time: string | null;
+  last_close_time: string | null;
+};
+
 export type CandleTickState =
   | {
       symbol: string;
@@ -160,6 +171,14 @@ export type FeedDiagnostics = {
   tickIsDelayed: string;
   tickIsMock: string;
   runtimeTimezone: string;
+  coverageMode: string;
+  coverageCount: number;
+  coverageStartUtc: string;
+  coverageEndUtc: string;
+  coverageFirstOpenUtc: string;
+  coverageLastCloseUtc: string;
+  coverageFirstOpenLocal: string;
+  coverageLastCloseLocal: string;
 };
 
 export type HealthResponse = {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
-import type { CandleItem, CandleListResponse } from "../types/trading";
+import type { CandleCoverageMeta, CandleItem, CandleListResponse } from "../types/trading";
 
 type UseCandlesParams = {
   effectiveChartSymbol: string;
@@ -12,6 +12,7 @@ type UseCandlesParams = {
 
 type UseCandlesResult = {
   candles: CandleItem[];
+  coverageMeta: CandleCoverageMeta | null;
   setCandles: React.Dispatch<React.SetStateAction<CandleItem[]>>;
   loadingCandles: boolean;
   candlesError: string;
@@ -127,27 +128,79 @@ function sortCandles(items: CandleItem[]): CandleItem[] {
   });
 }
 
-function toCandleItems(payload: unknown): CandleItem[] {
+function buildCoverageMeta(
+  payload: Partial<CandleListResponse> | null,
+  symbol: string,
+  timeframe: string,
+  mode: "full" | "incremental",
+  startAt: string,
+  endAt: string,
+  count: number
+): CandleCoverageMeta {
+  return {
+    symbol,
+    timeframe,
+    mode: (payload?.mode === "incremental" ? "incremental" : mode) as
+      | "full"
+      | "incremental",
+    count: typeof payload?.count === "number" ? payload.count : count,
+    start_at: typeof payload?.start_at === "string" ? payload.start_at : startAt,
+    end_at: typeof payload?.end_at === "string" ? payload.end_at : endAt,
+    first_open_time:
+      typeof payload?.first_open_time === "string" ? payload.first_open_time : null,
+    last_close_time:
+      typeof payload?.last_close_time === "string" ? payload.last_close_time : null,
+  };
+}
+
+function parsePayload(
+  payload: unknown,
+  symbol: string,
+  timeframe: string,
+  mode: "full" | "incremental",
+  startAt: string,
+  endAt: string
+): { items: CandleItem[]; coverageMeta: CandleCoverageMeta } {
   if (Array.isArray(payload)) {
-    return sortCandles(
+    const items = sortCandles(
       payload
         .map((item) => normalizeCandleItem(item))
         .filter((item): item is CandleItem => item !== null)
     );
+
+    return {
+      items,
+      coverageMeta: buildCoverageMeta(null, symbol, timeframe, mode, startAt, endAt, items.length),
+    };
   }
 
   if (payload && typeof payload === "object") {
     const response = payload as Partial<CandleListResponse>;
-    const items = Array.isArray(response.items) ? response.items : [];
-
-    return sortCandles(
-      items
+    const rawItems = Array.isArray(response.items) ? response.items : [];
+    const items = sortCandles(
+      rawItems
         .map((item) => normalizeCandleItem(item))
         .filter((item): item is CandleItem => item !== null)
     );
+
+    return {
+      items,
+      coverageMeta: buildCoverageMeta(
+        response,
+        symbol,
+        timeframe,
+        mode,
+        startAt,
+        endAt,
+        items.length
+      ),
+    };
   }
 
-  return [];
+  return {
+    items: [],
+    coverageMeta: buildCoverageMeta(null, symbol, timeframe, mode, startAt, endAt, 0),
+  };
 }
 
 function useCandles({
@@ -155,6 +208,7 @@ function useCandles({
   effectiveChartTimeframe,
 }: UseCandlesParams): UseCandlesResult {
   const [candles, setCandles] = useState<CandleItem[]>([]);
+  const [coverageMeta, setCoverageMeta] = useState<CandleCoverageMeta | null>(null);
   const [loadingCandles, setLoadingCandles] = useState(false);
   const [candlesError, setCandlesError] = useState("");
 
@@ -173,7 +227,7 @@ function useCandles({
       const timeframe = normalizeTimeframe(effectiveChartTimeframe);
 
       if (!symbol || !timeframe) {
-        return [];
+        return { items: [], coverageMeta: null as CandleCoverageMeta | null };
       }
 
       const currentRequestKey = `${symbol}::${timeframe}`;
@@ -209,16 +263,16 @@ function useCandles({
         }
 
         const payload = await response.json();
-        const normalized = toCandleItems(payload);
+        const parsed = parsePayload(payload, symbol, timeframe, mode, startAt, endAt);
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
-          return [];
+          return { items: [], coverageMeta: null as CandleCoverageMeta | null };
         }
 
-        return normalized;
+        return parsed;
       } catch (error) {
         if (activeRequestKeyRef.current !== `${symbol}::${timeframe}`) {
-          return [];
+          return { items: [], coverageMeta: null as CandleCoverageMeta | null };
         }
 
         setCandlesError(
@@ -227,7 +281,7 @@ function useCandles({
             : "Erro desconhecido ao carregar candles locais."
         );
 
-        return [];
+        return { items: [], coverageMeta: null as CandleCoverageMeta | null };
       } finally {
         if (activeRequestKeyRef.current === `${symbol}::${timeframe}`) {
           setLoadingCandles(false);
@@ -239,10 +293,14 @@ function useCandles({
 
   const reloadCandles = useCallback(
     async (showLoader = true) => {
-      const normalized = await fetchCandles("incremental", showLoader);
+      const parsed = await fetchCandles("incremental", showLoader);
 
-      if (normalized.length > 0) {
-        setCandles(normalized);
+      if (parsed.items.length > 0) {
+        setCandles(parsed.items);
+      }
+
+      if (parsed.coverageMeta) {
+        setCoverageMeta(parsed.coverageMeta);
       }
     },
     [fetchCandles]
@@ -255,19 +313,22 @@ function useCandles({
     if (!symbol || !timeframe) {
       activeRequestKeyRef.current = requestKey;
       setCandles([]);
+      setCoverageMeta(null);
       setLoadingCandles(false);
       setCandlesError("");
       return;
     }
 
     void (async () => {
-      const normalized = await fetchCandles("full", true);
-      setCandles(normalized);
+      const parsed = await fetchCandles("full", true);
+      setCandles(parsed.items);
+      setCoverageMeta(parsed.coverageMeta);
     })();
   }, [requestKey, fetchCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 
   return {
     candles,
+    coverageMeta,
     setCandles,
     loadingCandles,
     candlesError,

@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import type {
+  CandleCoverageMeta,
   CandleItem,
   CandleTickState,
   FeedDiagnostics,
@@ -22,6 +23,7 @@ import {
 
 type UseChartDerivedDataParams = {
   candles: CandleItem[];
+  coverageMeta: CandleCoverageMeta | null;
   runDetails: RunDetailsResponse | null;
   selectedCaseId: string;
   chartSize: {
@@ -51,6 +53,7 @@ type ExtendedRunCaseItem = RunCaseItem & {
 
 function useChartDerivedData({
   candles,
+  coverageMeta,
   runDetails,
   selectedCaseId,
   chartSize,
@@ -137,10 +140,19 @@ function useChartDerivedData({
       tickIsDelayed: formatBooleanLike(lastCandleTick?.is_delayed),
       tickIsMock: formatBooleanLike(lastCandleTick?.is_mock),
       runtimeTimezone,
+      coverageMode: coverageMeta?.mode ?? "-",
+      coverageCount: coverageMeta?.count ?? 0,
+      coverageStartUtc: formatUtcDateTime(coverageMeta?.start_at ?? null),
+      coverageEndUtc: formatUtcDateTime(coverageMeta?.end_at ?? null),
+      coverageFirstOpenUtc: formatUtcDateTime(coverageMeta?.first_open_time ?? null),
+      coverageLastCloseUtc: formatUtcDateTime(coverageMeta?.last_close_time ?? null),
+      coverageFirstOpenLocal: formatDateTime(coverageMeta?.first_open_time ?? null),
+      coverageLastCloseLocal: formatDateTime(coverageMeta?.last_close_time ?? null),
     };
   }, [
     candles,
     candleMeta,
+    coverageMeta,
     effectiveChartSymbol,
     effectiveChartTimeframe,
     lastCandleTick,
