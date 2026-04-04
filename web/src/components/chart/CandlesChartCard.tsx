@@ -51,6 +51,7 @@ type CandlesChartCardProps = {
   lastCandleTick: CandleTickState;
   legendCloseColor: string;
   indicatorSettings: IndicatorSettings;
+  showStrategyOverlays: boolean;
   onSetIndicatorEnabled: (
     key: "ema9" | "ema21" | "bollinger",
     enabled: boolean
@@ -75,6 +76,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     effectiveChartTimeframe,
     legendCloseColor,
     indicatorSettings,
+    showStrategyOverlays,
     onSetIndicatorEnabled,
     onSetBollingerPeriod,
     onSetBollingerStdDev,
@@ -101,6 +103,9 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     return buildPriceScaleData(chartData, currentPrice, CHART_HEIGHT);
   }, [chartData, currentPrice]);
 
+  const hasOverlayContent =
+    overlays.lines.length > 0 || overlays.markers.length > 0;
+
   const showMarketInfo = !loadingCandles && !candlesError;
   const showPriceScale =
     !loadingCandles && !candlesError && priceScaleData.levels.length > 0;
@@ -115,7 +120,11 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   const showEmptyState =
     !loadingCandles && !candlesError && chartData.length === 0;
   const showOverlays =
-    !loadingCandles && !candlesError && chartData.length > 0;
+    !loadingCandles &&
+    !candlesError &&
+    chartData.length > 0 &&
+    showStrategyOverlays &&
+    hasOverlayContent;
   const showFooter =
     !loadingCandles && !candlesError && chartData.length > 0;
 

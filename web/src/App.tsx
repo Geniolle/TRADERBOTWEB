@@ -215,6 +215,10 @@ function App() {
     lastCandleTick,
   });
 
+  const showStrategyOverlays = useMemo(() => {
+  return Boolean(runDetails?.run?.strategy_key);
+}, [runDetails?.run?.strategy_key]);
+
   const sidebarCardStyle: React.CSSProperties = {
     border: "1px solid #dbe2ea",
     borderRadius: 14,
@@ -414,6 +418,7 @@ function App() {
               lastCandleTick={lastCandleTick}
               legendCloseColor={legendCloseColor}
               indicatorSettings={settings}
+              showStrategyOverlays={showStrategyOverlays}
               onSetIndicatorEnabled={setIndicatorEnabled}
               onSetBollingerPeriod={setBollingerPeriod}
               onSetBollingerStdDev={setBollingerStdDev}
