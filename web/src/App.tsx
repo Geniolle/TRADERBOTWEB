@@ -1,6 +1,6 @@
 // web/src/App.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
 import SelectedCaseCard from "./components/cases/SelectedCaseCard";
@@ -163,6 +163,18 @@ function App() {
     effectiveSelectedTimeframe,
   ]);
 
+  const effectiveChartMarketType = useMemo(() => {
+    if (FORCE_REALTIME_TEST) return selectedMarketType;
+    if (!isMarketSelectionComplete) return "";
+    return selectedMarketType;
+  }, [isMarketSelectionComplete, selectedMarketType]);
+
+  const effectiveChartCatalog = useMemo(() => {
+    if (FORCE_REALTIME_TEST) return selectedCatalog;
+    if (!isMarketSelectionComplete) return "";
+    return selectedCatalog;
+  }, [isMarketSelectionComplete, selectedCatalog]);
+
   const effectiveChartSymbol = useMemo(() => {
     if (FORCE_REALTIME_TEST) return FORCED_REALTIME_SYMBOL;
     if (!isMarketSelectionComplete) return "";
@@ -202,6 +214,29 @@ function App() {
     runDetailsError,
   } = useRunDetails(selectedRunId);
 
+  const reloadCandles = useCallback(async () => {
+    return;
+  }, []);
+
+  const {
+    wsStatus,
+    lastWsEvent,
+    heartbeatCount,
+    heartbeatMessage,
+    candlesRefreshCount,
+    candlesRefreshReason,
+    lastCandleTick,
+    providerErrorMessage,
+    hasLoadedInitialCandles,
+  } = useRealtimeFeed({
+    effectiveChartMarketType,
+    effectiveChartCatalog,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    setCandles: setRealtimeCandles,
+    reloadCandles,
+  });
+
   const candles = useMemo(() => {
     if (!effectiveChartSymbol || !effectiveChartTimeframe) {
       return [];
@@ -214,23 +249,47 @@ function App() {
     );
   }, [realtimeCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 
-  const loadingCandles = false;
-  const candlesError = "";
+  const loadingCandles = useMemo(() => {
+    if (!isMarketSelectionComplete) return false;
+    if (candles.length > 0) return false;
 
-  const {
-    wsStatus,
+    return (
+      wsStatus === "connecting" ||
+      wsStatus === "connected" ||
+      wsStatus === "subscribed"
+    );
+  }, [isMarketSelectionComplete, candles.length, wsStatus]);
+
+  const candlesError = useMemo(() => {
+    if (!isMarketSelectionComplete) return "";
+
+    if (providerErrorMessage) {
+      return providerErrorMessage;
+    }
+
+    if (
+      !loadingCandles &&
+      hasLoadedInitialCandles &&
+      candles.length === 0 &&
+      lastWsEvent === "initial_candles"
+    ) {
+      return "Nenhum candle foi devolvido para esta seleção.";
+    }
+
+    if (wsStatus === "error") {
+      return "Erro na ligação websocket do gráfico.";
+    }
+
+    return "";
+  }, [
+    isMarketSelectionComplete,
+    providerErrorMessage,
+    loadingCandles,
+    hasLoadedInitialCandles,
+    candles.length,
     lastWsEvent,
-    heartbeatCount,
-    heartbeatMessage,
-    candlesRefreshCount,
-    candlesRefreshReason,
-    lastCandleTick,
-  } = useRealtimeFeed({
-    effectiveChartSymbol,
-    effectiveChartTimeframe,
-    setCandles: setRealtimeCandles,
-    reloadCandles: async () => {},
-  });
+    wsStatus,
+  ]);
 
   const { series: indicatorSeries, activeLabels: activeIndicatorLabels } =
     useChartIndicators({

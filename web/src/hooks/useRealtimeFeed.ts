@@ -1,38 +1,18 @@
-// src/hooks/useRealtimeFeed.ts
+// web/src/hooks/useRealtimeFeed.ts
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { API_WS_BASE_URL } from "../constants/config";
-import type { CandleTickState, WsEnvelope } from "../types/trading";
+import type { CandleItem, CandleTickState, WsEnvelope } from "../types/trading";
 import { upsertRealtimeCandle } from "../utils/candles";
 import { floorToMinuteIso } from "../utils/format";
 
 type UseRealtimeFeedParams = {
+  effectiveChartMarketType: string;
+  effectiveChartCatalog: string;
   effectiveChartSymbol: string;
   effectiveChartTimeframe: string;
-  setCandles: React.Dispatch<
-    React.SetStateAction<
-      Array<{
-        id: string;
-        asset_id: string | null;
-        symbol: string;
-        timeframe: string;
-        open_time: string;
-        close_time: string;
-        open: string;
-        high: string;
-        low: string;
-        close: string;
-        volume: string;
-        source: string | null;
-        provider?: string | null;
-        market_session?: string | null;
-        timezone?: string | null;
-        is_delayed?: boolean | null;
-        is_mock?: boolean | null;
-      }>
-    >
-  >;
+  setCandles: React.Dispatch<React.SetStateAction<CandleItem[]>>;
   reloadCandles: (showLoader?: boolean) => Promise<void>;
 };
 
@@ -44,20 +24,115 @@ type UseRealtimeFeedResult = {
   candlesRefreshCount: number | null;
   candlesRefreshReason: string;
   lastCandleTick: CandleTickState;
+  providerErrorMessage: string;
+  hasLoadedInitialCandles: boolean;
 };
 
+type RealtimeFeedState = {
+  scopeKey: string;
+  wsStatus: string;
+  lastWsEvent: string;
+  heartbeatCount: number | null;
+  heartbeatMessage: string;
+  candlesRefreshCount: number | null;
+  candlesRefreshReason: string;
+  lastCandleTick: CandleTickState;
+  providerErrorMessage: string;
+  hasLoadedInitialCandles: boolean;
+};
+
+const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
+  wsStatus: "disconnected",
+  lastWsEvent: "-",
+  heartbeatCount: null,
+  heartbeatMessage: "-",
+  candlesRefreshCount: null,
+  candlesRefreshReason: "-",
+  lastCandleTick: null,
+  providerErrorMessage: "",
+  hasLoadedInitialCandles: false,
+};
+
+function normalizeSymbol(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toUpperCase();
+}
+
+function normalizeTimeframe(value: unknown): string {
+  if (typeof value !== "string") return "";
+
+  const normalized = value.trim().toLowerCase();
+
+  const aliases: Record<string, string> = {
+    "1min": "1m",
+    "3min": "3m",
+    "5min": "5m",
+    "15min": "15m",
+    "30min": "30m",
+    "60min": "1h",
+    "1hr": "1h",
+    "4hr": "4h",
+    "1day": "1d",
+  };
+
+  return aliases[normalized] ?? normalized;
+}
+
+function safeNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function safeString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function toDataRecord(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== "object") {
+    return {};
+  }
+
+  return data as Record<string, unknown>;
+}
+
+function isValidCandleItem(item: unknown): item is CandleItem {
+  if (!item || typeof item !== "object") return false;
+
+  const candidate = item as Partial<CandleItem>;
+
+  return (
+    typeof candidate.symbol === "string" &&
+    typeof candidate.timeframe === "string" &&
+    typeof candidate.open_time === "string"
+  );
+}
+
 function useRealtimeFeed({
+  effectiveChartMarketType,
+  effectiveChartCatalog,
   effectiveChartSymbol,
   effectiveChartTimeframe,
   setCandles,
+  reloadCandles,
 }: UseRealtimeFeedParams): UseRealtimeFeedResult {
-  const [wsStatus, setWsStatus] = useState("disconnected");
-  const [lastWsEvent, setLastWsEvent] = useState("-");
-  const [heartbeatCount, setHeartbeatCount] = useState<number | null>(null);
-  const [heartbeatMessage, setHeartbeatMessage] = useState("-");
-  const [candlesRefreshCount, setCandlesRefreshCount] = useState<number | null>(null);
-  const [candlesRefreshReason, setCandlesRefreshReason] = useState("-");
-  const [lastCandleTick, setLastCandleTick] = useState<CandleTickState>(null);
+  const scopeKey = useMemo(() => {
+    return [
+      effectiveChartMarketType || "",
+      effectiveChartCatalog || "",
+      effectiveChartSymbol || "",
+      effectiveChartTimeframe || "",
+    ].join("::");
+  }, [
+    effectiveChartMarketType,
+    effectiveChartCatalog,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+  ]);
+
+  const [state, setState] = useState<RealtimeFeedState>({
+    scopeKey: "",
+    ...DEFAULT_RESULT,
+  });
 
   useEffect(() => {
     if (!effectiveChartSymbol || !effectiveChartTimeframe) {
@@ -65,13 +140,23 @@ function useRealtimeFeed({
     }
 
     let isMounted = true;
+
+    const currentScopeKey = scopeKey;
+    const currentSymbol = normalizeSymbol(effectiveChartSymbol);
+    const currentTimeframe = normalizeTimeframe(effectiveChartTimeframe);
+
     const socket = new WebSocket(API_WS_BASE_URL);
 
     socket.onopen = () => {
       if (!isMounted) return;
 
-      setWsStatus("connected");
-      setLastWsEvent("connected");
+      setState({
+        scopeKey: currentScopeKey,
+        ...DEFAULT_RESULT,
+        wsStatus: "connected",
+        lastWsEvent: "connected",
+      });
+
       console.log("[WS] connected");
 
       socket.send("frontend_connected");
@@ -79,60 +164,98 @@ function useRealtimeFeed({
       socket.send(
         JSON.stringify({
           action: "subscribe",
+          market_type: effectiveChartMarketType || undefined,
+          catalog: effectiveChartCatalog || undefined,
           symbol: effectiveChartSymbol,
           timeframe: effectiveChartTimeframe,
         })
       );
     };
 
-    socket.onmessage = (event) => {
+    socket.onmessage = async (event) => {
       if (!isMounted) return;
 
       console.log("[WS] message:", event.data);
 
       try {
         const parsed: WsEnvelope = JSON.parse(event.data);
-        const nextEvent = parsed.event ?? "unknown";
+        const nextEvent =
+          typeof parsed.event === "string" ? parsed.event : "unknown";
+        const data = toDataRecord(parsed.data);
 
-        if (nextEvent === "connected" || nextEvent === "subscribed" || nextEvent === "echo") {
-          setLastWsEvent(nextEvent);
+        if (
+          nextEvent === "connected" ||
+          nextEvent === "echo" ||
+          nextEvent === "subscribed"
+        ) {
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            wsStatus: nextEvent === "subscribed" ? "subscribed" : prev.wsStatus,
+            lastWsEvent: nextEvent,
+          }));
           return;
         }
 
         if (nextEvent === "heartbeat") {
-          const countValue = parsed.data?.count;
-          const messageValue = parsed.data?.message;
+          const countValue = data.count;
+          const messageValue = data.message;
 
-          setLastWsEvent("heartbeat");
-          setHeartbeatCount(
-            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
-          );
-          setHeartbeatMessage(typeof messageValue === "string" ? messageValue : "-");
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            lastWsEvent: "heartbeat",
+            heartbeatCount:
+              typeof countValue === "number"
+                ? countValue
+                : Number(countValue ?? 0),
+            heartbeatMessage:
+              typeof messageValue === "string" ? messageValue : "-",
+          }));
           return;
         }
 
-        const symbolValue =
-          typeof parsed.data?.symbol === "string" ? parsed.data.symbol : "";
-        const timeframeValue =
-          typeof parsed.data?.timeframe === "string" ? parsed.data.timeframe : "";
+        const parsedSymbol = normalizeSymbol(data.symbol);
+        const parsedTimeframe = normalizeTimeframe(data.timeframe);
 
-        const isCurrentSubscription =
-          symbolValue === effectiveChartSymbol &&
-          timeframeValue === effectiveChartTimeframe;
+        const hasSubscriptionIdentity =
+          Boolean(parsedSymbol) && Boolean(parsedTimeframe);
+
+        const isCurrentSubscription = hasSubscriptionIdentity
+          ? parsedSymbol === currentSymbol && parsedTimeframe === currentTimeframe
+          : true;
 
         if (nextEvent === "candles_refresh") {
           if (!isCurrentSubscription) {
             return;
           }
 
-          const countValue = parsed.data?.count;
-          const reasonValue = parsed.data?.reason;
+          const countValue = data.count;
+          const reasonValue = data.reason;
 
-          setLastWsEvent("candles_refresh");
-          setCandlesRefreshCount(
-            typeof countValue === "number" ? countValue : Number(countValue ?? 0)
-          );
-          setCandlesRefreshReason(typeof reasonValue === "string" ? reasonValue : "-");
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            lastWsEvent: "candles_refresh",
+            candlesRefreshCount:
+              typeof countValue === "number"
+                ? countValue
+                : Number(countValue ?? 0),
+            candlesRefreshReason:
+              typeof reasonValue === "string" ? reasonValue : "-",
+          }));
+
+          if (
+            typeof reasonValue === "string" &&
+            reasonValue.toLowerCase().includes("reload")
+          ) {
+            try {
+              await reloadCandles(false);
+            } catch (error) {
+              console.error("[WS] reloadCandles failed:", error);
+            }
+          }
+
           return;
         }
 
@@ -141,7 +264,17 @@ function useRealtimeFeed({
             return;
           }
 
-          setLastWsEvent("provider_error");
+          const errorMessage =
+            safeString(data.message) ||
+            safeString(data.error) ||
+            "Erro ao obter candles do provider.";
+
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            lastWsEvent: "provider_error",
+            providerErrorMessage: errorMessage,
+          }));
           return;
         }
 
@@ -150,19 +283,25 @@ function useRealtimeFeed({
             return;
           }
 
-          const items = Array.isArray(parsed.data?.candles) ? parsed.data.candles : [];
-          setLastWsEvent("initial_candles");
+          const items = Array.isArray(data.candles) ? data.candles : [];
 
-          setCandles(() => {
-            return items.filter(
-              (item) =>
-                item &&
-                typeof item.symbol === "string" &&
-                typeof item.timeframe === "string" &&
-                typeof item.open_time === "string"
-            );
-          });
+          const normalizedItems = items
+            .filter(isValidCandleItem)
+            .map((item) => ({
+              ...item,
+              symbol: normalizeSymbol(item.symbol),
+              timeframe: normalizeTimeframe(item.timeframe),
+            }));
 
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            lastWsEvent: "initial_candles",
+            hasLoadedInitialCandles: true,
+            providerErrorMessage: "",
+          }));
+
+          setCandles(() => normalizedItems as CandleItem[]);
           return;
         }
 
@@ -171,46 +310,50 @@ function useRealtimeFeed({
             return;
           }
 
-          const openTimeValue = parsed.data?.open_time;
-          const openValue = Number(parsed.data?.open);
-          const highValue = Number(parsed.data?.high);
-          const lowValue = Number(parsed.data?.low);
-          const closeValue = Number(parsed.data?.close);
-          const countValue = Number(parsed.data?.count);
-
+          const openTimeValue = data.open_time;
           const normalizedOpenTime =
-            typeof openTimeValue === "string" ? floorToMinuteIso(openTimeValue) : "-";
+            typeof openTimeValue === "string"
+              ? floorToMinuteIso(openTimeValue)
+              : "-";
 
           const nextTick: NonNullable<CandleTickState> = {
-            symbol: symbolValue || "-",
-            timeframe: timeframeValue || "-",
+            symbol: parsedSymbol || currentSymbol || "-",
+            timeframe: parsedTimeframe || currentTimeframe || "-",
             open_time: normalizedOpenTime,
-            open: openValue,
-            high: highValue,
-            low: lowValue,
-            close: closeValue,
-            count: countValue,
-            source: typeof parsed.data?.source === "string" ? parsed.data.source : null,
-            provider:
-              typeof parsed.data?.provider === "string" ? parsed.data.provider : null,
+            open: safeNumber(data.open),
+            high: safeNumber(data.high),
+            low: safeNumber(data.low),
+            close: safeNumber(data.close),
+            count: safeNumber(data.count),
+            source: typeof data.source === "string" ? data.source : null,
+            provider: typeof data.provider === "string" ? data.provider : null,
             market_session:
-              typeof parsed.data?.market_session === "string"
-                ? parsed.data.market_session
+              typeof data.market_session === "string"
+                ? data.market_session
                 : null,
-            timezone:
-              typeof parsed.data?.timezone === "string" ? parsed.data.timezone : null,
+            timezone: typeof data.timezone === "string" ? data.timezone : null,
             is_delayed:
-              typeof parsed.data?.is_delayed === "boolean"
-                ? parsed.data.is_delayed
-                : null,
-            is_mock:
-              typeof parsed.data?.is_mock === "boolean" ? parsed.data.is_mock : null,
+              typeof data.is_delayed === "boolean" ? data.is_delayed : null,
+            is_mock: typeof data.is_mock === "boolean" ? data.is_mock : null,
           };
 
-          setLastWsEvent("candle_tick");
-          setLastCandleTick(nextTick);
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            lastWsEvent: "candle_tick",
+            providerErrorMessage: "",
+            lastCandleTick: nextTick,
+          }));
+
           setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
+          return;
         }
+
+        setState((prev) => ({
+          ...prev,
+          scopeKey: currentScopeKey,
+          lastWsEvent: nextEvent,
+        }));
       } catch (error) {
         console.error("[WS] failed to parse message:", error);
       }
@@ -218,13 +361,26 @@ function useRealtimeFeed({
 
     socket.onerror = (error) => {
       if (!isMounted) return;
-      setWsStatus("error");
+
+      setState((prev) => ({
+        ...prev,
+        scopeKey: currentScopeKey,
+        wsStatus: "error",
+        lastWsEvent: "error",
+      }));
+
       console.error("[WS] error:", error);
     };
 
     socket.onclose = () => {
       if (!isMounted) return;
-      setWsStatus("closed");
+
+      setState((prev) => ({
+        ...prev,
+        scopeKey: currentScopeKey,
+        wsStatus: "closed",
+      }));
+
       console.log("[WS] closed");
     };
 
@@ -232,16 +388,37 @@ function useRealtimeFeed({
       isMounted = false;
       socket.close();
     };
-  }, [effectiveChartSymbol, effectiveChartTimeframe, setCandles]);
+  }, [
+    scopeKey,
+    effectiveChartMarketType,
+    effectiveChartCatalog,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    setCandles,
+    reloadCandles,
+  ]);
+
+  const visibleState = state.scopeKey === scopeKey ? state : null;
 
   return {
-    wsStatus,
-    lastWsEvent,
-    heartbeatCount,
-    heartbeatMessage,
-    candlesRefreshCount,
-    candlesRefreshReason,
-    lastCandleTick,
+    wsStatus: visibleState?.wsStatus ?? DEFAULT_RESULT.wsStatus,
+    lastWsEvent: visibleState?.lastWsEvent ?? DEFAULT_RESULT.lastWsEvent,
+    heartbeatCount:
+      visibleState?.heartbeatCount ?? DEFAULT_RESULT.heartbeatCount,
+    heartbeatMessage:
+      visibleState?.heartbeatMessage ?? DEFAULT_RESULT.heartbeatMessage,
+    candlesRefreshCount:
+      visibleState?.candlesRefreshCount ?? DEFAULT_RESULT.candlesRefreshCount,
+    candlesRefreshReason:
+      visibleState?.candlesRefreshReason ?? DEFAULT_RESULT.candlesRefreshReason,
+    lastCandleTick:
+      visibleState?.lastCandleTick ?? DEFAULT_RESULT.lastCandleTick,
+    providerErrorMessage:
+      visibleState?.providerErrorMessage ??
+      DEFAULT_RESULT.providerErrorMessage,
+    hasLoadedInitialCandles:
+      visibleState?.hasLoadedInitialCandles ??
+      DEFAULT_RESULT.hasLoadedInitialCandles,
   };
 }
 

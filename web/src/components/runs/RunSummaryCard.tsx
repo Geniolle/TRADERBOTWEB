@@ -1,6 +1,5 @@
 // web/src/components/runs/RunSummaryCard.tsx
 
-import { API_WS_BASE_URL } from "../../constants/config";
 import type { CandleTickState, RunDetailsResponse } from "../../types/trading";
 import { formatDateTime } from "../../utils/format";
 
@@ -35,6 +34,12 @@ function toNumber(value: unknown): number | null {
 function formatPercent(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "-";
   return `${value.toFixed(2)}%`;
+}
+
+function formatPrice(value: unknown): string {
+  const numberValue = toNumber(value);
+  if (numberValue === null) return "-";
+  return numberValue.toFixed(5);
 }
 
 function readMetricNumber(metrics: unknown, key: string): number | null {
@@ -157,21 +162,136 @@ function summaryMetricCard(
   );
 }
 
+function buildOutcomeLists(cases: OutcomeLikeCase[]) {
+  const hits = cases.filter(
+    (item) => String(item.outcome ?? "").trim().toLowerCase() === "hit"
+  );
+
+  const fails = cases.filter(
+    (item) => String(item.outcome ?? "").trim().toLowerCase() === "fail"
+  );
+
+  const sortByTimeDesc = (a: OutcomeLikeCase, b: OutcomeLikeCase) => {
+    const aTime = new Date(a.close_time ?? a.entry_time ?? a.trigger_time ?? 0).getTime();
+    const bTime = new Date(b.close_time ?? b.entry_time ?? b.trigger_time ?? 0).getTime();
+    return bTime - aTime;
+  };
+
+  return {
+    hits: [...hits].sort(sortByTimeDesc),
+    fails: [...fails].sort(sortByTimeDesc),
+  };
+}
+
+function getTradeSideLabel(item: OutcomeLikeCase): string {
+  const metadataTradeBias =
+    typeof item.metadata === "object" &&
+    item.metadata !== null &&
+    "trade_bias" in item.metadata
+      ? String((item.metadata as Record<string, unknown>).trade_bias ?? "")
+          .trim()
+          .toLowerCase()
+      : "";
+
+  const rawSide = String(item.side ?? "").trim().toLowerCase();
+
+  const resolved = metadataTradeBias || rawSide;
+
+  if (resolved === "long" || resolved === "buy" || resolved === "compra") {
+    return "Compra";
+  }
+
+  if (resolved === "short" || resolved === "sell" || resolved === "venda") {
+    return "Venda";
+  }
+
+  return "-";
+}
+
+function outcomeListCard(
+  title: string,
+  items: OutcomeLikeCase[],
+  accentColor: string
+) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 14,
+        padding: 16,
+        background: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: "#0f172a",
+          marginBottom: 12,
+        }}
+      >
+        {title}
+      </div>
+
+      {items.length === 0 && (
+        <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>
+          Nenhum registo nesta categoria.
+        </p>
+      )}
+
+      {items.length > 0 && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {items.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                border: "1px solid #e2e8f0",
+                borderLeft: `4px solid ${accentColor}`,
+                borderRadius: 12,
+                padding: 12,
+                background: "#f8fafc",
+                fontSize: 14,
+                color: "#334155",
+                lineHeight: 1.6,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
+                {item.id}
+              </div>
+              <div>
+                <strong>Lado:</strong> {getTradeSideLabel(item)}
+              </div>
+              <div>
+                <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
+              </div>
+              <div>
+                <strong>Fechamento:</strong> {formatDateTime(item.close_time ?? null)}
+              </div>
+              <div>
+                <strong>Entrada:</strong> {formatPrice(item.entry_price)}
+              </div>
+              <div>
+                <strong>Saída:</strong> {formatPrice(item.close_price)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RunSummaryCard({
   mainCardStyle,
   selectedRunId,
   loadingRunDetails,
   runDetailsError,
   runDetails,
-  wsStatus,
-  lastWsEvent,
-  heartbeatCount,
-  heartbeatMessage,
-  candlesRefreshCount,
-  candlesRefreshReason,
-  lastCandleTick,
 }: RunSummaryCardProps) {
   const summary = runDetails ? buildSummary(runDetails) : null;
+  const outcomeLists = runDetails
+    ? buildOutcomeLists((runDetails.cases ?? []) as OutcomeLikeCase[])
+    : { hits: [], fails: [] };
 
   return (
     <div style={mainCardStyle}>
@@ -300,60 +420,13 @@ function RunSummaryCard({
 
           <div
             style={{
-              textAlign: "center",
-              fontSize: 14,
-              color: "#475569",
-              lineHeight: 1.7,
-              paddingTop: 4,
-              borderTop: "1px solid #e2e8f0",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+              gap: 16,
             }}
           >
-            <div>
-              <strong>Atualização:</strong> candle_tick direto
-            </div>
-            <div>
-              <strong>WS:</strong> {API_WS_BASE_URL}
-            </div>
-            <div>
-              <strong>WS status:</strong> {wsStatus}
-            </div>
-            <div>
-              <strong>Último evento WS:</strong> {lastWsEvent}
-            </div>
-            <div>
-              <strong>Heartbeat count:</strong> {heartbeatCount ?? "-"}
-            </div>
-            <div>
-              <strong>Heartbeat message:</strong> {heartbeatMessage}
-            </div>
-            <div>
-              <strong>Candles refresh count:</strong> {candlesRefreshCount ?? "-"}
-            </div>
-            <div>
-              <strong>Candles refresh reason:</strong> {candlesRefreshReason}
-            </div>
-            <div>
-              <strong>Último candle tick:</strong>{" "}
-              {lastCandleTick ? formatDateTime(lastCandleTick.open_time) : "-"}
-            </div>
-            <div>
-              <strong>Tick símbolo:</strong> {lastCandleTick?.symbol ?? "-"}
-              <span style={{ margin: "0 2px" }}>•</span>
-              <strong>Tick timeframe:</strong> {lastCandleTick?.timeframe ?? "-"}
-            </div>
-            <div>
-              <strong>Tick OHLC:</strong>{" "}
-              {lastCandleTick
-                ? `${Number(lastCandleTick.open).toFixed(5)} / ${Number(
-                    lastCandleTick.high
-                  ).toFixed(5)} / ${Number(lastCandleTick.low).toFixed(5)} / ${Number(
-                    lastCandleTick.close
-                  ).toFixed(5)}`
-                : "-"}
-            </div>
-            <div>
-              <strong>Tick count:</strong> {lastCandleTick?.count ?? "-"}
-            </div>
+            {outcomeListCard("Lista de Hits", outcomeLists.hits, "#16a34a")}
+            {outcomeListCard("Lista de Fails", outcomeLists.fails, "#dc2626")}
           </div>
         </div>
       )}
