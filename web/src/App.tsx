@@ -1,6 +1,6 @@
 // web/src/App.tsx
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import ApiStatusCard from "./components/api/ApiStatusCard";
 import SelectedCaseCard from "./components/cases/SelectedCaseCard";
@@ -18,6 +18,7 @@ import {
   FORCE_REALTIME_TEST,
 } from "./constants/config";
 import useApiHealth from "./hooks/useApiHealth";
+import useCandles from "./hooks/useCandles";
 import useCandlestickChart from "./hooks/useCandlestickChart";
 import useChartDerivedData from "./hooks/useChartDerivedData";
 import useChartIndicators from "./hooks/useChartIndicators";
@@ -27,7 +28,6 @@ import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
 import useRunHistory from "./hooks/useRunHistory";
 import useStrategies from "./hooks/useStrategies";
-import type { CandleItem } from "./types/trading";
 
 type TimeframeOption = {
   value: string;
@@ -104,7 +104,6 @@ function App() {
   );
   const [selectedChartStrategyKey, setSelectedChartStrategyKey] =
     useState<string>(() => readStoredChartStrategyKey());
-  const [realtimeCandles, setRealtimeCandles] = useState<CandleItem[]>([]);
 
   useEffect(() => {
     try {
@@ -214,9 +213,16 @@ function App() {
     runDetailsError,
   } = useRunDetails(selectedRunId);
 
-  const reloadCandles = useCallback(async () => {
-    return;
-  }, []);
+  const {
+    candles,
+    setCandles,
+    loadingCandles: loadingCandlesFromHttp,
+    candlesError: candlesErrorFromHttp,
+    reloadCandles,
+  } = useCandles({
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+  });
 
   const {
     wsStatus,
@@ -233,35 +239,33 @@ function App() {
     effectiveChartCatalog,
     effectiveChartSymbol,
     effectiveChartTimeframe,
-    setCandles: setRealtimeCandles,
+    setCandles,
     reloadCandles,
   });
-
-  const candles = useMemo(() => {
-    if (!effectiveChartSymbol || !effectiveChartTimeframe) {
-      return [];
-    }
-
-    return realtimeCandles.filter(
-      (item) =>
-        item.symbol === effectiveChartSymbol &&
-        item.timeframe === effectiveChartTimeframe
-    );
-  }, [realtimeCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 
   const loadingCandles = useMemo(() => {
     if (!isMarketSelectionComplete) return false;
     if (candles.length > 0) return false;
 
     return (
+      loadingCandlesFromHttp ||
       wsStatus === "connecting" ||
       wsStatus === "connected" ||
       wsStatus === "subscribed"
     );
-  }, [isMarketSelectionComplete, candles.length, wsStatus]);
+  }, [
+    isMarketSelectionComplete,
+    candles.length,
+    loadingCandlesFromHttp,
+    wsStatus,
+  ]);
 
   const candlesError = useMemo(() => {
     if (!isMarketSelectionComplete) return "";
+
+    if (candlesErrorFromHttp) {
+      return candlesErrorFromHttp;
+    }
 
     if (providerErrorMessage) {
       return providerErrorMessage;
@@ -283,6 +287,7 @@ function App() {
     return "";
   }, [
     isMarketSelectionComplete,
+    candlesErrorFromHttp,
     providerErrorMessage,
     loadingCandles,
     hasLoadedInitialCandles,
