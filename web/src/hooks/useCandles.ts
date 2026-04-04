@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
-import type { CandleItem } from "../types/trading";
+import type { CandleItem, CandleListResponse } from "../types/trading";
 
 type UseCandlesParams = {
   effectiveChartSymbol: string;
@@ -127,6 +127,29 @@ function sortCandles(items: CandleItem[]): CandleItem[] {
   });
 }
 
+function toCandleItems(payload: unknown): CandleItem[] {
+  if (Array.isArray(payload)) {
+    return sortCandles(
+      payload
+        .map((item) => normalizeCandleItem(item))
+        .filter((item): item is CandleItem => item !== null)
+    );
+  }
+
+  if (payload && typeof payload === "object") {
+    const response = payload as Partial<CandleListResponse>;
+    const items = Array.isArray(response.items) ? response.items : [];
+
+    return sortCandles(
+      items
+        .map((item) => normalizeCandleItem(item))
+        .filter((item): item is CandleItem => item !== null)
+    );
+  }
+
+  return [];
+}
+
 function useCandles({
   effectiveChartSymbol,
   effectiveChartTimeframe,
@@ -186,13 +209,7 @@ function useCandles({
         }
 
         const payload = await response.json();
-        const items = Array.isArray(payload) ? payload : [];
-
-        const normalized = sortCandles(
-          items
-            .map((item) => normalizeCandleItem(item))
-            .filter((item): item is CandleItem => item !== null)
-        );
+        const normalized = toCandleItems(payload);
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
           return [];

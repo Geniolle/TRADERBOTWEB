@@ -59,6 +59,18 @@ export type CandleItem = {
   is_mock?: boolean | null;
 };
 
+export type CandleListResponse = {
+  symbol: string;
+  timeframe: string;
+  mode: "full" | "incremental";
+  count: number;
+  start_at: string;
+  end_at: string;
+  first_open_time: string | null;
+  last_close_time: string | null;
+  items: CandleItem[];
+};
+
 export type CandleTickState =
   | {
       symbol: string;
