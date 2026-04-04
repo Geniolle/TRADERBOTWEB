@@ -4,6 +4,7 @@ import type {
   CatalogInstrument,
   CatalogProductSummary,
   CatalogSubproduct,
+  StrategyItem,
 } from "../../types/trading";
 
 type TimeframeOption = {
@@ -16,9 +17,11 @@ type MarketFiltersCardProps = {
   loadingMarketTypes: boolean;
   loadingCatalogs: boolean;
   loadingSymbols: boolean;
+  loadingStrategies: boolean;
   marketTypesError: string;
   catalogsError: string;
   symbolsError: string;
+  strategiesError: string;
   marketTypes: CatalogProductSummary[];
   selectedMarketType: string;
   setSelectedMarketType: (value: string) => void;
@@ -31,6 +34,9 @@ type MarketFiltersCardProps = {
   selectedTimeframe: string;
   setSelectedTimeframe: (value: string) => void;
   timeframeOptions: TimeframeOption[];
+  strategies: StrategyItem[];
+  selectedStrategyKey: string;
+  setSelectedStrategyKey: (value: string) => void;
   selectedMarketTypeLabel: string;
   selectedCatalogLabel: string;
   selectedSymbolData: CatalogInstrument | null;
@@ -41,9 +47,11 @@ function MarketFiltersCard({
   loadingMarketTypes,
   loadingCatalogs,
   loadingSymbols,
+  loadingStrategies,
   marketTypesError,
   catalogsError,
   symbolsError,
+  strategiesError,
   marketTypes,
   selectedMarketType,
   setSelectedMarketType,
@@ -56,10 +64,16 @@ function MarketFiltersCard({
   selectedTimeframe,
   setSelectedTimeframe,
   timeframeOptions,
+  strategies,
+  selectedStrategyKey,
+  setSelectedStrategyKey,
   selectedMarketTypeLabel,
   selectedCatalogLabel,
   selectedSymbolData,
 }: MarketFiltersCardProps) {
+  const selectedStrategy =
+    strategies.find((item) => item.key === selectedStrategyKey) ?? null;
+
   return (
     <div style={sidebarCardStyle}>
       <h2
@@ -235,6 +249,51 @@ function MarketFiltersCard({
             ))}
           </select>
         </div>
+
+        <div
+          style={{
+            marginTop: 4,
+            paddingTop: 12,
+            borderTop: "1px solid #e2e8f0",
+          }}
+        >
+          <label
+            htmlFor="chart-strategy"
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#334155",
+            }}
+          >
+            Estratégia para analisar no gráfico
+          </label>
+
+          <select
+            id="chart-strategy"
+            value={selectedStrategyKey}
+            onChange={(e) => setSelectedStrategyKey(e.target.value)}
+            disabled={loadingStrategies || strategies.length === 0}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #cbd5e1",
+              outline: "none",
+              fontSize: 14,
+              background: "#fff",
+            }}
+          >
+            <option value="">Nenhuma estratégia</option>
+            {strategies.map((strategy) => (
+              <option key={strategy.key} value={strategy.key}>
+                {strategy.name} ({strategy.key})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loadingMarketTypes && (
@@ -268,6 +327,15 @@ function MarketFiltersCard({
         </div>
       )}
 
+      {!loadingStrategies && strategiesError && (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ color: "#dc2626", fontWeight: "bold", marginBottom: 6 }}>
+            Erro ao carregar estratégias
+          </p>
+          <p style={{ margin: 0 }}>{strategiesError}</p>
+        </div>
+      )}
+
       {!loadingSymbols &&
         !symbolsError &&
         selectedMarketType &&
@@ -295,6 +363,10 @@ function MarketFiltersCard({
             </div>
             <div>
               <strong>Timeframe:</strong> {selectedTimeframe || "-"}
+            </div>
+            <div>
+              <strong>Estratégia do gráfico:</strong>{" "}
+              {selectedStrategy ? selectedStrategy.name : "Nenhuma"}
             </div>
           </div>
         )}

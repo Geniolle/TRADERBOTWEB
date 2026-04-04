@@ -35,6 +35,7 @@ type TimeframeOption = {
 };
 
 const TIMEFRAME_STORAGE_KEY = "traderbot:selectedTimeframe";
+const CHART_STRATEGY_STORAGE_KEY = "traderbot:selectedChartStrategyKey";
 
 const TIMEFRAME_OPTIONS: TimeframeOption[] = [
   { value: "1m", label: "1m" },
@@ -51,6 +52,15 @@ function readStoredTimeframe(): string {
   try {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(TIMEFRAME_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function readStoredChartStrategyKey(): string {
+  try {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(CHART_STRATEGY_STORAGE_KEY) ?? "";
   } catch {
     return "";
   }
@@ -110,6 +120,8 @@ function App() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
     readStoredTimeframe()
   );
+  const [selectedChartStrategyKey, setSelectedChartStrategyKey] =
+    useState<string>(() => readStoredChartStrategyKey());
   const [realtimeCandles, setRealtimeCandles] = useState<CandleItem[]>([]);
 
   useEffect(() => {
@@ -125,6 +137,23 @@ function App() {
       // Ignora erros de localStorage
     }
   }, [selectedTimeframe]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+
+      if (selectedChartStrategyKey) {
+        window.localStorage.setItem(
+          CHART_STRATEGY_STORAGE_KEY,
+          selectedChartStrategyKey
+        );
+      } else {
+        window.localStorage.removeItem(CHART_STRATEGY_STORAGE_KEY);
+      }
+    } catch {
+      // Ignora erros de localStorage
+    }
+  }, [selectedChartStrategyKey]);
 
   const isSelectedTimeframeValid = useMemo(() => {
     return TIMEFRAME_OPTIONS.some((item) => item.value === selectedTimeframe);
@@ -215,9 +244,19 @@ function App() {
     lastCandleTick,
   });
 
+  const selectedChartStrategy = useMemo(() => {
+    return (
+      strategies.find((item) => item.key === selectedChartStrategyKey) ?? null
+    );
+  }, [strategies, selectedChartStrategyKey]);
+
+  const runStrategyKey = runDetails?.run?.strategy_key ?? "";
+
   const showStrategyOverlays = useMemo(() => {
-  return Boolean(runDetails?.run?.strategy_key);
-}, [runDetails?.run?.strategy_key]);
+    if (!selectedChartStrategyKey) return false;
+    if (!runStrategyKey) return false;
+    return selectedChartStrategyKey === runStrategyKey;
+  }, [selectedChartStrategyKey, runStrategyKey]);
 
   const sidebarCardStyle: React.CSSProperties = {
     border: "1px solid #dbe2ea",
@@ -335,9 +374,11 @@ function App() {
                   loadingMarketTypes={loadingMarketTypes}
                   loadingCatalogs={loadingCatalogs}
                   loadingSymbols={loadingSymbols}
+                  loadingStrategies={loadingStrategies}
                   marketTypesError={marketTypesError}
                   catalogsError={catalogsError}
                   symbolsError={symbolsError}
+                  strategiesError={strategiesError}
                   marketTypes={marketTypes}
                   selectedMarketType={selectedMarketType}
                   setSelectedMarketType={setSelectedMarketType}
@@ -350,6 +391,9 @@ function App() {
                   selectedTimeframe={effectiveSelectedTimeframe}
                   setSelectedTimeframe={setSelectedTimeframe}
                   timeframeOptions={TIMEFRAME_OPTIONS}
+                  strategies={strategies}
+                  selectedStrategyKey={selectedChartStrategyKey}
+                  setSelectedStrategyKey={setSelectedChartStrategyKey}
                   selectedMarketTypeLabel={selectedMarketTypeLabel}
                   selectedCatalogLabel={selectedCatalogLabel}
                   selectedSymbolData={selectedSymbolData}
@@ -424,6 +468,29 @@ function App() {
               onSetBollingerStdDev={setBollingerStdDev}
               activeIndicatorLabels={activeIndicatorLabels}
             />
+
+            {!showStrategyOverlays && selectedChartStrategy && (
+              <div
+                style={{
+                  ...mainCardStyle,
+                  paddingTop: 14,
+                  paddingBottom: 14,
+                  color: "#475569",
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Estratégia selecionada para o gráfico:</strong>{" "}
+                {selectedChartStrategy.name} ({selectedChartStrategy.key})
+                <br />
+                <strong>Run selecionado:</strong>{" "}
+                {runStrategyKey ? runStrategyKey : "sem strategy_key"}
+                <br />
+                Os overlays estratégicos só aparecem quando a estratégia
+                escolhida no filtro coincide com a estratégia do run
+                selecionado.
+              </div>
+            )}
 
             <RunSummaryCard
               mainCardStyle={mainCardStyle}
