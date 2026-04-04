@@ -191,7 +191,7 @@ function App() {
   } = useRunHistory({
     selectedSymbol: effectiveChartSymbol,
     selectedTimeframe: effectiveChartTimeframe,
-    strategies,
+    selectedStrategyKey: selectedChartStrategyKey,
   });
 
   const {
@@ -422,7 +422,11 @@ function App() {
                   onCreateRuns={createRuns}
                   isClearingRuns={isClearingRuns}
                   isCreatingRuns={isCreatingRuns}
-                  canCreateRuns={Boolean(effectiveChartSymbol && effectiveChartTimeframe)}
+                  canCreateRuns={Boolean(
+                    effectiveChartSymbol &&
+                      effectiveChartTimeframe &&
+                      selectedChartStrategyKey
+                  )}
                 />
 
                 <ApiStatusCard

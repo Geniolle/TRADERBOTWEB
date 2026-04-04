@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
-import type { RunHistoryItem, StrategyItem } from "../types/trading";
+import type { RunHistoryItem } from "../types/trading";
 
 type UseRunHistoryParams = {
   selectedSymbol: string;
   selectedTimeframe: string;
-  strategies: StrategyItem[];
+  selectedStrategyKey: string;
 };
 
 type UseRunHistoryResult = {
@@ -32,51 +32,10 @@ function toIsoWithoutMilliseconds(date: Date): string {
   return date.toISOString().split(".")[0];
 }
 
-function buildDefaultStrategies(strategies: StrategyItem[]) {
-  const availableKeys = new Set(strategies.map((item) => item.key));
-
-  const defaults = [
-    {
-      strategy_key: "bollinger_reversal",
-      parameters: {
-        bollinger_period: 20,
-        bollinger_stddev: 2,
-        atr_period: 14,
-      },
-      timeout_bars: 12,
-    },
-    {
-      strategy_key: "ema_cross",
-      parameters: {
-        ema_short_period: 9,
-        ema_long_period: 21,
-        atr_period: 14,
-        target_percent: 0.15,
-        stop_percent: 0.1,
-      },
-      timeout_bars: 12,
-    },
-    {
-      strategy_key: "rsi_reversal",
-      parameters: {
-        rsi_period: 14,
-        bollinger_period: 20,
-        bollinger_stddev: 2,
-        atr_period: 14,
-        target_percent: 0.15,
-        stop_percent: 0.1,
-      },
-      timeout_bars: 12,
-    },
-  ];
-
-  return defaults.filter((item) => availableKeys.has(item.strategy_key));
-}
-
 function useRunHistory({
   selectedSymbol,
   selectedTimeframe,
-  strategies,
+  selectedStrategyKey,
 }: UseRunHistoryParams): UseRunHistoryResult {
   const [runs, setRuns] = useState<RunHistoryItem[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
@@ -158,26 +117,36 @@ function useRunHistory({
       setActionError("");
 
       if (!selectedSymbol || !selectedTimeframe) {
-        throw new Error("Selecione símbolo e timeframe antes de criar novos runs.");
+        throw new Error("Selecione símbolo e timeframe antes de criar um run.");
       }
 
-      const defaultStrategies = buildDefaultStrategies(strategies);
-      if (defaultStrategies.length === 0) {
-        throw new Error("Nenhuma estratégia disponível para criar runs.");
+      if (!selectedStrategyKey) {
+        throw new Error("Selecione a estratégia antes de criar um run.");
       }
 
       const endAt = new Date();
       const startAt = new Date(endAt.getTime() - 1000 * 60 * 60 * 24 * 2);
 
       const payload = {
+        strategy_key: selectedStrategyKey,
         symbol: selectedSymbol,
         timeframe: selectedTimeframe,
         start_at: toIsoWithoutMilliseconds(startAt),
         end_at: toIsoWithoutMilliseconds(endAt),
-        strategies: defaultStrategies,
+        parameters: {
+          rsi_period: 14,
+          bollinger_period: 20,
+          bollinger_stddev: 2,
+          atr_period: 14,
+          ema_short_period: 9,
+          ema_long_period: 21,
+          target_percent: 0.15,
+          stop_percent: 0.1,
+        },
+        timeout_bars: 12,
       };
 
-      const response = await fetch(`${API_HTTP_BASE_URL}/batch-runs/historical`, {
+      const response = await fetch(`${API_HTTP_BASE_URL}/runs/historical`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -189,16 +158,21 @@ function useRunHistory({
         throw new Error(`HTTP ${response.status}`);
       }
 
-      await response.json();
+      const result = await response.json();
       await loadRuns();
+
+      const createdRunId = result?.run?.id;
+      if (createdRunId) {
+        setSelectedRunId(createdRunId);
+      }
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Erro desconhecido ao criar runs"
+        err instanceof Error ? err.message : "Erro desconhecido ao criar run"
       );
     } finally {
       setIsCreatingRuns(false);
     }
-  }, [selectedSymbol, selectedTimeframe, strategies, loadRuns]);
+  }, [selectedSymbol, selectedTimeframe, selectedStrategyKey, loadRuns]);
 
   const filteredRuns = useMemo(() => {
     const term = runSearch.trim().toLowerCase();

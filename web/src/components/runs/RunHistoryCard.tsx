@@ -90,7 +90,7 @@ function RunHistoryCard({
             opacity: !canCreateRuns || isCreatingRuns || isClearingRuns ? 0.7 : 1,
           }}
         >
-          {isCreatingRuns ? "A criar..." : "Criar runs"}
+          {isCreatingRuns ? "A criar..." : "Criar run"}
         </button>
       </div>
 
