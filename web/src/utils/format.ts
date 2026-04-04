@@ -29,8 +29,12 @@ export function formatUtcDateTime(value: string | null): string {
   return date.toISOString();
 }
 
-export function parsePrice(value: string | null): number | null {
-  if (!value) return null;
+export function parsePrice(
+  value: string | number | null | undefined
+): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;

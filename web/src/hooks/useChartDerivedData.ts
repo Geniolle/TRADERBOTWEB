@@ -9,6 +9,7 @@ import type {
   OverlayLine,
   OverlayMarker,
   RunDetailsResponse,
+  RunCaseItem,
 } from "../types/trading";
 import { getCaseAccentColor } from "../utils/chart";
 import {
@@ -41,6 +42,13 @@ type UseChartDerivedDataResult = {
   legendCloseColor: string;
 };
 
+type CaseMetadata = Record<string, unknown>;
+
+type ExtendedRunCaseItem = RunCaseItem & {
+  trigger_candle_time?: string | null;
+  metadata?: CaseMetadata;
+};
+
 function useChartDerivedData({
   candles,
   runDetails,
@@ -69,9 +77,13 @@ function useChartDerivedData({
       );
   }, [candles]);
 
-  const selectedCase = useMemo(() => {
+  const selectedCase = useMemo<ExtendedRunCaseItem | null>(() => {
     if (!runDetails || !selectedCaseId) return null;
-    return runDetails.cases.find((item) => item.id === selectedCaseId) ?? null;
+
+    const found =
+      runDetails.cases.find((item) => item.id === selectedCaseId) ?? null;
+
+    return found as ExtendedRunCaseItem | null;
   }, [runDetails, selectedCaseId]);
 
   const priceBounds = useMemo(() => {
@@ -188,6 +200,30 @@ function useChartDerivedData({
       return bestIndex;
     };
 
+    const metadata = (selectedCase.metadata ?? {}) as CaseMetadata;
+    const selectedCaseStrategyKey =
+      typeof metadata.strategy_key === "string" && metadata.strategy_key.trim()
+        ? metadata.strategy_key.trim().toLowerCase()
+        : (runDetails?.run?.strategy_key ?? "").trim().toLowerCase();
+
+    const ffFdOutsideTime =
+      typeof metadata.previous_candle_time === "string"
+        ? metadata.previous_candle_time
+        : selectedCase.trigger_candle_time ?? selectedCase.trigger_time ?? null;
+
+    const ffFdConfirmationTime =
+      typeof metadata.confirmation_candle_time === "string"
+        ? metadata.confirmation_candle_time
+        : selectedCase.entry_time ?? null;
+
+    const ffFdSide =
+      typeof metadata.side === "string" ? metadata.side.trim().toLowerCase() : "";
+
+    const ffFdOutsidePrice =
+      parsePrice(selectedCase.trigger_price) ?? parsePrice(selectedCase.entry_price);
+
+    const ffFdConfirmationPrice = parsePrice(selectedCase.entry_price);
+
     const markerDefs: Array<{
       id: string;
       label: string;
@@ -199,24 +235,43 @@ function useChartDerivedData({
         id: "trigger",
         label: "TRG",
         color: "#7c3aed",
-        time: selectedCase.trigger_candle_time || selectedCase.trigger_time,
+        time: selectedCase.trigger_candle_time || selectedCase.trigger_time || null,
         price: parsePrice(selectedCase.entry_price),
       },
       {
         id: "entry",
         label: "ENT",
         color: "#2563eb",
-        time: selectedCase.entry_time,
+        time: selectedCase.entry_time ?? null,
         price: parsePrice(selectedCase.entry_price),
       },
       {
         id: "close",
         label: "CLS",
         color: getCaseAccentColor(selectedCase),
-        time: selectedCase.close_time,
+        time: selectedCase.close_time ?? null,
         price: parsePrice(selectedCase.close_price),
       },
     ];
+
+    if (selectedCaseStrategyKey === "ff_fd") {
+      markerDefs.unshift(
+        {
+          id: "fffd-outside",
+          label: ffFdSide === "sell" ? "FF↑" : "FF↓",
+          color: "#f59e0b",
+          time: ffFdOutsideTime,
+          price: ffFdOutsidePrice,
+        },
+        {
+          id: "fffd-inside",
+          label: ffFdSide === "sell" ? "FD↓" : "FD↑",
+          color: "#0ea5e9",
+          time: ffFdConfirmationTime,
+          price: ffFdConfirmationPrice,
+        }
+      );
+    }
 
     const lineDefs: Array<{
       id: string;
@@ -286,7 +341,7 @@ function useChartDerivedData({
     }
 
     return { markers, lines };
-  }, [selectedCase, candleMeta, chartSize, priceBounds]);
+  }, [selectedCase, candleMeta, chartSize, priceBounds, runDetails?.run?.strategy_key]);
 
   const legendCloseColor = useMemo(() => {
     return getCaseAccentColor(selectedCase);

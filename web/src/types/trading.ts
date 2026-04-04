@@ -123,6 +123,33 @@ export type OverlayMarker = {
   timeLabel: string;
 };
 
+export type FeedDiagnostics = {
+  symbol: string;
+  timeframe: string;
+  totalCandles: number;
+  firstCandleUtc: string;
+  lastCandleUtc: string;
+  firstCandleLocal: string;
+  lastCandleLocal: string;
+  lastClose: string;
+  priceRange: string;
+  candleSource: string;
+  candleProvider: string;
+  candleSession: string;
+  candleTimezone: string;
+  candleIsDelayed: string;
+  candleIsMock: string;
+  lastTickUtc: string;
+  lastTickLocal: string;
+  tickSource: string;
+  tickProvider: string;
+  tickSession: string;
+  tickTimezone: string;
+  tickIsDelayed: string;
+  tickIsMock: string;
+  runtimeTimezone: string;
+};
+
 export type HealthResponse = {
   status: string;
   app_name: string;
@@ -183,8 +210,10 @@ export type RunCaseItem = {
   target_price?: number | null;
   invalidation_price?: number | null;
   trigger_time?: string | null;
+  trigger_candle_time?: string | null;
   entry_time?: string | null;
   close_time?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type RunDetailsResponse = {
