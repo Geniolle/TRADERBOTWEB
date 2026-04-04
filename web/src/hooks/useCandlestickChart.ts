@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
+  CrosshairMode,
   LineSeries,
+  LineStyle,
   createChart,
   type CandlestickData,
   type IChartApi,
@@ -106,7 +108,7 @@ function useCandlestickChart({
         timeScale: {
           borderColor: "#dbe2ea",
           timeVisible: true,
-          secondsVisible: true,
+          secondsVisible: false,
           rightOffset: CHART_RIGHT_OFFSET,
           barSpacing: CHART_BAR_SPACING,
           minBarSpacing: CHART_MIN_BAR_SPACING,
@@ -118,13 +120,22 @@ function useCandlestickChart({
           priceFormatter: (price: number) => price.toFixed(5),
         },
         crosshair: {
+          mode: CrosshairMode.Normal,
           vertLine: {
             visible: true,
             labelVisible: true,
+            width: 1,
+            style: LineStyle.LargeDashed,
+            color: "rgba(100, 116, 139, 0.75)",
+            labelBackgroundColor: "#0f172a",
           },
           horzLine: {
             visible: true,
             labelVisible: true,
+            width: 1,
+            style: LineStyle.LargeDashed,
+            color: "rgba(100, 116, 139, 0.75)",
+            labelBackgroundColor: "#475569",
           },
         },
       });
@@ -136,8 +147,12 @@ function useCandlestickChart({
         wickDownColor: "#dc2626",
         borderUpColor: "#16a34a",
         borderDownColor: "#dc2626",
-        priceLineVisible: false,
-        lastValueVisible: false,
+        priceLineVisible: true,
+        priceLineWidth: 1,
+        priceLineStyle: LineStyle.LargeDashed,
+        priceLineColor: "#2563eb",
+        lastValueVisible: true,
+        title: "",
       });
 
       chartRef.current = chart;
@@ -163,11 +178,38 @@ function useCandlestickChart({
         entireTextOnly: true,
         ticksVisible: true,
       },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          visible: true,
+          labelVisible: true,
+          width: 1,
+          style: LineStyle.LargeDashed,
+          color: "rgba(100, 116, 139, 0.75)",
+          labelBackgroundColor: "#0f172a",
+        },
+        horzLine: {
+          visible: true,
+          labelVisible: true,
+          width: 1,
+          style: LineStyle.LargeDashed,
+          color: "rgba(100, 116, 139, 0.75)",
+          labelBackgroundColor: "#475569",
+        },
+      },
     });
 
     setChartSize({ width, height });
 
     if (candleSeriesRef.current) {
+      candleSeriesRef.current.applyOptions({
+        priceLineVisible: true,
+        priceLineWidth: 1,
+        priceLineStyle: LineStyle.LargeDashed,
+        priceLineColor: "#2563eb",
+        lastValueVisible: true,
+      });
+
       candleSeriesRef.current.setData(chartData);
     }
 
@@ -235,6 +277,25 @@ function useCandlestickChart({
           minimumWidth: 72,
           entireTextOnly: true,
           ticksVisible: true,
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: {
+            visible: true,
+            labelVisible: true,
+            width: 1,
+            style: LineStyle.LargeDashed,
+            color: "rgba(100, 116, 139, 0.75)",
+            labelBackgroundColor: "#0f172a",
+          },
+          horzLine: {
+            visible: true,
+            labelVisible: true,
+            width: 1,
+            style: LineStyle.LargeDashed,
+            color: "rgba(100, 116, 139, 0.75)",
+            labelBackgroundColor: "#475569",
+          },
         },
       });
 
