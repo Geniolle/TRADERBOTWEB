@@ -844,43 +844,32 @@ function buildSignalQuality(params: {
   return "Fraco";
 }
 
+function isNearZone(label: string): boolean {
+  return label === "Colado" || label === "Muito perto";
+}
+
 function buildBbReversalConfirmation(params: {
   sideLabel: string;
   structureInfo: SimpleTextContext;
-  priceVsEma20Info: SimpleTextContext;
-  ema20SlopeInfo: SimpleTextContext;
   supportDistanceInfo: SimpleTextContext;
   resistanceDistanceInfo: SimpleTextContext;
   triggerCandleInfo: SimpleTextContext;
   candleVsAtrInfo: SimpleTextContext;
-  macdInfo: SimpleMacdContext;
   bollingerInfo: SimpleTextContext;
   ifrInfo: SimpleIfrContext;
+  macdInfo: SimpleMacdContext;
 }): ConfirmationResult {
   const {
     sideLabel,
     structureInfo,
-    priceVsEma20Info,
-    ema20SlopeInfo,
     supportDistanceInfo,
     resistanceDistanceInfo,
     triggerCandleInfo,
     candleVsAtrInfo,
-    macdInfo,
     bollingerInfo,
     ifrInfo,
+    macdInfo,
   } = params;
-
-  let confirmations = 0;
-  let conflicts = 0;
-
-  const countConfirmation = () => {
-    confirmations += 1;
-  };
-
-  const countConflict = () => {
-    conflicts += 1;
-  };
 
   const isLong = sideLabel === "Compra";
   const isShort = sideLabel === "Venda";
@@ -893,140 +882,106 @@ function buildBbReversalConfirmation(params: {
     };
   }
 
-  // 1) Bollinger é central para FF/FD
+  let earned = 0;
+  let possible = 0;
+  let confirmations = 0;
+  let conflicts = 0;
+
+  const addFactor = (maxWeight: number, gainedWeight: number, isConflict = false) => {
+    possible += maxWeight;
+    earned += Math.max(0, Math.min(gainedWeight, maxWeight));
+
+    if (gainedWeight > 0) confirmations += 1;
+    if (isConflict) conflicts += 1;
+  };
+
+  // 1) Núcleo da estratégia: Bollinger / FF-FD
   if (
     (isLong && bollingerInfo.label === "Confirma compra") ||
     (isShort && bollingerInfo.label === "Confirma venda")
   ) {
-    countConfirmation();
-  } else if (
-    (isLong && bollingerInfo.label === "Confirma venda") ||
-    (isShort && bollingerInfo.label === "Confirma compra")
-  ) {
-    countConflict();
+    addFactor(4, 4);
+  } else {
+    addFactor(4, 0, true);
   }
 
-  // 2) Estrutura: lateral ajuda reversão; tendência contra atrapalha
-  if (structureInfo.label === "Lateral") {
-    countConfirmation();
-  } else if (
+  // 2) Localização / compressão: foi o fator mais unânime nos hits
+  const nearSupport = isNearZone(supportDistanceInfo.label);
+  const nearResistance = isNearZone(resistanceDistanceInfo.label);
+
+  if (nearSupport && nearResistance) {
+    addFactor(2, 2);
+  } else if (nearSupport || nearResistance) {
+    addFactor(2, 1);
+  } else {
+    addFactor(2, 0);
+  }
+
+  // 3) Candle do gatilho: decisivo para validar a reação
+  if (triggerCandleInfo.label === "Bom") {
+    addFactor(2, 2);
+  } else if (triggerCandleInfo.label === "Normal") {
+    addFactor(2, 1);
+  } else {
+    addFactor(2, 0, true);
+  }
+
+  // 4) Tamanho do candle no contexto
+  if (candleVsAtrInfo.label === "Forte") {
+    addFactor(1, 1);
+  } else if (candleVsAtrInfo.label === "Saudável") {
+    addFactor(1, 0.8);
+  } else {
+    addFactor(1, 0);
+  }
+
+  // 5) Contexto estrutural para reversão:
+  // compra: queda ou lateral ajudam; venda: alta ou lateral ajudam
+  if (
+    structureInfo.label === "Lateral" ||
     (isLong && structureInfo.label === "Queda") ||
     (isShort && structureInfo.label === "Alta")
   ) {
-    countConflict();
-  }
-
-  // 3) Preço vs EMA 20: ajuda quando já começou a recuperar no lado da operação
-  if (
-    (isLong && priceVsEma20Info.label === "Acima") ||
-    (isShort && priceVsEma20Info.label === "Abaixo")
-  ) {
-    countConfirmation();
+    addFactor(1, 1);
   } else if (
-    (isLong && priceVsEma20Info.label === "Abaixo") ||
-    (isShort && priceVsEma20Info.label === "Acima")
+    (isLong && structureInfo.label === "Alta") ||
+    (isShort && structureInfo.label === "Queda")
   ) {
-    countConflict();
+    addFactor(1, 0.25);
   }
 
-  // 4) Inclinação da EMA 20: favorável quando começa a inclinar no sentido da reversão
-  if (
-    (isLong && ema20SlopeInfo.label === "A subir") ||
-    (isShort && ema20SlopeInfo.label === "A descer")
-  ) {
-    countConfirmation();
-  } else if (
-    (isLong && ema20SlopeInfo.label === "A descer") ||
-    (isShort && ema20SlopeInfo.label === "A subir")
-  ) {
-    countConflict();
-  }
-
-  // 5) Suporte/Resistência: localização importa muito numa reversão BB
-  if (isLong) {
-    if (
-      supportDistanceInfo.label === "Colado" ||
-      supportDistanceInfo.label === "Muito perto"
-    ) {
-      countConfirmation();
-    }
-
-    if (
-      resistanceDistanceInfo.label === "Colado" ||
-      resistanceDistanceInfo.label === "Muito perto"
-    ) {
-      countConflict();
-    }
-  }
-
-  if (isShort) {
-    if (
-      resistanceDistanceInfo.label === "Colado" ||
-      resistanceDistanceInfo.label === "Muito perto"
-    ) {
-      countConfirmation();
-    }
-
-    if (
-      supportDistanceInfo.label === "Colado" ||
-      supportDistanceInfo.label === "Muito perto"
-    ) {
-      countConflict();
-    }
-  }
-
-  // 6) Candle do gatilho
-  if (triggerCandleInfo.label === "Bom") {
-    countConfirmation();
-  } else if (triggerCandleInfo.label === "Fraco") {
-    countConflict();
-  }
-
-  // 7) Candle vs ATR: candle saudável/forte ajuda a validar reação
-  if (
-    candleVsAtrInfo.label === "Saudável" ||
-    candleVsAtrInfo.label === "Forte"
-  ) {
-    countConfirmation();
-  } else if (candleVsAtrInfo.label === "Fraco") {
-    countConflict();
-  }
-
-  // 8) MACD: secundário, mas útil se já acompanha a reversão
-  if (
-    (isLong && macdInfo.direction === "Alta") ||
-    (isShort && macdInfo.direction === "Queda")
-  ) {
-    countConfirmation();
-  } else if (
-    (isLong && macdInfo.direction === "Queda") ||
-    (isShort && macdInfo.direction === "Alta")
-  ) {
-    countConflict();
-  }
-
-  // 9) IFR: só conta quando realmente apoia ou atrapalha a reversão
+  // 6) IFR conta só quando realmente ajuda a reversão; neutro não penaliza
   if (isLong) {
     if (ifrInfo.strength === "Baixa" || ifrInfo.strength === "Fraqueza") {
-      countConfirmation();
+      addFactor(1, 1);
     } else if (ifrInfo.strength === "Alta" || ifrInfo.strength === "Alta forte") {
-      countConflict();
+      addFactor(1, 0.2, true);
     }
   }
 
   if (isShort) {
     if (ifrInfo.strength === "Alta" || ifrInfo.strength === "Alta forte") {
-      countConfirmation();
+      addFactor(1, 1);
     } else if (ifrInfo.strength === "Baixa" || ifrInfo.strength === "Fraqueza") {
-      countConflict();
+      addFactor(1, 0.2, true);
     }
   }
 
-  const totalMeaningful = confirmations + conflicts;
+  // 7) MACD entra só como ajuste leve; não pode dominar a percentagem
+  if (
+    (isLong && macdInfo.direction === "Alta") ||
+    (isShort && macdInfo.direction === "Queda")
+  ) {
+    addFactor(0.5, 0.5);
+  } else if (
+    (isLong && macdInfo.direction === "Queda") ||
+    (isShort && macdInfo.direction === "Alta")
+  ) {
+    addFactor(0.5, 0.1, true);
+  }
 
   return {
-    confirmationPercent:
-      totalMeaningful > 0 ? (confirmations / totalMeaningful) * 100 : null,
+    confirmationPercent: possible > 0 ? (earned / possible) * 100 : null,
     confirmations,
     conflicts,
   };
@@ -1116,11 +1071,55 @@ function infoRow(label: string, value: string, highlight = false) {
   );
 }
 
+function getCardHeaderColors(accentColor: string) {
+  const normalized = accentColor.toLowerCase();
+
+  if (normalized === "#16a34a") {
+    return {
+      firstRowBg: "#dcfce7",
+      secondRowBg: "#f0fdf4",
+      firstRowText: "#14532d",
+      secondRowText: "#166534",
+      borderBottom: "#86efac",
+    };
+  }
+
+  if (normalized === "#dc2626") {
+    return {
+      firstRowBg: "#fee2e2",
+      secondRowBg: "#fef2f2",
+      firstRowText: "#7f1d1d",
+      secondRowText: "#991b1b",
+      borderBottom: "#fca5a5",
+    };
+  }
+
+  return {
+    firstRowBg: "#e2e8f0",
+    secondRowBg: "#f8fafc",
+    firstRowText: "#0f172a",
+    secondRowText: "#334155",
+    borderBottom: "#cbd5e1",
+  };
+}
+
+function buildCombinedValue(primary: string, detail: string): string {
+  const safePrimary = String(primary ?? "").trim();
+  const safeDetail = String(detail ?? "").trim();
+
+  if (!safePrimary && !safeDetail) return "-";
+  if (!safePrimary) return safeDetail;
+  if (!safeDetail) return safePrimary;
+  return `${safePrimary} / ${safeDetail}`;
+}
+
 function outcomeListCard(
   title: string,
   items: OutcomeLikeCase[],
   accentColor: string
 ) {
+  const headerColors = getCardHeaderColors(accentColor);
+
   return (
     <div
       style={{
@@ -1218,15 +1217,13 @@ function outcomeListCard(
             const confirmation = buildBbReversalConfirmation({
               sideLabel,
               structureInfo,
-              priceVsEma20Info,
-              ema20SlopeInfo,
               supportDistanceInfo,
               resistanceDistanceInfo,
               triggerCandleInfo,
               candleVsAtrInfo,
-              macdInfo,
               bollingerInfo,
               ifrInfo,
+              macdInfo,
             });
 
             const decisionQuickInfo =
@@ -1241,85 +1238,162 @@ function outcomeListCard(
                   border: "1px solid #e2e8f0",
                   borderLeft: `4px solid ${accentColor}`,
                   borderRadius: 12,
-                  padding: 14,
+                  padding: 0,
                   background: "#f8fafc",
                   fontSize: 14,
                   color: "#334155",
                   lineHeight: 1.6,
+                  overflow: "hidden",
                 }}
               >
                 <div
                   style={{
+                    background: headerColors.firstRowBg,
+                    color: headerColors.firstRowText,
+                    padding: "10px 14px",
                     fontWeight: 700,
-                    color: "#0f172a",
-                    marginBottom: 10,
                     wordBreak: "break-word",
                     fontSize: 15,
+                    borderBottom: `1px solid ${headerColors.borderBottom}`,
                   }}
                 >
                   {item.id}
                 </div>
 
-                {sectionTitle("Decisão rápida", decisionQuickInfo)}
-                <div style={{ display: "grid", gap: 6 }}>
-                  {infoRow("Lado:", sideLabel, true)}
-                  {infoRow("Qualidade:", signalQuality, true)}
-                  {infoRow("Trigger:", formatDateTime(item.trigger_time ?? null))}
-                  {infoRow("Fechamento:", formatDateTime(item.close_time ?? null))}
-                  {infoRow("Entrada:", formatPrice(item.entry_price))}
-                  {infoRow("Saída:", formatPrice(item.close_price))}
+                <div
+                  style={{
+                    background: headerColors.secondRowBg,
+                    color: headerColors.secondRowText,
+                    padding: "8px 14px",
+                    borderBottom: `1px solid ${headerColors.borderBottom}`,
+                  }}
+                >
+                  {sectionTitle("Decisão rápida", decisionQuickInfo)}
                 </div>
 
-                {dividerLine()}
+                <div style={{ padding: 14 }}>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow("Lado:", sideLabel, true)}
+                    {infoRow("Qualidade:", signalQuality, true)}
+                    {infoRow("Trigger:", formatDateTime(item.trigger_time ?? null))}
+                    {infoRow("Fechamento:", formatDateTime(item.close_time ?? null))}
+                    {infoRow("Entrada:", formatPrice(item.entry_price))}
+                    {infoRow("Saída:", formatPrice(item.close_price))}
+                  </div>
 
-                {sectionTitle("Contexto principal")}
-                <div style={{ display: "grid", gap: 6 }}>
-                  {infoRow("Estrutura:", structureInfo.label, true)}
-                  {infoRow("Leitura Estrutura:", structureInfo.situation)}
-                  {infoRow("Preço vs EMA 20:", priceVsEma20Info.label, true)}
-                  {infoRow("Leitura EMA 20:", priceVsEma20Info.situation)}
-                  {infoRow("Preço vs EMA 40:", priceVsEma40Info.label, true)}
-                  {infoRow("Leitura EMA 40:", priceVsEma40Info.situation)}
-                  {infoRow("EMAs:", emaAlignmentInfo.label, true)}
-                  {infoRow("Leitura EMAs:", emaAlignmentInfo.situation)}
-                  {infoRow("EMA 20:", ema20SlopeInfo.label)}
-                  {infoRow("Leitura EMA 20:", ema20SlopeInfo.situation)}
-                </div>
+                  {dividerLine()}
 
-                {dividerLine()}
+                  {sectionTitle("Contexto principal")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow(
+                      "Estrutura:",
+                      buildCombinedValue(structureInfo.label, structureInfo.situation),
+                      true
+                    )}
+                    {infoRow(
+                      "Preço vs EMA 20:",
+                      buildCombinedValue(
+                        priceVsEma20Info.label,
+                        priceVsEma20Info.situation
+                      ),
+                      true
+                    )}
+                    {infoRow(
+                      "Preço vs EMA 40:",
+                      buildCombinedValue(
+                        priceVsEma40Info.label,
+                        priceVsEma40Info.situation
+                      ),
+                      true
+                    )}
+                    {infoRow(
+                      "EMAs:",
+                      buildCombinedValue(
+                        emaAlignmentInfo.label,
+                        emaAlignmentInfo.situation
+                      ),
+                      true
+                    )}
+                    {infoRow(
+                      "EMA 20:",
+                      buildCombinedValue(
+                        ema20SlopeInfo.label,
+                        ema20SlopeInfo.situation
+                      )
+                    )}
+                  </div>
 
-                {sectionTitle("Localização do preço")}
-                <div style={{ display: "grid", gap: 6 }}>
-                  {infoRow("Suporte:", supportDistanceInfo.label, true)}
-                  {infoRow("Leitura Suporte:", supportDistanceInfo.situation)}
-                  {infoRow("Resistência:", resistanceDistanceInfo.label, true)}
-                  {infoRow("Leitura Resistência:", resistanceDistanceInfo.situation)}
-                </div>
+                  {dividerLine()}
 
-                {dividerLine()}
+                  {sectionTitle("Localização do preço")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow(
+                      "Suporte:",
+                      buildCombinedValue(
+                        supportDistanceInfo.label,
+                        supportDistanceInfo.situation
+                      ),
+                      true
+                    )}
+                    {infoRow(
+                      "Resistência:",
+                      buildCombinedValue(
+                        resistanceDistanceInfo.label,
+                        resistanceDistanceInfo.situation
+                      ),
+                      true
+                    )}
+                  </div>
 
-                {sectionTitle("Momento e gatilho")}
-                <div style={{ display: "grid", gap: 6 }}>
-                  {infoRow("Candle do gatilho:", triggerCandleInfo.label, true)}
-                  {infoRow("Leitura Gatilho:", triggerCandleInfo.situation)}
-                  {infoRow("Candle vs ATR:", candleVsAtrInfo.label)}
-                  {infoRow("Leitura Candle:", candleVsAtrInfo.situation)}
-                  {infoRow("MACD:", macdInfo.direction, true)}
-                  {infoRow("Leitura MACD:", macdInfo.strength)}
-                  {infoRow("Bollinger:", bollingerInfo.label, true)}
-                  {infoRow("Leitura Bollinger:", bollingerInfo.situation)}
-                </div>
+                  {dividerLine()}
 
-                {dividerLine()}
+                  {sectionTitle("Momento e gatilho")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow(
+                      "Candle do gatilho:",
+                      buildCombinedValue(
+                        triggerCandleInfo.label,
+                        triggerCandleInfo.situation
+                      ),
+                      true
+                    )}
+                    {infoRow(
+                      "Candle vs ATR:",
+                      buildCombinedValue(
+                        candleVsAtrInfo.label,
+                        candleVsAtrInfo.situation
+                      )
+                    )}
+                    {infoRow(
+                      "MACD:",
+                      buildCombinedValue(macdInfo.direction, macdInfo.strength),
+                      true
+                    )}
+                    {infoRow(
+                      "Bollinger:",
+                      buildCombinedValue(
+                        bollingerInfo.label,
+                        bollingerInfo.situation
+                      ),
+                      true
+                    )}
+                  </div>
 
-                {sectionTitle("Risco e ambiente")}
-                <div style={{ display: "grid", gap: 6 }}>
-                  {infoRow("IFR:", ifrInfo.formattedValue)}
-                  {infoRow("Leitura IFR:", ifrInfo.strength)}
-                  {infoRow("Situação IFR:", ifrInfo.situation)}
-                  {infoRow("ATR:", atrInfo.formattedValue)}
-                  {infoRow("Volatilidade:", atrInfo.volatility)}
-                  {infoRow("Situação ATR:", atrInfo.situation)}
+                  {dividerLine()}
+
+                  {sectionTitle("Risco e ambiente")}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {infoRow(
+                      "IFR:",
+                      buildCombinedValue(ifrInfo.formattedValue, ifrInfo.strength)
+                    )}
+                    {infoRow("Situação IFR:", ifrInfo.situation)}
+                    {infoRow(
+                      "ATR:",
+                      buildCombinedValue(atrInfo.formattedValue, atrInfo.volatility)
+                    )}
+                    {infoRow("Situação ATR:", atrInfo.situation)}
+                  </div>
                 </div>
               </div>
             );
