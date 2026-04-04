@@ -21,9 +21,8 @@ function ChartPriceScale({ levels }: ChartPriceScaleProps) {
         width: 74,
         height: "100%",
         pointerEvents: "none",
-        zIndex: 3,
-        background:
-          "linear-gradient(to left, rgba(255,255,255,0.98), rgba(255,255,255,0.88), rgba(255,255,255,0))",
+        zIndex: 2,
+        background: "transparent",
       }}
     >
       {levels.map((item, index) => (
@@ -38,6 +37,10 @@ function ChartPriceScale({ levels }: ChartPriceScaleProps) {
             fontWeight: 600,
             color: "#334155",
             whiteSpace: "nowrap",
+            zIndex: 3,
+            background: "rgba(255,255,255,0.92)",
+            padding: "0 2px",
+            borderRadius: 3,
           }}
         >
           {formatPrice(item.value)}

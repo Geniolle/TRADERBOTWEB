@@ -1,6 +1,7 @@
 // web/src/components/chart/ChartOverlays.tsx
 
 import type { OverlayLine, OverlayMarker } from "../../types/trading";
+import { formatPrice } from "./utils/chartFormatters";
 
 type ChartOverlaysProps = {
   overlays: {
@@ -16,7 +17,7 @@ function ChartOverlays({ overlays }: ChartOverlaysProps) {
         position: "absolute",
         inset: 0,
         pointerEvents: "none",
-        zIndex: 4,
+        zIndex: 8,
       }}
     >
       {overlays.lines.map((line) => (
@@ -28,31 +29,35 @@ function ChartOverlays({ overlays }: ChartOverlaysProps) {
             right: 0,
             top: line.top,
             transform: "translateY(-50%)",
+            zIndex: 9,
           }}
         >
           <div
             style={{
               borderTop: line.dashed
-                ? `2px dashed ${line.color}`
-                : `2px solid ${line.color}`,
+                ? `1px dashed ${line.color}`
+                : `1px solid ${line.color}`,
               width: "100%",
             }}
           />
+
           <div
             style={{
               position: "absolute",
-              right: 84,
-              top: -10,
+              right: 8,
+              top: -12,
               background: line.color,
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "2px 6px",
-              borderRadius: 999,
+              color: "#ffffff",
+              padding: "3px 8px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 800,
               whiteSpace: "nowrap",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+              zIndex: 10,
             }}
           >
-            {line.label} {Number(line.value).toFixed(5)}
+            {formatPrice(Number(line.value))}
           </div>
         </div>
       ))}
@@ -65,6 +70,7 @@ function ChartOverlays({ overlays }: ChartOverlaysProps) {
             left: marker.left,
             top: marker.top,
             transform: "translate(-50%, -50%)",
+            zIndex: 10,
           }}
           title={`${marker.label} | ${Number(marker.price).toFixed(
             5
