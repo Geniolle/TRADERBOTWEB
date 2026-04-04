@@ -22,13 +22,32 @@ type OutcomeLikeCase = RunDetailsResponse["cases"][number] & {
   outcome?: string | null;
 };
 
-type RsiContext = {
-  value: number | null;
+type SimpleIfrContext = {
   formattedValue: string;
+  strength: string;
+  situation: string;
+};
+
+type SimpleMacdContext = {
+  direction: string;
+  strength: string;
+};
+
+type SimpleAtrContext = {
+  formattedValue: string;
+  volatility: string;
+  situation: string;
+};
+
+type SimpleTextContext = {
   label: string;
-  trend: string;
-  zone: string;
-  summary: string;
+  situation: string;
+};
+
+type ConfirmationResult = {
+  confirmationPercent: number | null;
+  confirmations: number;
+  conflicts: number;
 };
 
 function toNumber(value: unknown): number | null {
@@ -52,104 +71,6 @@ function formatPrice(value: unknown): string {
   const numberValue = toNumber(value);
   if (numberValue === null) return "-";
   return numberValue.toFixed(5);
-}
-
-function formatRsiNumber(value: unknown): string {
-  const numericValue = toNumber(value);
-  if (numericValue === null) return "-";
-  return numericValue.toFixed(2).replace(".", ",");
-}
-
-function formatRsiContext(value: unknown): RsiContext {
-  const numericValue = toNumber(value);
-
-  if (numericValue === null) {
-    return {
-      value: null,
-      formattedValue: "-",
-      label: "Sem RSI",
-      trend: "Indefinida",
-      zone: "Sem dados",
-      summary: "RSI indisponível",
-    };
-  }
-
-  const formattedValue = numericValue.toFixed(2).replace(".", ",");
-
-  if (numericValue < 20) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Sobrevenda extrema",
-      trend: "Baixista forte",
-      zone: "Possível exaustão de queda",
-      summary: `RSI ${formattedValue} • Sobrevenda extrema • Baixista forte`,
-    };
-  }
-
-  if (numericValue < 30) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Sobrevenda",
-      trend: "Baixista",
-      zone: "Possível reversão",
-      summary: `RSI ${formattedValue} • Sobrevenda • Baixista`,
-    };
-  }
-
-  if (numericValue < 45) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Fraqueza",
-      trend: "Leve baixa",
-      zone: "Mercado fraco",
-      summary: `RSI ${formattedValue} • Fraqueza • Leve baixa`,
-    };
-  }
-
-  if (numericValue < 55) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Neutro",
-      trend: "Indefinida",
-      zone: "Equilíbrio",
-      summary: `RSI ${formattedValue} • Neutro • Equilíbrio`,
-    };
-  }
-
-  if (numericValue < 70) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Alta com força",
-      trend: "Altista",
-      zone: "Perto de sobrecompra",
-      summary: `RSI ${formattedValue} • Alta com força • Perto de sobrecompra`,
-    };
-  }
-
-  if (numericValue < 80) {
-    return {
-      value: numericValue,
-      formattedValue,
-      label: "Sobrecompra",
-      trend: "Altista forte",
-      zone: "Mercado esticado",
-      summary: `RSI ${formattedValue} • Sobrecompra • Mercado esticado`,
-    };
-  }
-
-  return {
-    value: numericValue,
-    formattedValue,
-    label: "Sobrecompra extrema",
-    trend: "Altista muito forte",
-    zone: "Exaustão provável",
-    summary: `RSI ${formattedValue} • Sobrecompra extrema • Exaustão provável`,
-  };
 }
 
 function readMetricNumber(metrics: unknown, key: string): number | null {
@@ -313,32 +234,886 @@ function getTradeSideLabel(item: OutcomeLikeCase): string {
   return "-";
 }
 
-function getCaseRsiAtValidation(item: OutcomeLikeCase): unknown {
-  if (!item.metadata || typeof item.metadata !== "object") {
-    return null;
-  }
+function getAnalysisSnapshot(item: OutcomeLikeCase): Record<string, unknown> | null {
+  if (!item.metadata || typeof item.metadata !== "object") return null;
 
   const metadata = item.metadata as Record<string, unknown>;
-  const analysisSnapshot =
-    metadata.analysis_snapshot &&
-    typeof metadata.analysis_snapshot === "object"
-      ? (metadata.analysis_snapshot as Record<string, unknown>)
-      : null;
-
-  if (!analysisSnapshot) {
+  if (!metadata.analysis_snapshot || typeof metadata.analysis_snapshot !== "object") {
     return null;
   }
 
-  const momentum =
-    analysisSnapshot.momentum && typeof analysisSnapshot.momentum === "object"
-      ? (analysisSnapshot.momentum as Record<string, unknown>)
-      : null;
+  return metadata.analysis_snapshot as Record<string, unknown>;
+}
 
-  if (!momentum) {
-    return null;
+function getGroupSnapshot(
+  item: OutcomeLikeCase,
+  groupName:
+    | "trend"
+    | "momentum"
+    | "volatility"
+    | "structure"
+    | "trigger_candle"
+    | "bollinger"
+): Record<string, unknown> | null {
+  const snapshot = getAnalysisSnapshot(item);
+  if (!snapshot) return null;
+
+  const group = snapshot[groupName];
+  if (!group || typeof group !== "object") return null;
+
+  return group as Record<string, unknown>;
+}
+
+function getSimpleIfrContext(value: unknown): SimpleIfrContext {
+  const numericValue = toNumber(value);
+
+  if (numericValue === null) {
+    return {
+      formattedValue: "-",
+      strength: "Sem leitura",
+      situation: "Sem dados",
+    };
   }
 
-  return momentum.rsi_14 ?? null;
+  const formattedValue = numericValue.toFixed(2).replace(".", ",");
+
+  if (numericValue < 30) {
+    return {
+      formattedValue,
+      strength: "Baixa",
+      situation: "Mercado pressionado para baixo",
+    };
+  }
+
+  if (numericValue < 45) {
+    return {
+      formattedValue,
+      strength: "Fraqueza",
+      situation: "Mercado fraco",
+    };
+  }
+
+  if (numericValue < 55) {
+    return {
+      formattedValue,
+      strength: "Neutro",
+      situation: "Mercado equilibrado",
+    };
+  }
+
+  if (numericValue < 70) {
+    return {
+      formattedValue,
+      strength: "Alta",
+      situation: "Mercado esticado",
+    };
+  }
+
+  return {
+    formattedValue,
+    strength: "Alta forte",
+    situation: "Mercado muito esticado",
+  };
+}
+
+function getSimpleMacdContext(state: unknown): SimpleMacdContext {
+  const raw = String(state ?? "").trim().toLowerCase();
+
+  if (!raw) {
+    return {
+      direction: "Sem leitura",
+      strength: "Sem dados",
+    };
+  }
+
+  if (
+    raw.includes("bearish") ||
+    raw.includes("below_signal") ||
+    raw.includes("below")
+  ) {
+    return {
+      direction: "Queda",
+      strength: "Pressão vendedora",
+    };
+  }
+
+  if (
+    raw.includes("bullish") ||
+    raw.includes("above_signal") ||
+    raw.includes("above")
+  ) {
+    return {
+      direction: "Alta",
+      strength: "Pressão compradora",
+    };
+  }
+
+  if (raw.includes("neutral")) {
+    return {
+      direction: "Neutro",
+      strength: "Sem força clara",
+    };
+  }
+
+  return {
+    direction: "Indefinida",
+    strength: "Sem força clara",
+  };
+}
+
+function getSimpleAtrContext(value: unknown, regime: unknown): SimpleAtrContext {
+  const numericValue = toNumber(value);
+  const rawRegime = String(regime ?? "").trim().toLowerCase();
+
+  if (numericValue === null) {
+    return {
+      formattedValue: "-",
+      volatility: "Sem leitura",
+      situation: "Sem dados",
+    };
+  }
+
+  const formattedValue = numericValue.toFixed(5).replace(".", ",");
+
+  if (
+    rawRegime.includes("high") ||
+    rawRegime.includes("alto") ||
+    rawRegime.includes("expanded") ||
+    rawRegime.includes("expansion")
+  ) {
+    return {
+      formattedValue,
+      volatility: "Alta",
+      situation: "Mercado agitado",
+    };
+  }
+
+  if (
+    rawRegime.includes("low") ||
+    rawRegime.includes("baixo") ||
+    rawRegime.includes("contracted") ||
+    rawRegime.includes("contraction")
+  ) {
+    return {
+      formattedValue,
+      volatility: "Baixa",
+      situation: "Mercado calmo",
+    };
+  }
+
+  return {
+    formattedValue,
+    volatility: "Média",
+    situation: "Movimento normal",
+  };
+}
+
+function getSimpleStructureContext(value: unknown): SimpleTextContext {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (!raw) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (
+    raw.includes("uptrend") ||
+    raw.includes("bullish") ||
+    raw.includes("higher high") ||
+    raw.includes("higher low") ||
+    raw.includes("alta")
+  ) {
+    return {
+      label: "Alta",
+      situation: "Estrutura favorável para subida",
+    };
+  }
+
+  if (
+    raw.includes("downtrend") ||
+    raw.includes("bearish") ||
+    raw.includes("lower high") ||
+    raw.includes("lower low") ||
+    raw.includes("queda")
+  ) {
+    return {
+      label: "Queda",
+      situation: "Estrutura favorável para descida",
+    };
+  }
+
+  if (raw.includes("range") || raw.includes("lateral") || raw.includes("sideways")) {
+    return {
+      label: "Lateral",
+      situation: "Mercado sem direção clara",
+    };
+  }
+
+  return {
+    label: "Indefinida",
+    situation: "Estrutura sem clareza",
+  };
+}
+
+function getSimpleEmaAlignmentContext(value: unknown): SimpleTextContext {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (!raw) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (
+    raw.includes("bullish") ||
+    raw.includes("aligned_long") ||
+    raw.includes("up") ||
+    raw.includes("alta")
+  ) {
+    return {
+      label: "Alta",
+      situation: "Médias alinhadas para subida",
+    };
+  }
+
+  if (
+    raw.includes("bearish") ||
+    raw.includes("aligned_short") ||
+    raw.includes("down") ||
+    raw.includes("queda")
+  ) {
+    return {
+      label: "Queda",
+      situation: "Médias alinhadas para descida",
+    };
+  }
+
+  if (raw.includes("mixed") || raw.includes("neutral") || raw.includes("misto")) {
+    return {
+      label: "Misto",
+      situation: "Médias sem alinhamento limpo",
+    };
+  }
+
+  return {
+    label: "Indefinido",
+    situation: "Alinhamento sem clareza",
+  };
+}
+
+function getSimpleSlopeContext(value: unknown): SimpleTextContext {
+  const raw = String(value ?? "").trim().toLowerCase();
+  const numericValue = toNumber(value);
+
+  if (!raw && numericValue === null) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (
+    raw.includes("up") ||
+    raw.includes("rising") ||
+    raw.includes("positive") ||
+    raw.includes("alta")
+  ) {
+    return {
+      label: "A subir",
+      situation: "Tendência a ganhar força",
+    };
+  }
+
+  if (
+    raw.includes("down") ||
+    raw.includes("falling") ||
+    raw.includes("negative") ||
+    raw.includes("queda")
+  ) {
+    return {
+      label: "A descer",
+      situation: "Tendência a perder força ou cair",
+    };
+  }
+
+  if (raw.includes("flat") || raw.includes("neutral") || raw.includes("lateral")) {
+    return {
+      label: "Lateral",
+      situation: "Sem aceleração clara",
+    };
+  }
+
+  if (numericValue !== null) {
+    if (numericValue > 0) {
+      return {
+        label: "A subir",
+        situation: "Tendência a ganhar força",
+      };
+    }
+
+    if (numericValue < 0) {
+      return {
+        label: "A descer",
+        situation: "Tendência a perder força ou cair",
+      };
+    }
+
+    return {
+      label: "Lateral",
+      situation: "Sem aceleração clara",
+    };
+  }
+
+  return {
+    label: "Indefinida",
+    situation: "Inclinação sem clareza",
+  };
+}
+
+function getSimplePriceVsEmaContext(value: unknown): SimpleTextContext {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (!raw) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (raw.includes("above") || raw.includes("acima") || raw.includes("over")) {
+    return {
+      label: "Acima",
+      situation: "Preço do lado comprador",
+    };
+  }
+
+  if (raw.includes("below") || raw.includes("abaixo") || raw.includes("under")) {
+    return {
+      label: "Abaixo",
+      situation: "Preço do lado vendedor",
+    };
+  }
+
+  return {
+    label: "Neutro",
+    situation: "Preço sem posição clara",
+  };
+}
+
+function getSimpleDistanceContext(
+  value: unknown,
+  kind: "support" | "resistance"
+): SimpleTextContext {
+  const numericValue = toNumber(value);
+
+  if (numericValue === null) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (numericValue <= 0) {
+    return {
+      label: "Colado",
+      situation:
+        kind === "support"
+          ? "Muito perto do suporte"
+          : "Muito perto da resistência",
+    };
+  }
+
+  if (numericValue < 0.25) {
+    return {
+      label: "Muito perto",
+      situation:
+        kind === "support"
+          ? "Pouco espaço até ao suporte"
+          : "Pouco espaço até à resistência",
+    };
+  }
+
+  if (numericValue < 0.75) {
+    return {
+      label: "Perto",
+      situation:
+        kind === "support"
+          ? "Distância curta até ao suporte"
+          : "Distância curta até à resistência",
+    };
+  }
+
+  return {
+    label: "Com espaço",
+    situation:
+      kind === "support"
+        ? "Há espaço razoável até ao suporte"
+        : "Há espaço razoável até à resistência",
+  };
+}
+
+function getSimpleCandleVsAtrContext(value: unknown): SimpleTextContext {
+  const numericValue = toNumber(value);
+
+  if (numericValue === null) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (numericValue < 0.6) {
+    return {
+      label: "Fraco",
+      situation: "Candle pequeno para o contexto",
+    };
+  }
+
+  if (numericValue <= 1.4) {
+    return {
+      label: "Saudável",
+      situation: "Candle com tamanho normal",
+    };
+  }
+
+  return {
+    label: "Forte",
+    situation: "Candle forte para o contexto",
+  };
+}
+
+function getSimpleTriggerCandleContext(
+  bodyRatio: unknown,
+  candleType: unknown,
+  upperWick: unknown,
+  lowerWick: unknown
+): SimpleTextContext {
+  const bodyRatioValue = toNumber(bodyRatio);
+  const upperWickValue = toNumber(upperWick);
+  const lowerWickValue = toNumber(lowerWick);
+  const candleTypeRaw = String(candleType ?? "").trim().toLowerCase();
+
+  if (
+    bodyRatioValue === null &&
+    upperWickValue === null &&
+    lowerWickValue === null &&
+    !candleTypeRaw
+  ) {
+    return { label: "Sem leitura", situation: "Sem dados" };
+  }
+
+  if (bodyRatioValue !== null && bodyRatioValue >= 0.6) {
+    return {
+      label: "Bom",
+      situation: "Candle com corpo firme",
+    };
+  }
+
+  if (
+    (upperWickValue !== null && upperWickValue > 0.5) ||
+    (lowerWickValue !== null && lowerWickValue > 0.5)
+  ) {
+    return {
+      label: "Fraco",
+      situation: "Candle com pavio dominante",
+    };
+  }
+
+  if (candleTypeRaw.includes("strong") || candleTypeRaw.includes("trend")) {
+    return {
+      label: "Bom",
+      situation: "Candle favorável ao movimento",
+    };
+  }
+
+  return {
+    label: "Normal",
+    situation: "Candle sem destaque forte",
+  };
+}
+
+function getSimpleBollingerContext(
+  reentryLong: unknown,
+  reentryShort: unknown,
+  closePosition: unknown
+): SimpleTextContext {
+  const isLong = Boolean(reentryLong);
+  const isShort = Boolean(reentryShort);
+  const closePositionValue = toNumber(closePosition);
+
+  if (isLong) {
+    return {
+      label: "Confirma compra",
+      situation: "Reentrada favorável para alta",
+    };
+  }
+
+  if (isShort) {
+    return {
+      label: "Confirma venda",
+      situation: "Reentrada favorável para queda",
+    };
+  }
+
+  if (closePositionValue !== null) {
+    if (closePositionValue > 0.8) {
+      return {
+        label: "Esticado em cima",
+        situation: "Preço perto do topo da banda",
+      };
+    }
+
+    if (closePositionValue < 0.2) {
+      return {
+        label: "Esticado em baixo",
+        situation: "Preço perto da base da banda",
+      };
+    }
+
+    return {
+      label: "Neutro",
+      situation: "Preço numa zona equilibrada da banda",
+    };
+  }
+
+  return {
+    label: "Sem leitura",
+    situation: "Sem dados",
+  };
+}
+
+function buildSignalQuality(params: {
+  sideLabel: string;
+  structureInfo: SimpleTextContext;
+  emaAlignmentInfo: SimpleTextContext;
+  priceVsEma20Info: SimpleTextContext;
+  priceVsEma40Info: SimpleTextContext;
+  supportDistanceInfo: SimpleTextContext;
+  resistanceDistanceInfo: SimpleTextContext;
+  macdInfo: SimpleMacdContext;
+  triggerCandleInfo: SimpleTextContext;
+  bollingerInfo: SimpleTextContext;
+}): string {
+  const {
+    sideLabel,
+    structureInfo,
+    emaAlignmentInfo,
+    priceVsEma20Info,
+    priceVsEma40Info,
+    supportDistanceInfo,
+    resistanceDistanceInfo,
+    macdInfo,
+    triggerCandleInfo,
+    bollingerInfo,
+  } = params;
+
+  let score = 0;
+
+  if (sideLabel === "Compra") {
+    if (structureInfo.label === "Alta") score += 2;
+    if (emaAlignmentInfo.label === "Alta") score += 2;
+    if (priceVsEma20Info.label === "Acima") score += 1;
+    if (priceVsEma40Info.label === "Acima") score += 2;
+    if (macdInfo.direction === "Alta") score += 1;
+    if (bollingerInfo.label === "Confirma compra") score += 1;
+    if (
+      resistanceDistanceInfo.label === "Colado" ||
+      resistanceDistanceInfo.label === "Muito perto"
+    ) {
+      score -= 2;
+    }
+    if (
+      supportDistanceInfo.label === "Colado" ||
+      supportDistanceInfo.label === "Muito perto"
+    ) {
+      score += 1;
+    }
+  } else if (sideLabel === "Venda") {
+    if (structureInfo.label === "Queda") score += 2;
+    if (emaAlignmentInfo.label === "Queda") score += 2;
+    if (priceVsEma20Info.label === "Abaixo") score += 1;
+    if (priceVsEma40Info.label === "Abaixo") score += 2;
+    if (macdInfo.direction === "Queda") score += 1;
+    if (bollingerInfo.label === "Confirma venda") score += 1;
+    if (
+      supportDistanceInfo.label === "Colado" ||
+      supportDistanceInfo.label === "Muito perto"
+    ) {
+      score -= 2;
+    }
+    if (
+      resistanceDistanceInfo.label === "Colado" ||
+      resistanceDistanceInfo.label === "Muito perto"
+    ) {
+      score += 1;
+    }
+  }
+
+  if (triggerCandleInfo.label === "Bom") score += 1;
+  if (triggerCandleInfo.label === "Fraco") score -= 1;
+  if (structureInfo.label === "Lateral") score -= 1;
+  if (emaAlignmentInfo.label === "Misto") score -= 1;
+
+  if (score >= 6) return "Forte";
+  if (score >= 3) return "Moderado";
+  return "Fraco";
+}
+
+function buildBbReversalConfirmation(params: {
+  sideLabel: string;
+  structureInfo: SimpleTextContext;
+  priceVsEma20Info: SimpleTextContext;
+  ema20SlopeInfo: SimpleTextContext;
+  supportDistanceInfo: SimpleTextContext;
+  resistanceDistanceInfo: SimpleTextContext;
+  triggerCandleInfo: SimpleTextContext;
+  candleVsAtrInfo: SimpleTextContext;
+  macdInfo: SimpleMacdContext;
+  bollingerInfo: SimpleTextContext;
+  ifrInfo: SimpleIfrContext;
+}): ConfirmationResult {
+  const {
+    sideLabel,
+    structureInfo,
+    priceVsEma20Info,
+    ema20SlopeInfo,
+    supportDistanceInfo,
+    resistanceDistanceInfo,
+    triggerCandleInfo,
+    candleVsAtrInfo,
+    macdInfo,
+    bollingerInfo,
+    ifrInfo,
+  } = params;
+
+  let confirmations = 0;
+  let conflicts = 0;
+
+  const countConfirmation = () => {
+    confirmations += 1;
+  };
+
+  const countConflict = () => {
+    conflicts += 1;
+  };
+
+  const isLong = sideLabel === "Compra";
+  const isShort = sideLabel === "Venda";
+
+  if (!isLong && !isShort) {
+    return {
+      confirmationPercent: null,
+      confirmations: 0,
+      conflicts: 0,
+    };
+  }
+
+  // 1) Bollinger é central para FF/FD
+  if (
+    (isLong && bollingerInfo.label === "Confirma compra") ||
+    (isShort && bollingerInfo.label === "Confirma venda")
+  ) {
+    countConfirmation();
+  } else if (
+    (isLong && bollingerInfo.label === "Confirma venda") ||
+    (isShort && bollingerInfo.label === "Confirma compra")
+  ) {
+    countConflict();
+  }
+
+  // 2) Estrutura: lateral ajuda reversão; tendência contra atrapalha
+  if (structureInfo.label === "Lateral") {
+    countConfirmation();
+  } else if (
+    (isLong && structureInfo.label === "Queda") ||
+    (isShort && structureInfo.label === "Alta")
+  ) {
+    countConflict();
+  }
+
+  // 3) Preço vs EMA 20: ajuda quando já começou a recuperar no lado da operação
+  if (
+    (isLong && priceVsEma20Info.label === "Acima") ||
+    (isShort && priceVsEma20Info.label === "Abaixo")
+  ) {
+    countConfirmation();
+  } else if (
+    (isLong && priceVsEma20Info.label === "Abaixo") ||
+    (isShort && priceVsEma20Info.label === "Acima")
+  ) {
+    countConflict();
+  }
+
+  // 4) Inclinação da EMA 20: favorável quando começa a inclinar no sentido da reversão
+  if (
+    (isLong && ema20SlopeInfo.label === "A subir") ||
+    (isShort && ema20SlopeInfo.label === "A descer")
+  ) {
+    countConfirmation();
+  } else if (
+    (isLong && ema20SlopeInfo.label === "A descer") ||
+    (isShort && ema20SlopeInfo.label === "A subir")
+  ) {
+    countConflict();
+  }
+
+  // 5) Suporte/Resistência: localização importa muito numa reversão BB
+  if (isLong) {
+    if (
+      supportDistanceInfo.label === "Colado" ||
+      supportDistanceInfo.label === "Muito perto"
+    ) {
+      countConfirmation();
+    }
+
+    if (
+      resistanceDistanceInfo.label === "Colado" ||
+      resistanceDistanceInfo.label === "Muito perto"
+    ) {
+      countConflict();
+    }
+  }
+
+  if (isShort) {
+    if (
+      resistanceDistanceInfo.label === "Colado" ||
+      resistanceDistanceInfo.label === "Muito perto"
+    ) {
+      countConfirmation();
+    }
+
+    if (
+      supportDistanceInfo.label === "Colado" ||
+      supportDistanceInfo.label === "Muito perto"
+    ) {
+      countConflict();
+    }
+  }
+
+  // 6) Candle do gatilho
+  if (triggerCandleInfo.label === "Bom") {
+    countConfirmation();
+  } else if (triggerCandleInfo.label === "Fraco") {
+    countConflict();
+  }
+
+  // 7) Candle vs ATR: candle saudável/forte ajuda a validar reação
+  if (
+    candleVsAtrInfo.label === "Saudável" ||
+    candleVsAtrInfo.label === "Forte"
+  ) {
+    countConfirmation();
+  } else if (candleVsAtrInfo.label === "Fraco") {
+    countConflict();
+  }
+
+  // 8) MACD: secundário, mas útil se já acompanha a reversão
+  if (
+    (isLong && macdInfo.direction === "Alta") ||
+    (isShort && macdInfo.direction === "Queda")
+  ) {
+    countConfirmation();
+  } else if (
+    (isLong && macdInfo.direction === "Queda") ||
+    (isShort && macdInfo.direction === "Alta")
+  ) {
+    countConflict();
+  }
+
+  // 9) IFR: só conta quando realmente apoia ou atrapalha a reversão
+  if (isLong) {
+    if (ifrInfo.strength === "Baixa" || ifrInfo.strength === "Fraqueza") {
+      countConfirmation();
+    } else if (ifrInfo.strength === "Alta" || ifrInfo.strength === "Alta forte") {
+      countConflict();
+    }
+  }
+
+  if (isShort) {
+    if (ifrInfo.strength === "Alta" || ifrInfo.strength === "Alta forte") {
+      countConfirmation();
+    } else if (ifrInfo.strength === "Baixa" || ifrInfo.strength === "Fraqueza") {
+      countConflict();
+    }
+  }
+
+  const totalMeaningful = confirmations + conflicts;
+
+  return {
+    confirmationPercent:
+      totalMeaningful > 0 ? (confirmations / totalMeaningful) * 100 : null,
+    confirmations,
+    conflicts,
+  };
+}
+
+function dividerLine() {
+  return (
+    <div
+      style={{
+        height: 1,
+        background: "#e2e8f0",
+        margin: "12px 0",
+        width: "100%",
+      }}
+    />
+  );
+}
+
+function sectionTitle(title: string, rightText?: string) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#475569",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+        }}
+      >
+        {title}
+      </div>
+
+      {rightText && (
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#0f172a",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {rightText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function infoRow(label: string, value: string, highlight = false) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        alignItems: "flex-start",
+      }}
+    >
+      <strong
+        style={{
+          color: highlight ? "#0f172a" : "#1e293b",
+          minWidth: 120,
+          flexShrink: 0,
+        }}
+      >
+        {label}
+      </strong>
+      <span
+        style={{
+          color: highlight ? "#0f172a" : "#334155",
+          textAlign: "right",
+          fontWeight: highlight ? 700 : 400,
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
 }
 
 function outcomeListCard(
@@ -375,8 +1150,89 @@ function outcomeListCard(
       {items.length > 0 && (
         <div style={{ display: "grid", gap: 10 }}>
           {items.map((item) => {
-            const rsiValue = getCaseRsiAtValidation(item);
-            const rsiInfo = formatRsiContext(rsiValue);
+            const trend = getGroupSnapshot(item, "trend");
+            const momentum = getGroupSnapshot(item, "momentum");
+            const volatility = getGroupSnapshot(item, "volatility");
+            const structure = getGroupSnapshot(item, "structure");
+            const triggerCandle = getGroupSnapshot(item, "trigger_candle");
+            const bollinger = getGroupSnapshot(item, "bollinger");
+
+            const sideLabel = getTradeSideLabel(item);
+            const structureInfo = getSimpleStructureContext(
+              structure?.market_structure ?? null
+            );
+            const emaAlignmentInfo = getSimpleEmaAlignmentContext(
+              trend?.ema_alignment ?? null
+            );
+            const ema20SlopeInfo = getSimpleSlopeContext(
+              trend?.ema_20_slope ?? null
+            );
+            const macdInfo = getSimpleMacdContext(momentum?.macd_state ?? null);
+            const ifrInfo = getSimpleIfrContext(momentum?.rsi_14 ?? null);
+            const atrInfo = getSimpleAtrContext(
+              volatility?.atr_14 ?? null,
+              volatility?.atr_regime ?? null
+            );
+            const priceVsEma20Info = getSimplePriceVsEmaContext(
+              trend?.price_vs_ema_20 ?? null
+            );
+            const priceVsEma40Info = getSimplePriceVsEmaContext(
+              trend?.price_vs_ema_40 ?? null
+            );
+            const supportDistanceInfo = getSimpleDistanceContext(
+              structure?.distance_to_recent_support ?? null,
+              "support"
+            );
+            const resistanceDistanceInfo = getSimpleDistanceContext(
+              structure?.distance_to_recent_resistance ?? null,
+              "resistance"
+            );
+            const candleVsAtrInfo = getSimpleCandleVsAtrContext(
+              volatility?.candle_range_vs_atr ?? null
+            );
+            const triggerCandleInfo = getSimpleTriggerCandleContext(
+              triggerCandle?.body_ratio ?? null,
+              triggerCandle?.candle_type ?? null,
+              triggerCandle?.upper_wick ?? null,
+              triggerCandle?.lower_wick ?? null
+            );
+            const bollingerInfo = getSimpleBollingerContext(
+              bollinger?.reentered_inside_band_long ?? null,
+              bollinger?.reentered_inside_band_short ?? null,
+              bollinger?.close_position_in_band ?? null
+            );
+
+            const signalQuality = buildSignalQuality({
+              sideLabel,
+              structureInfo,
+              emaAlignmentInfo,
+              priceVsEma20Info,
+              priceVsEma40Info,
+              supportDistanceInfo,
+              resistanceDistanceInfo,
+              macdInfo,
+              triggerCandleInfo,
+              bollingerInfo,
+            });
+
+            const confirmation = buildBbReversalConfirmation({
+              sideLabel,
+              structureInfo,
+              priceVsEma20Info,
+              ema20SlopeInfo,
+              supportDistanceInfo,
+              resistanceDistanceInfo,
+              triggerCandleInfo,
+              candleVsAtrInfo,
+              macdInfo,
+              bollingerInfo,
+              ifrInfo,
+            });
+
+            const decisionQuickInfo =
+              confirmation.confirmationPercent === null
+                ? undefined
+                : `Confirmação ${formatPercent(confirmation.confirmationPercent)}`;
 
             return (
               <div
@@ -385,7 +1241,7 @@ function outcomeListCard(
                   border: "1px solid #e2e8f0",
                   borderLeft: `4px solid ${accentColor}`,
                   borderRadius: 12,
-                  padding: 12,
+                  padding: 14,
                   background: "#f8fafc",
                   fontSize: 14,
                   color: "#334155",
@@ -396,39 +1252,74 @@ function outcomeListCard(
                   style={{
                     fontWeight: 700,
                     color: "#0f172a",
-                    marginBottom: 6,
+                    marginBottom: 10,
                     wordBreak: "break-word",
+                    fontSize: 15,
                   }}
                 >
                   {item.id}
                 </div>
 
-                <div>
-                  <strong>Lado:</strong> {getTradeSideLabel(item)}
+                {sectionTitle("Decisão rápida", decisionQuickInfo)}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {infoRow("Lado:", sideLabel, true)}
+                  {infoRow("Qualidade:", signalQuality, true)}
+                  {infoRow("Trigger:", formatDateTime(item.trigger_time ?? null))}
+                  {infoRow("Fechamento:", formatDateTime(item.close_time ?? null))}
+                  {infoRow("Entrada:", formatPrice(item.entry_price))}
+                  {infoRow("Saída:", formatPrice(item.close_price))}
                 </div>
-                <div>
-                  <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
+
+                {dividerLine()}
+
+                {sectionTitle("Contexto principal")}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {infoRow("Estrutura:", structureInfo.label, true)}
+                  {infoRow("Leitura Estrutura:", structureInfo.situation)}
+                  {infoRow("Preço vs EMA 20:", priceVsEma20Info.label, true)}
+                  {infoRow("Leitura EMA 20:", priceVsEma20Info.situation)}
+                  {infoRow("Preço vs EMA 40:", priceVsEma40Info.label, true)}
+                  {infoRow("Leitura EMA 40:", priceVsEma40Info.situation)}
+                  {infoRow("EMAs:", emaAlignmentInfo.label, true)}
+                  {infoRow("Leitura EMAs:", emaAlignmentInfo.situation)}
+                  {infoRow("EMA 20:", ema20SlopeInfo.label)}
+                  {infoRow("Leitura EMA 20:", ema20SlopeInfo.situation)}
                 </div>
-                <div>
-                  <strong>Fechamento:</strong> {formatDateTime(item.close_time ?? null)}
+
+                {dividerLine()}
+
+                {sectionTitle("Localização do preço")}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {infoRow("Suporte:", supportDistanceInfo.label, true)}
+                  {infoRow("Leitura Suporte:", supportDistanceInfo.situation)}
+                  {infoRow("Resistência:", resistanceDistanceInfo.label, true)}
+                  {infoRow("Leitura Resistência:", resistanceDistanceInfo.situation)}
                 </div>
-                <div>
-                  <strong>Entrada:</strong> {formatPrice(item.entry_price)}
+
+                {dividerLine()}
+
+                {sectionTitle("Momento e gatilho")}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {infoRow("Candle do gatilho:", triggerCandleInfo.label, true)}
+                  {infoRow("Leitura Gatilho:", triggerCandleInfo.situation)}
+                  {infoRow("Candle vs ATR:", candleVsAtrInfo.label)}
+                  {infoRow("Leitura Candle:", candleVsAtrInfo.situation)}
+                  {infoRow("MACD:", macdInfo.direction, true)}
+                  {infoRow("Leitura MACD:", macdInfo.strength)}
+                  {infoRow("Bollinger:", bollingerInfo.label, true)}
+                  {infoRow("Leitura Bollinger:", bollingerInfo.situation)}
                 </div>
-                <div>
-                  <strong>Saída:</strong> {formatPrice(item.close_price)}
-                </div>
-                <div>
-                  <strong>RSI na validação:</strong> {formatRsiNumber(rsiValue)}
-                </div>
-                <div>
-                  <strong>Leitura RSI:</strong> {rsiInfo.label}
-                </div>
-                <div>
-                  <strong>Tendência RSI:</strong> {rsiInfo.trend}
-                </div>
-                <div>
-                  <strong>Zona RSI:</strong> {rsiInfo.zone}
+
+                {dividerLine()}
+
+                {sectionTitle("Risco e ambiente")}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {infoRow("IFR:", ifrInfo.formattedValue)}
+                  {infoRow("Leitura IFR:", ifrInfo.strength)}
+                  {infoRow("Situação IFR:", ifrInfo.situation)}
+                  {infoRow("ATR:", atrInfo.formattedValue)}
+                  {infoRow("Volatilidade:", atrInfo.volatility)}
+                  {infoRow("Situação ATR:", atrInfo.situation)}
                 </div>
               </div>
             );
