@@ -552,6 +552,7 @@ function App() {
               onSetBollingerPeriod={setBollingerPeriod}
               onSetBollingerStdDev={setBollingerStdDev}
               activeIndicatorLabels={activeIndicatorLabels}
+              feedDiagnostics={feedDiagnostics}
             />
 
             {!showStrategyOverlays && selectedChartStrategy && (

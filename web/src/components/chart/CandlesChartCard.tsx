@@ -5,6 +5,7 @@ import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
   CandleTickState,
   CatalogInstrument,
+  FeedDiagnostics,
   OverlayLine,
   OverlayMarker,
 } from "../../types/trading";
@@ -59,7 +60,83 @@ type CandlesChartCardProps = {
   onSetBollingerPeriod: (value: number) => void;
   onSetBollingerStdDev: (value: number) => void;
   activeIndicatorLabels: string[];
+  feedDiagnostics: FeedDiagnostics;
 };
+
+type CoverageStatus = {
+  level: "good" | "warning" | "danger";
+  title: string;
+  message: string;
+  background: string;
+  border: string;
+  color: string;
+};
+
+function parseDateValue(value: string): number | null {
+  if (!value || value === "-") return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
+  const now = Date.now();
+  const lastCloseMs = parseDateValue(feedDiagnostics.coverageLastCloseUtc);
+  const startMs = parseDateValue(feedDiagnostics.coverageStartUtc);
+  const endMs = parseDateValue(feedDiagnostics.coverageEndUtc);
+  const count = Number(feedDiagnostics.coverageCount || 0);
+  const mode = feedDiagnostics.coverageMode;
+
+  if (!count || !lastCloseMs || !startMs || !endMs) {
+    return {
+      level: "danger",
+      title: "Cobertura insuficiente",
+      message: "A base local não devolveu candles suficientes para esta seleção.",
+      background: "#fef2f2",
+      border: "#fca5a5",
+      color: "#991b1b",
+    };
+  }
+
+  const ageMinutes = (now - lastCloseMs) / 60000;
+  const requestedWindowMinutes = Math.max((endMs - startMs) / 60000, 1);
+  const averageSpacingMinutes = requestedWindowMinutes / Math.max(count, 1);
+
+  const isClearlyStale = ageMinutes > Math.max(averageSpacingMinutes * 6, 180);
+  const isSlightlyStale = ageMinutes > Math.max(averageSpacingMinutes * 3, 45);
+  const isCoverageThin =
+    (mode === "full" && count < 30) || (mode === "incremental" && count < 5);
+
+  if (isClearlyStale || isCoverageThin) {
+    return {
+      level: "danger",
+      title: "Cobertura crítica",
+      message: "A cobertura local está curta ou antiga demais para confiar na ponta recente.",
+      background: "#fef2f2",
+      border: "#fca5a5",
+      color: "#991b1b",
+    };
+  }
+
+  if (isSlightlyStale) {
+    return {
+      level: "warning",
+      title: "Cobertura aceitável com atenção",
+      message: "A base local ainda está utilizável, mas a ponta parece um pouco antiga.",
+      background: "#fffbeb",
+      border: "#fcd34d",
+      color: "#92400e",
+    };
+  }
+
+  return {
+    level: "good",
+    title: "Cobertura saudável",
+    message: "A cobertura local parece consistente com a janela pedida.",
+    background: "#ecfdf5",
+    border: "#86efac",
+    color: "#166534",
+  };
+}
 
 function CandlesChartCard(props: CandlesChartCardProps) {
   const {
@@ -82,6 +159,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     onSetBollingerStdDev,
     activeIndicatorLabels,
     lastCandleTick,
+    feedDiagnostics,
   } = props;
 
   const [isIndicatorMenuOpen, setIsIndicatorMenuOpen] = useState<boolean>(false);
@@ -102,6 +180,10 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   const priceScaleData = useMemo(() => {
     return buildPriceScaleData(chartData, currentPrice, CHART_HEIGHT);
   }, [chartData, currentPrice]);
+
+  const coverageStatus = useMemo(() => {
+    return getCoverageStatus(feedDiagnostics);
+  }, [feedDiagnostics]);
 
   const hasOverlayContent =
     overlays.lines.length > 0 || overlays.markers.length > 0;
@@ -131,6 +213,23 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   return (
     <div style={mainCardStyle}>
       <ChartHeader title="Gráfico de candles" />
+
+      <div
+        style={{
+          marginTop: 12,
+          marginBottom: 14,
+          padding: 12,
+          borderRadius: 12,
+          background: coverageStatus.background,
+          border: `1px solid ${coverageStatus.border}`,
+          color: coverageStatus.color,
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        <strong>{coverageStatus.title}</strong>
+        <div>{coverageStatus.message}</div>
+      </div>
 
       {showMarketInfo && (
         <ChartMarketInfo
