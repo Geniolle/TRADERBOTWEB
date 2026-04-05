@@ -42,6 +42,109 @@ type MarketFiltersCardProps = {
   selectedSymbolData: CatalogInstrument | null;
 };
 
+type MarketStatusInfo = {
+  label: string;
+  detail: string;
+  color: string;
+};
+
+function getCurrentUtcDate(): Date {
+  return new Date();
+}
+
+function getForexStatus(nowUtc: Date): MarketStatusInfo {
+  const day = nowUtc.getUTCDay();
+  const hour = nowUtc.getUTCHours();
+  const minute = nowUtc.getUTCMinutes();
+  const totalMinutes = hour * 60 + minute;
+
+  if (day === 6) {
+    return {
+      label: "Fechado",
+      detail: "Forex fecha ao sábado",
+      color: "#dc2626",
+    };
+  }
+
+  if (day === 0 && totalMinutes < 22 * 60) {
+    return {
+      label: "Fechado",
+      detail: "Forex abre no domingo às 22:00 UTC",
+      color: "#dc2626",
+    };
+  }
+
+  if (day === 5 && totalMinutes >= 22 * 60) {
+    return {
+      label: "Fechado",
+      detail: "Forex fecha na sexta às 22:00 UTC",
+      color: "#dc2626",
+    };
+  }
+
+  return {
+    label: "Aberto",
+    detail: "Forex ativo no ciclo 24/5",
+    color: "#16a34a",
+  };
+}
+
+function getCryptoStatus(): MarketStatusInfo {
+  return {
+    label: "Aberto",
+    detail: "Cripto funciona 24/7",
+    color: "#16a34a",
+  };
+}
+
+function getMarketStatusInfo(
+  selectedMarketTypeLabel: string,
+  selectedCatalogLabel: string,
+  selectedSymbolData: CatalogInstrument | null
+): MarketStatusInfo {
+  const marketType = String(selectedMarketTypeLabel ?? "").trim().toLowerCase();
+  const catalog = String(selectedCatalogLabel ?? "").trim().toLowerCase();
+  const symbolName = String(selectedSymbolData?.display_name ?? "")
+    .trim()
+    .toLowerCase();
+  const symbolCode = String(selectedSymbolData?.symbol ?? "").trim().toLowerCase();
+
+  const combinedText = [marketType, catalog, symbolName, symbolCode].join(" ");
+  const nowUtc = getCurrentUtcDate();
+
+  if (
+    combinedText.includes("crypto") ||
+    combinedText.includes("cripto") ||
+    combinedText.includes("bitcoin") ||
+    combinedText.includes("ethereum") ||
+    combinedText.includes("usdt")
+  ) {
+    return getCryptoStatus();
+  }
+
+  if (
+    combinedText.includes("forex") ||
+    combinedText.includes("majors") ||
+    combinedText.includes("minors") ||
+    combinedText.includes("exotics") ||
+    combinedText.includes("eurusd") ||
+    combinedText.includes("gbpusd") ||
+    combinedText.includes("usdjpy") ||
+    combinedText.includes("usdchf") ||
+    combinedText.includes("audusd") ||
+    combinedText.includes("nzdusd") ||
+    combinedText.includes("usdcad")
+  ) {
+    return getForexStatus(nowUtc);
+  }
+
+  return {
+    label: "Não confirmado",
+    detail: "Estado do mercado ainda não definido para este tipo",
+    color: "#d97706",
+  };
+}
+
 function MarketFiltersCard({
   sidebarCardStyle,
   loadingMarketTypes,
@@ -73,6 +176,12 @@ function MarketFiltersCard({
 }: MarketFiltersCardProps) {
   const selectedStrategy =
     strategies.find((item) => item.key === selectedStrategyKey) ?? null;
+
+  const marketStatusInfo = getMarketStatusInfo(
+    selectedMarketTypeLabel,
+    selectedCatalogLabel,
+    selectedSymbolData
+  );
 
   return (
     <div style={sidebarCardStyle}>
@@ -360,6 +469,20 @@ function MarketFiltersCard({
             </div>
             <div>
               <strong>Descrição:</strong> {selectedSymbolData.display_name}
+            </div>
+            <div>
+              <strong>Estado do mercado:</strong>{" "}
+              <span
+                style={{
+                  color: marketStatusInfo.color,
+                  fontWeight: 700,
+                }}
+              >
+                {marketStatusInfo.label}
+              </span>
+            </div>
+            <div>
+              <strong>Sessão:</strong> {marketStatusInfo.detail}
             </div>
             <div>
               <strong>Timeframe:</strong> {selectedTimeframe || "-"}
