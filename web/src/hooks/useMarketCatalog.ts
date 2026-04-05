@@ -1,6 +1,6 @@
 // web/src/hooks/useMarketCatalog.ts
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
 import type {
@@ -78,8 +78,7 @@ function normalizeProductResponse(data: unknown): CatalogProductResponse | null 
         item &&
         typeof item === "object" &&
         typeof item.code === "string" &&
-        typeof item.label === "string" &&
-        Array.isArray(item.items)
+        typeof item.label === "string"
     ),
   };
 }
@@ -99,7 +98,10 @@ function normalizeItemsResponse(data: unknown): CatalogInstrument[] {
   );
 }
 
-async function safeFetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
+async function safeFetchJson(
+  url: string,
+  signal?: AbortSignal
+): Promise<unknown> {
   const response = await fetch(url, {
     method: "GET",
     headers: {
@@ -117,18 +119,21 @@ async function safeFetchJson(url: string, signal?: AbortSignal): Promise<unknown
 
 function useMarketCatalog() {
   const [marketTypes, setMarketTypes] = useState<CatalogProductSummary[]>([]);
-  const [selectedMarketType, setSelectedMarketType] = useState<string>(() =>
-    readStorage(STORAGE_KEYS.marketType)
+  const [selectedMarketTypeState, setSelectedMarketTypeState] = useState<string>(
+    () => readStorage(STORAGE_KEYS.marketType)
   );
   const [marketTypeDetails, setMarketTypeDetails] =
     useState<CatalogProductResponse | null>(null);
-  const [selectedCatalog, setSelectedCatalog] = useState<string>(() =>
+  const [selectedCatalogState, setSelectedCatalogState] = useState<string>(() =>
     readStorage(STORAGE_KEYS.catalog)
   );
   const [catalogSymbols, setCatalogSymbols] = useState<CatalogInstrument[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState<string>(() =>
+  const [selectedSymbolState, setSelectedSymbolState] = useState<string>(() =>
     readStorage(STORAGE_KEYS.symbol)
   );
+
+  const selectedCatalogRef = useRef<string>(selectedCatalogState);
+  const selectedSymbolRef = useRef<string>(selectedSymbolState);
 
   const [loadingMarketTypes, setLoadingMarketTypes] = useState<boolean>(true);
   const [loadingCatalogs, setLoadingCatalogs] = useState<boolean>(false);
@@ -137,6 +142,50 @@ function useMarketCatalog() {
   const [marketTypesError, setMarketTypesError] = useState<string>("");
   const [catalogsError, setCatalogsError] = useState<string>("");
   const [symbolsError, setSymbolsError] = useState<string>("");
+
+  const setSelectedMarketType = useCallback((value: string) => {
+    setSelectedMarketTypeState((current) => {
+      if (current === value) return current;
+      return value;
+    });
+
+    setMarketTypeDetails(null);
+    setSelectedCatalogState("");
+    setCatalogSymbols([]);
+    setSelectedSymbolState("");
+    setCatalogsError("");
+    setSymbolsError("");
+    setLoadingCatalogs(false);
+    setLoadingSymbols(false);
+  }, []);
+
+  const setSelectedCatalog = useCallback((value: string) => {
+    setSelectedCatalogState((current) => {
+      if (current === value) return current;
+      return value;
+    });
+
+    setCatalogSymbols([]);
+    setSelectedSymbolState("");
+    setSymbolsError("");
+    setLoadingSymbols(false);
+  }, []);
+
+  const setSelectedSymbol = useCallback((value: string) => {
+    setSelectedSymbolState(value);
+  }, []);
+
+  const selectedMarketType = selectedMarketTypeState;
+  const selectedCatalog = selectedCatalogState;
+  const selectedSymbol = selectedSymbolState;
+
+  useEffect(() => {
+    selectedCatalogRef.current = selectedCatalog;
+  }, [selectedCatalog]);
+
+  useEffect(() => {
+    selectedSymbolRef.current = selectedSymbol;
+  }, [selectedSymbol]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.marketType, selectedMarketType);
@@ -174,11 +223,11 @@ function useMarketCatalog() {
         );
 
         if (!hasStoredMarketType) {
-          setSelectedMarketType("");
+          setSelectedMarketTypeState("");
           setMarketTypeDetails(null);
-          setSelectedCatalog("");
+          setSelectedCatalogState("");
           setCatalogSymbols([]);
-          setSelectedSymbol("");
+          setSelectedSymbolState("");
         }
       } catch (error) {
         if (!isMounted || controller.signal.aborted) return;
@@ -211,9 +260,9 @@ function useMarketCatalog() {
     const loadCatalogs = async () => {
       if (!selectedMarketType) {
         setMarketTypeDetails(null);
-        setSelectedCatalog("");
+        setSelectedCatalogState("");
         setCatalogSymbols([]);
-        setSelectedSymbol("");
+        setSelectedSymbolState("");
         setCatalogsError("");
         setSymbolsError("");
         setLoadingCatalogs(false);
@@ -225,7 +274,9 @@ function useMarketCatalog() {
         setCatalogsError("");
 
         const data = await safeFetchJson(
-          `${API_HTTP_BASE_URL}/catalog/products/${encodeURIComponent(selectedMarketType)}`,
+          `${API_HTTP_BASE_URL}/catalog/products/${encodeURIComponent(
+            selectedMarketType
+          )}`,
           controller.signal
         );
 
@@ -239,22 +290,24 @@ function useMarketCatalog() {
 
         setMarketTypeDetails(normalized);
 
+        const currentSelectedCatalog = selectedCatalogRef.current;
+
         const hasStoredCatalog = normalized.subproducts.some(
-          (item) => item.code === selectedCatalog
+          (item) => item.code === currentSelectedCatalog
         );
 
         if (!hasStoredCatalog) {
-          setSelectedCatalog("");
+          setSelectedCatalogState("");
           setCatalogSymbols([]);
-          setSelectedSymbol("");
+          setSelectedSymbolState("");
         }
       } catch (error) {
         if (!isMounted || controller.signal.aborted) return;
 
         setMarketTypeDetails(null);
-        setSelectedCatalog("");
+        setSelectedCatalogState("");
         setCatalogSymbols([]);
-        setSelectedSymbol("");
+        setSelectedSymbolState("");
         setSymbolsError("");
         setCatalogsError(
           error instanceof Error
@@ -274,7 +327,7 @@ function useMarketCatalog() {
       isMounted = false;
       controller.abort();
     };
-  }, [selectedMarketType, selectedCatalog]);
+  }, [selectedMarketType]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -283,7 +336,7 @@ function useMarketCatalog() {
     const loadSymbols = async () => {
       if (!selectedMarketType || !selectedCatalog) {
         setCatalogSymbols([]);
-        setSelectedSymbol("");
+        setSelectedSymbolState("");
         setSymbolsError("");
         setLoadingSymbols(false);
         return;
@@ -305,18 +358,20 @@ function useMarketCatalog() {
         const items = normalizeItemsResponse(data);
         setCatalogSymbols(items);
 
+        const currentSelectedSymbol = selectedSymbolRef.current;
+
         const hasStoredSymbol = items.some(
-          (item) => item.symbol === selectedSymbol
+          (item) => item.symbol === currentSelectedSymbol
         );
 
         if (!hasStoredSymbol) {
-          setSelectedSymbol("");
+          setSelectedSymbolState("");
         }
       } catch (error) {
         if (!isMounted || controller.signal.aborted) return;
 
         setCatalogSymbols([]);
-        setSelectedSymbol("");
+        setSelectedSymbolState("");
         setSymbolsError(
           error instanceof Error
             ? error.message
@@ -335,14 +390,16 @@ function useMarketCatalog() {
       isMounted = false;
       controller.abort();
     };
-  }, [selectedMarketType, selectedCatalog, selectedSymbol]);
+  }, [selectedMarketType, selectedCatalog]);
 
   const availableCatalogs = useMemo(() => {
     return marketTypeDetails?.subproducts ?? [];
   }, [marketTypeDetails]);
 
   const selectedMarketTypeLabel = useMemo(() => {
-    return marketTypes.find((item) => item.code === selectedMarketType)?.label ?? "-";
+    return (
+      marketTypes.find((item) => item.code === selectedMarketType)?.label ?? "-"
+    );
   }, [marketTypes, selectedMarketType]);
 
   const selectedCatalogLabel = useMemo(() => {
