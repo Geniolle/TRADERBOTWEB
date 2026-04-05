@@ -500,6 +500,10 @@ function App() {
                   loadingHealth={loadingHealth}
                   healthError={healthError}
                   health={health}
+                  wsStatus={wsStatus}
+                  lastWsEvent={lastWsEvent}
+                  providerErrorMessage={providerErrorMessage}
+                  hasLoadedInitialCandles={hasLoadedInitialCandles}
                 />
               </div>
             </div>

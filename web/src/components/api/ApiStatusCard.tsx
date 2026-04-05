@@ -1,4 +1,4 @@
-// src/components/api/ApiStatusCard.tsx
+// web/src/components/api/ApiStatusCard.tsx
 
 import type { HealthResponse } from "../../types/trading";
 
@@ -7,14 +7,244 @@ type ApiStatusCardProps = {
   loadingHealth: boolean;
   healthError: string;
   health: HealthResponse | null;
+  wsStatus: string;
+  lastWsEvent: string;
+  providerErrorMessage: string;
+  hasLoadedInitialCandles: boolean;
 };
+
+function getStatusColor(kind: "ok" | "warn" | "error" | "neutral"): string {
+  if (kind === "ok") return "#16a34a";
+  if (kind === "warn") return "#d97706";
+  if (kind === "error") return "#dc2626";
+  return "#64748b";
+}
+
+function getApiStatusInfo(
+  loadingHealth: boolean,
+  healthError: string,
+  health: HealthResponse | null
+) {
+  if (loadingHealth) {
+    return {
+      label: "A verificar...",
+      detail: "A carregar healthcheck",
+      kind: "neutral" as const,
+    };
+  }
+
+  if (healthError) {
+    return {
+      label: "Offline",
+      detail: healthError,
+      kind: "error" as const,
+    };
+  }
+
+  if (health) {
+    return {
+      label: "Online",
+      detail: `${health.app_name} / ${health.environment}`,
+      kind: "ok" as const,
+    };
+  }
+
+  return {
+    label: "Sem resposta",
+    detail: "-",
+    kind: "neutral" as const,
+  };
+}
+
+function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
+  const normalizedStatus = String(wsStatus ?? "").trim().toLowerCase();
+  const normalizedEvent = String(lastWsEvent ?? "").trim().toLowerCase();
+
+  if (normalizedStatus === "subscribed") {
+    return {
+      label: "Subscrito",
+      detail: "Ligação ativa e subscrição confirmada",
+      kind: "ok" as const,
+    };
+  }
+
+  if (normalizedStatus === "connected") {
+    return {
+      label: "Ligado",
+      detail: "Socket aberto, à espera da subscrição",
+      kind: "ok" as const,
+    };
+  }
+
+  if (normalizedStatus === "connecting") {
+    return {
+      label: "A ligar...",
+      detail: "A abrir websocket",
+      kind: "warn" as const,
+    };
+  }
+
+  if (normalizedStatus === "error") {
+    return {
+      label: "Erro",
+      detail: "Falha na ligação websocket",
+      kind: "error" as const,
+    };
+  }
+
+  if (normalizedStatus === "closed") {
+    return {
+      label: "Fechado",
+      detail: `Último evento: ${lastWsEvent || "-"}`,
+      kind: "warn" as const,
+    };
+  }
+
+  if (normalizedEvent && normalizedEvent !== "-") {
+    return {
+      label: "Inativo",
+      detail: `Último evento: ${lastWsEvent}`,
+      kind: "neutral" as const,
+    };
+  }
+
+  return {
+    label: "Desligado",
+    detail: "-",
+    kind: "neutral" as const,
+  };
+}
+
+function getProviderStatusInfo(
+  providerErrorMessage: string,
+  hasLoadedInitialCandles: boolean,
+  lastWsEvent: string
+) {
+  const error = String(providerErrorMessage ?? "").trim();
+  const normalizedError = error.toLowerCase();
+  const normalizedEvent = String(lastWsEvent ?? "").trim().toLowerCase();
+
+  if (
+    normalizedError.includes("token") ||
+    normalizedError.includes("auth") ||
+    normalizedError.includes("unauthorized") ||
+    normalizedError.includes("credential") ||
+    normalizedError.includes("api key") ||
+    normalizedError.includes("forbidden") ||
+    normalizedError.includes("permission")
+  ) {
+    return {
+      label: "Sem token / auth",
+      detail: error,
+      kind: "error" as const,
+    };
+  }
+
+  if (error) {
+    return {
+      label: "Erro no provider",
+      detail: error,
+      kind: "error" as const,
+    };
+  }
+
+  if (
+    hasLoadedInitialCandles ||
+    normalizedEvent === "initial_candles" ||
+    normalizedEvent === "candle_tick"
+  ) {
+    return {
+      label: "A comunicar",
+      detail: "Candles recebidos com sucesso",
+      kind: "ok" as const,
+    };
+  }
+
+  if (normalizedEvent === "subscribed" || normalizedEvent === "connected") {
+    return {
+      label: "À espera de dados",
+      detail: "Ligação aberta, sem candles ainda",
+      kind: "warn" as const,
+    };
+  }
+
+  return {
+    label: "Sem confirmação",
+    detail: "Ainda sem resposta do provider",
+    kind: "neutral" as const,
+  };
+}
+
+function statusRow(
+  title: string,
+  label: string,
+  detail: string,
+  kind: "ok" | "warn" | "error" | "neutral"
+) {
+  const color = getStatusColor(kind);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        padding: 12,
+        background: "#f8fafc",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 6,
+        }}
+      >
+        <strong style={{ color: "#0f172a" }}>{title}</strong>
+        <span
+          style={{
+            color,
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          {label}
+        </span>
+      </div>
+
+      <div
+        style={{
+          fontSize: 13,
+          color: "#475569",
+          lineHeight: 1.5,
+          wordBreak: "break-word",
+        }}
+      >
+        {detail || "-"}
+      </div>
+    </div>
+  );
+}
 
 function ApiStatusCard({
   sidebarCardStyle,
   loadingHealth,
   healthError,
   health,
+  wsStatus,
+  lastWsEvent,
+  providerErrorMessage,
+  hasLoadedInitialCandles,
 }: ApiStatusCardProps) {
+  const apiInfo = getApiStatusInfo(loadingHealth, healthError, health);
+  const wsInfo = getWebSocketStatusInfo(wsStatus, lastWsEvent);
+  const providerInfo = getProviderStatusInfo(
+    providerErrorMessage,
+    hasLoadedInitialCandles,
+    lastWsEvent
+  );
+
   return (
     <div style={sidebarCardStyle}>
       <h2
@@ -25,30 +255,37 @@ function ApiStatusCard({
           fontWeight: 700,
         }}
       >
-        API
+        Estado da ligação
       </h2>
 
-      {loadingHealth && <p style={{ margin: 0 }}>A carregar healthcheck...</p>}
+      <div style={{ display: "grid", gap: 10 }}>
+        {statusRow("API", apiInfo.label, apiInfo.detail, apiInfo.kind)}
+        {statusRow("WebSocket", wsInfo.label, wsInfo.detail, wsInfo.kind)}
+        {statusRow(
+          "Provider",
+          providerInfo.label,
+          providerInfo.detail,
+          providerInfo.kind
+        )}
+      </div>
 
-      {!loadingHealth && healthError && (
-        <div>
-          <p style={{ color: "#dc2626", fontWeight: "bold" }}>
-            Erro ao ligar à API
-          </p>
-          <p>{healthError}</p>
-        </div>
-      )}
-
-      {!loadingHealth && !healthError && health && (
-        <div style={{ fontSize: 14, lineHeight: 1.6, color: "#1e293b" }}>
-          <div>
-            <strong>Status:</strong> {health.status}
-          </div>
+      {health && (
+        <div
+          style={{
+            marginTop: 12,
+            fontSize: 12,
+            color: "#64748b",
+            lineHeight: 1.5,
+          }}
+        >
           <div>
             <strong>App:</strong> {health.app_name}
           </div>
           <div>
             <strong>Environment:</strong> {health.environment}
+          </div>
+          <div>
+            <strong>Health:</strong> {health.status}
           </div>
         </div>
       )}
