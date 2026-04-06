@@ -193,7 +193,18 @@ export type StrategyItem = {
   version: string;
   description: string;
   category: string;
+  enabled?: boolean;
+  supports_chart_overlays?: boolean;
+  strategy_family?: string | null;
 };
+
+export type StrategyListResponse =
+  | StrategyItem[]
+  | {
+      items?: StrategyItem[];
+      strategies?: StrategyItem[];
+      data?: StrategyItem[];
+    };
 
 export type RunHistoryItem = {
   id: string;

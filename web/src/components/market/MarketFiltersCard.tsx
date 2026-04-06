@@ -402,6 +402,20 @@ function MarketFiltersCard({
               </option>
             ))}
           </select>
+
+          {!loadingStrategies && !strategiesError && strategies.length > 0 && (
+            <p
+              style={{
+                margin: "8px 0 0 0",
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: "#64748b",
+              }}
+            >
+              O seletor usa apenas estratégias ativas devolvidas pelo endpoint
+              <strong> /strategies</strong>.
+            </p>
+          )}
         </div>
       </div>
 
@@ -491,6 +505,22 @@ function MarketFiltersCard({
               <strong>Estratégia do gráfico:</strong>{" "}
               {selectedStrategy ? selectedStrategy.name : "Nenhuma"}
             </div>
+            {selectedStrategy && (
+              <>
+                <div>
+                  <strong>Key oficial:</strong> {selectedStrategy.key}
+                </div>
+                <div>
+                  <strong>Versão:</strong> {selectedStrategy.version}
+                </div>
+                <div>
+                  <strong>Overlays:</strong>{" "}
+                  {selectedStrategy.supports_chart_overlays === false
+                    ? "não suportados"
+                    : "suportados"}
+                </div>
+              </>
+            )}
           </div>
         )}
     </div>

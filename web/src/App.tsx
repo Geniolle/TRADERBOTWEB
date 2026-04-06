@@ -119,23 +119,6 @@ function App() {
     }
   }, [selectedTimeframe]);
 
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-
-      if (selectedChartStrategyKey) {
-        window.localStorage.setItem(
-          CHART_STRATEGY_STORAGE_KEY,
-          selectedChartStrategyKey
-        );
-      } else {
-        window.localStorage.removeItem(CHART_STRATEGY_STORAGE_KEY);
-      }
-    } catch {
-      // Ignora erros de localStorage
-    }
-  }, [selectedChartStrategyKey]);
-
   const isSelectedTimeframeValid = useMemo(() => {
     return TIMEFRAME_OPTIONS.some((item) => item.value === selectedTimeframe);
   }, [selectedTimeframe]);
@@ -143,6 +126,47 @@ function App() {
   const effectiveSelectedTimeframe = useMemo(() => {
     return isSelectedTimeframeValid ? selectedTimeframe : "";
   }, [isSelectedTimeframeValid, selectedTimeframe]);
+
+  const selectableStrategies = useMemo(() => {
+    return strategies.filter((item) => item.enabled !== false);
+  }, [strategies]);
+
+  const effectiveSelectedChartStrategyKey = useMemo(() => {
+    if (!selectedChartStrategyKey) {
+      return "";
+    }
+
+    const existsInSelectableList = selectableStrategies.some(
+      (item) => item.key === selectedChartStrategyKey
+    );
+
+    return existsInSelectableList ? selectedChartStrategyKey : "";
+  }, [selectableStrategies, selectedChartStrategyKey]);
+
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+
+      if (effectiveSelectedChartStrategyKey) {
+        window.localStorage.setItem(
+          CHART_STRATEGY_STORAGE_KEY,
+          effectiveSelectedChartStrategyKey
+        );
+      } else {
+        window.localStorage.removeItem(CHART_STRATEGY_STORAGE_KEY);
+      }
+    } catch {
+      // Ignora erros de localStorage
+    }
+  }, [effectiveSelectedChartStrategyKey]);
+
+  const selectedChartStrategy = useMemo(() => {
+    return (
+      selectableStrategies.find(
+        (item) => item.key === effectiveSelectedChartStrategyKey
+      ) ?? null
+    );
+  }, [selectableStrategies, effectiveSelectedChartStrategyKey]);
 
   const isMarketSelectionComplete = useMemo(() => {
     if (FORCE_REALTIME_TEST) {
@@ -202,7 +226,7 @@ function App() {
   } = useRunHistory({
     selectedSymbol: effectiveChartSymbol,
     selectedTimeframe: effectiveChartTimeframe,
-    selectedStrategyKey: selectedChartStrategyKey,
+    selectedStrategyKey: effectiveSelectedChartStrategyKey,
   });
 
   const {
@@ -319,19 +343,40 @@ function App() {
     lastCandleTick,
   });
 
-  const selectedChartStrategy = useMemo(() => {
-    return (
-      strategies.find((item) => item.key === selectedChartStrategyKey) ?? null
-    );
-  }, [strategies, selectedChartStrategyKey]);
-
   const runStrategyKey = runDetails?.run?.strategy_key ?? "";
 
+  const selectedStrategySupportsOverlays = useMemo(() => {
+    if (!selectedChartStrategy) return false;
+    return selectedChartStrategy.supports_chart_overlays !== false;
+  }, [selectedChartStrategy]);
+
   const showStrategyOverlays = useMemo(() => {
-    if (!selectedChartStrategyKey) return false;
+    if (!effectiveSelectedChartStrategyKey) return false;
     if (!runStrategyKey) return false;
-    return selectedChartStrategyKey === runStrategyKey;
-  }, [selectedChartStrategyKey, runStrategyKey]);
+    if (!selectedStrategySupportsOverlays) return false;
+
+    return effectiveSelectedChartStrategyKey === runStrategyKey;
+  }, [
+    effectiveSelectedChartStrategyKey,
+    runStrategyKey,
+    selectedStrategySupportsOverlays,
+  ]);
+
+  const selectedStrategyNotice = useMemo(() => {
+    if (!selectedChartStrategy) {
+      return null;
+    }
+
+    return {
+      name: selectedChartStrategy.name,
+      key: selectedChartStrategy.key,
+      supportsOverlays: selectedChartStrategy.supports_chart_overlays !== false,
+    };
+  }, [selectedChartStrategy]);
+
+  const showSelectedStrategyNotice = Boolean(
+    selectedStrategyNotice && !showStrategyOverlays
+  );
 
   const sidebarCardStyle: React.CSSProperties = {
     border: "1px solid #dbe2ea",
@@ -466,8 +511,8 @@ function App() {
                   selectedTimeframe={effectiveSelectedTimeframe}
                   setSelectedTimeframe={setSelectedTimeframe}
                   timeframeOptions={TIMEFRAME_OPTIONS}
-                  strategies={strategies}
-                  selectedStrategyKey={selectedChartStrategyKey}
+                  strategies={selectableStrategies}
+                  selectedStrategyKey={effectiveSelectedChartStrategyKey}
                   setSelectedStrategyKey={setSelectedChartStrategyKey}
                   selectedMarketTypeLabel={selectedMarketTypeLabel}
                   selectedCatalogLabel={selectedCatalogLabel}
@@ -491,7 +536,7 @@ function App() {
                   canCreateRuns={Boolean(
                     effectiveChartSymbol &&
                       effectiveChartTimeframe &&
-                      selectedChartStrategyKey
+                      effectiveSelectedChartStrategyKey
                   )}
                 />
 
@@ -560,7 +605,7 @@ function App() {
               feedDiagnostics={feedDiagnostics}
             />
 
-            {!showStrategyOverlays && selectedChartStrategy && (
+            {showSelectedStrategyNotice && selectedStrategyNotice && (
               <div
                 style={{
                   ...mainCardStyle,
@@ -572,14 +617,19 @@ function App() {
                 }}
               >
                 <strong>Estratégia selecionada para o gráfico:</strong>{" "}
-                {selectedChartStrategy.name} ({selectedChartStrategy.key})
+                {selectedStrategyNotice.name} ({selectedStrategyNotice.key})
                 <br />
                 <strong>Run selecionado:</strong>{" "}
                 {runStrategyKey ? runStrategyKey : "sem strategy_key"}
                 <br />
-                Os overlays estratégicos só aparecem quando a estratégia
-                escolhida no filtro coincide com a estratégia do run
-                selecionado.
+                <strong>Overlays desta estratégia:</strong>{" "}
+                {selectedStrategyNotice.supportsOverlays
+                  ? "suportados"
+                  : "não suportados"}
+                <br />
+                {selectedStrategyNotice.supportsOverlays
+                  ? "Os overlays estratégicos só aparecem quando a estratégia escolhida no filtro coincide com a estratégia do run selecionado."
+                  : "Esta estratégia está ativa para seleção e execução, mas o contrato devolvido pelo backend indica que não há overlays estratégicos para desenhar no gráfico."}
               </div>
             )}
 
