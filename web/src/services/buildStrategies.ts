@@ -299,6 +299,8 @@ function buildRangeBreakoutStrategy(input: MarketStrategyInput): StrategyCard {
   const belowEma21 = isBelow(currentPrice, ema21);
 
   let score = 0;
+  let rationale =
+    "Quando o ADX está baixo, o mercado tende a comprimir energia. O rompimento com ADX a subir e MACD a acelerar para baixo ajuda a confirmar libertação dessa energia do lado vendedor.";
 
   const direction: StrategyCard["direction"] = "sell";
   const summary =
@@ -310,8 +312,6 @@ function buildRangeBreakoutStrategy(input: MarketStrategyInput): StrategyCard {
   const targets = ["Expansão do range", "Nova mínima intradiária"];
   const invalidation =
     "Falha no rompimento, retorno para dentro do range ou perda da aceleração negativa no MACD.";
-  let rationale =
-    "Quando o ADX está baixo, o mercado tende a comprimir energia. O rompimento com ADX a subir e MACD a acelerar para baixo ajuda a confirmar libertação dessa energia do lado vendedor.";
 
   if (neutralTrend || bearishTrend) score += 18;
   if (adx != null && adx >= 18 && adx <= 24.99) score += 20;
@@ -429,19 +429,18 @@ function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
   const rsi = input.rsiValue;
   const currentPrice = input.currentPrice;
   const ema9 = input.ema9;
-  const ema21 = input.ema21;
   const macdHistogram = input.macdHistogram;
 
   const bearishTrend = trend.includes("baixa");
   const weakAdx = adx != null && adx >= 18 && adx <= 23;
 
   const belowEma9 = isBelow(currentPrice, ema9);
-  const belowEma21 = isBelow(currentPrice, ema21);
-
   const distToEma9 = calcDistancePercent(currentPrice, ema9);
   const farFromEma9 = distToEma9 != null && distToEma9 <= -0.08;
 
   let score = 0;
+  let rationale =
+    "É uma operação agressiva de scalp e contra o fluxo principal. Só faz sentido quando a tendência segue de baixa, mas a força da queda é curta e o preço já está demasiado esticado.";
 
   const direction: StrategyCard["direction"] = "buy";
   const summary =
@@ -453,9 +452,6 @@ function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
   const targets = ["Retorno até a MME 9", "Alívio técnico curto"];
   const invalidation =
     "Continuação da queda com ADX a acelerar, perda de fundo sem reação ou MACD a expandir fortemente a aceleração negativa.";
-  let rationale =
-    "É uma operação agressiva de scalp e contra o fluxo principal. Só faz sentido quando a tendência segue de baixa, mas a força da queda é curta e o preço já está demasiado esticado.";
-  let status = "invalid" as StrategyStatus;
 
   if (bearishTrend) score += 18;
   if (weakAdx) score += 18;
@@ -464,7 +460,6 @@ function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
   else if (rsi != null && rsi > 40) score -= 10;
 
   if (belowEma9) score += 8;
-  if (belowEma21) score += 6;
   if (farFromEma9) score += 18;
   else if (distToEma9 != null && distToEma9 > -0.03) score -= 8;
 
@@ -480,7 +475,7 @@ function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
   }
 
   score = roundScore(score);
-  status = resolveStatus(score);
+  const status = resolveStatus(score);
 
   return {
     id: "strategy-fade",
@@ -546,6 +541,413 @@ function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
   };
 }
 
+function buildMeanReversionStrategy(input: MarketStrategyInput): StrategyCard {
+  const trend = (input.trendLabel || "").toLowerCase();
+  const macdBias = (input.macdBiasLabel || "").toLowerCase();
+
+  const currentPrice = input.currentPrice;
+  const ema21 = input.ema21;
+  const sma200 = input.sma200;
+  const rsi = input.rsiValue;
+  const adx = input.adxValue;
+
+  const distToEma21 = calcDistancePercent(currentPrice, ema21);
+  const distToSma200 = calcDistancePercent(currentPrice, sma200);
+
+  const farAboveMean =
+    (distToEma21 != null && distToEma21 >= 0.5) ||
+    (distToSma200 != null && distToSma200 >= 0.5);
+  const farBelowMean =
+    (distToEma21 != null && distToEma21 <= -0.5) ||
+    (distToSma200 != null && distToSma200 <= -0.5);
+
+  const overbought = rsi != null && rsi >= 70;
+  const oversold = rsi != null && rsi <= 30;
+
+  let score = 0;
+  let direction: StrategyCard["direction"] = "neutral";
+  let summary =
+    "O preço ainda não está suficientemente esticado para uma reversão clara à média.";
+  let trigger =
+    "Esperar esticão extremo do preço com RSI em sobrecompra ou sobrevenda.";
+  let entry =
+    "Entrada curta contra o movimento só quando o preço estiver demasiado afastado da média.";
+  let targets = ["Toque na MME 21", "Fecho parcial antes da média seguinte"];
+  let invalidation =
+    "Continuação do esticão com nova aceleração a favor da tendência dominante.";
+  let rationale =
+    "A reversão à média é uma operação de alta precisão e alto risco, usada apenas quando o preço parece demasiado caro ou barato no curto prazo.";
+
+  if (farAboveMean && overbought) {
+    direction = "sell";
+    score += 30;
+    if (distToEma21 != null && distToEma21 >= 0.5) score += 20;
+    if (distToSma200 != null && distToSma200 >= 0.5) score += 18;
+    if (rsi != null && rsi >= 75) score += 18;
+    else score += 12;
+    if (adx != null && adx < 30) score += 8;
+    if (macdBias.includes("compr")) score += 4;
+
+    summary =
+      "Venda curta contra o esticão, buscando apenas o retorno do preço até à média.";
+    trigger =
+      "RSI em sobrecompra e distância extrema para a MME 21 ou MMS 200.";
+    entry =
+      "Venda contra tendência apenas quando o preço estiver claramente esticado acima da média.";
+    targets = ["Retorno até a MME 21", "Alívio técnico até a média"];
+    invalidation =
+      "Continuação da alta com novo esticão e manutenção forte acima da média.";
+    rationale =
+      "O preço está caro demais para o contexto de curto prazo. A ideia é capturar apenas o retorno ao eixo, não prever uma reversão estrutural completa.";
+  } else if (farBelowMean && oversold) {
+    direction = "buy";
+    score += 30;
+    if (distToEma21 != null && distToEma21 <= -0.5) score += 20;
+    if (distToSma200 != null && distToSma200 <= -0.5) score += 18;
+    if (rsi != null && rsi <= 25) score += 18;
+    else score += 12;
+    if (adx != null && adx < 30) score += 8;
+    if (macdBias.includes("vend")) score += 4;
+
+    summary =
+      "Compra curta contra o esticão, buscando apenas o retorno do preço até à média.";
+    trigger =
+      "RSI em sobrevenda e distância extrema para a MME 21 ou MMS 200.";
+    entry =
+      "Compra contra tendência apenas quando o preço estiver claramente esticado abaixo da média.";
+    targets = ["Retorno até a MME 21", "Alívio técnico até a média"];
+    invalidation =
+      "Continuação da queda com novo esticão e manutenção forte abaixo da média.";
+    rationale =
+      "O preço está barato demais para o contexto de curto prazo. A ideia é capturar apenas o retorno ao eixo, não adivinhar um fundo estrutural.";
+  } else {
+    if (trend.includes("baixa") || trend.includes("alta")) score += 8;
+    if (rsi != null && (rsi >= 60 || rsi <= 40)) score += 8;
+    if (
+      (distToEma21 != null && Math.abs(distToEma21) >= 0.25) ||
+      (distToSma200 != null && Math.abs(distToSma200) >= 0.25)
+    ) {
+      score += 8;
+    }
+  }
+
+  score = roundScore(score);
+  const status = resolveStatus(score);
+
+  return {
+    id: "strategy-mean-reversion",
+    title: "Reversão à Média",
+    direction,
+    status,
+    score,
+    summary,
+    setupType: "reversal",
+    idealZone: "Extremos afastados da MME 21 ou MMS 200",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
+    factors: [
+      {
+        label: "RSI extremo",
+        value:
+          rsi == null
+            ? "--"
+            : overbought
+              ? `Sobrecomprado (${formatMaybeNumber(rsi)})`
+              : oversold
+                ? `Sobrevendido (${formatMaybeNumber(rsi)})`
+                : `Normal (${formatMaybeNumber(rsi)})`,
+        impact: overbought || oversold ? "positive" : "neutral",
+      },
+      {
+        label: "Distância para MME 21",
+        value: formatPercentValue(distToEma21),
+        impact:
+          distToEma21 != null && Math.abs(distToEma21) >= 0.5
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "Distância para MMS 200",
+        value: formatPercentValue(distToSma200),
+        impact:
+          distToSma200 != null && Math.abs(distToSma200) >= 0.5
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "Direção operacional",
+        value:
+          direction === "sell"
+            ? "Venda curta"
+            : direction === "buy"
+              ? "Compra curta"
+              : "Sem direção extrema",
+        impact: direction === "neutral" ? "neutral" : "positive",
+      },
+      {
+        label: "Risco operacional",
+        value: "Alto, contra o esticão dominante",
+        impact: "negative",
+      },
+    ],
+  };
+}
+
+function buildVolatilityBreakoutStrategy(input: MarketStrategyInput): StrategyCard {
+  const trend = (input.trendLabel || "").toLowerCase();
+  const cloud = (input.cloudBiasLabel || "").toLowerCase();
+  const volume = (input.volumeLabel || "").toLowerCase();
+
+  const adx = input.adxValue;
+  const currentPrice = input.currentPrice;
+  const cloudTop = input.cloudTop;
+  const cloudBase = input.cloudBase;
+  const ema9 = input.ema9;
+  const ema21 = input.ema21;
+
+  const insideCloud =
+    currentPrice != null &&
+    cloudTop != null &&
+    cloudBase != null &&
+    currentPrice <= cloudTop &&
+    currentPrice >= cloudBase;
+
+  const sleepingAdx = adx != null && adx < 20;
+
+  const compressedAverages =
+    currentPrice != null &&
+    ema9 != null &&
+    ema21 != null &&
+    Math.abs(((ema9 - ema21) / ema21) * 100) <= 0.05;
+
+  let score = 0;
+  let rationale =
+    "Quanto mais o mercado fica comprimido dentro da nuvem e com ADX baixo, maior a hipótese de explosão direcional futura.";
+
+  const direction: StrategyCard["direction"] = "neutral";
+  const summary =
+    "Estratégia de breakout de consolidação para quando o mercado fica espremido e sem força aparente.";
+  const trigger =
+    "Só ativar se o volume subir e o ADX começar a apontar para cima, saindo da região abaixo de 20.";
+  const entry =
+    "Preparar compra acima do topo da nuvem e venda abaixo da base da nuvem.";
+  const targets = ["Expansão do range", "Movimento de libertação da compressão"];
+  const invalidation =
+    "Falso rompimento e retorno para dentro da nuvem sem expansão de força.";
+
+  if (insideCloud) score += 24;
+  if (sleepingAdx) score += 24;
+  if (compressedAverages) score += 18;
+  if (volume.includes("inconclusivo")) score -= 4;
+  else if (volume.includes("normal") || volume.includes("acima")) score += 8;
+
+  if (cloud.includes("dentro")) score += 10;
+  if (trend.includes("consolid") || trend.includes("neutro")) score += 10;
+
+  if (!insideCloud && !sleepingAdx) {
+    rationale =
+      "Sem compressão clara dentro da nuvem e com ADX mais desperto, o breakout de volatilidade perde qualidade neste momento.";
+  }
+
+  score = roundScore(score);
+  const status = resolveStatus(score);
+
+  return {
+    id: "strategy-volatility-breakout",
+    title: "Rompimento de Volatilidade",
+    direction,
+    status,
+    score,
+    summary,
+    setupType: "breakout",
+    idealZone: "Topo e base da nuvem / squeeze de consolidação",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
+    factors: [
+      {
+        label: "Preço dentro da nuvem",
+        value: insideCloud ? "Sim" : "Não",
+        impact: insideCloud ? "positive" : "neutral",
+      },
+      {
+        label: "ADX abaixo de 20",
+        value:
+          adx == null
+            ? "--"
+            : sleepingAdx
+              ? `Sim (${formatMaybeNumber(adx)})`
+              : `Não (${formatMaybeNumber(adx)})`,
+        impact: sleepingAdx ? "positive" : "neutral",
+      },
+      {
+        label: "Médias comprimidas",
+        value: compressedAverages ? "Sim" : "Não",
+        impact: compressedAverages ? "positive" : "neutral",
+      },
+      {
+        label: "Topo da nuvem",
+        value: formatMaybeNumber(cloudTop),
+        impact: "neutral",
+      },
+      {
+        label: "Base da nuvem",
+        value: formatMaybeNumber(cloudBase),
+        impact: "neutral",
+      },
+      {
+        label: "Volume",
+        value: input.volumeLabel || "--",
+        impact: volume.includes("acima") ? "positive" : "neutral",
+      },
+    ],
+  };
+}
+
+function buildMovingAverageCrossoverStrategy(
+  input: MarketStrategyInput,
+): StrategyCard {
+  const trend = (input.trendLabel || "").toLowerCase();
+  const cloud = (input.cloudBiasLabel || "").toLowerCase();
+  const macdBias = (input.macdBiasLabel || "").toLowerCase();
+
+  const currentPrice = input.currentPrice;
+  const ema9 = input.ema9;
+  const ema21 = input.ema21;
+  const sma200 = input.sma200;
+  const macdHistogram = input.macdHistogram;
+
+  const bullishCross = ema9 != null && ema21 != null && ema9 > ema21;
+  const bearishCross = ema9 != null && ema21 != null && ema9 < ema21;
+
+  const above200 = isAbove(currentPrice, sma200);
+  const below200 = isBelow(currentPrice, sma200);
+
+  let score = 0;
+  let direction: StrategyCard["direction"] = "neutral";
+  let summary =
+    "Estratégia clássica de seguimento de tendência baseada no cruzamento entre MME 9 e MME 21.";
+  let trigger =
+    "Aguardar cruzamento entre as médias com confirmação por preço, nuvem ou MMS 200.";
+  let entry =
+    "Entrar no sentido do cruzamento e manter enquanto a estrutura continuar a favor.";
+  let targets = ["Corpo da tendência", "Manutenção até cruzamento contrário"];
+  let invalidation =
+    "Cruzamento contrário ou perda da confirmação estrutural.";
+  const rationale =
+    "A estratégia evita tentar adivinhar o início exato do movimento e procura apanhar o corpo da tendência depois da confirmação.";
+
+  if (bullishCross) {
+    direction = "buy";
+    score += 26;
+    if (above200) score += 18;
+    if (cloud.includes("acima") || cloud.includes("saída")) score += 10;
+    if (macdBias.includes("compr")) score += 16;
+    if (macdHistogram != null && macdHistogram > 0) score += 10;
+    if (trend.includes("alta")) score += 10;
+
+    summary =
+      "Cruzamento comprador da MME 9 sobre a MME 21, procurando seguir o corpo da tendência.";
+    trigger =
+      "MME 9 acima da MME 21 com preço acima da MMS 200 ou a sair da nuvem.";
+    entry =
+      "Compra no alinhamento do cruzamento com confirmação do preço e do MACD.";
+    targets = ["Corpo da tendência", "Continuação até cruzamento contrário"];
+    invalidation =
+      "Perda da MMS 200, retorno para dentro da nuvem ou cruzamento contrário das médias.";
+  } else if (bearishCross) {
+    direction = "sell";
+    score += 26;
+    if (below200) score += 18;
+    if (cloud.includes("abaixo") || cloud.includes("saída")) score += 10;
+    if (macdBias.includes("vend")) score += 16;
+    if (macdHistogram != null && macdHistogram < 0) score += 10;
+    if (trend.includes("baixa")) score += 10;
+
+    summary =
+      "Cruzamento vendedor da MME 9 abaixo da MME 21, procurando seguir o corpo da tendência.";
+    trigger =
+      "MME 9 abaixo da MME 21 com preço abaixo da MMS 200 ou a sair da nuvem para baixo.";
+    entry =
+      "Venda no alinhamento do cruzamento com confirmação do preço e do MACD.";
+    targets = ["Corpo da tendência", "Continuação até cruzamento contrário"];
+    invalidation =
+      "Recuperação da MMS 200, retorno para dentro da nuvem ou cruzamento contrário das médias.";
+  } else {
+    if (
+      ema9 != null &&
+      ema21 != null &&
+      Math.abs(((ema9 - ema21) / ema21) * 100) <= 0.03
+    ) {
+      score += 14;
+    }
+    if (macdHistogram != null && Math.abs(macdHistogram) <= 0.00003) {
+      score += 8;
+    }
+  }
+
+  score = roundScore(score);
+  const status = resolveStatus(score);
+
+  return {
+    id: "strategy-moving-average-crossover",
+    title: "Cruzamento de Médias",
+    direction,
+    status,
+    score,
+    summary,
+    setupType: "continuation",
+    idealZone: "Região do cruzamento entre MME 9 e MME 21",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
+    factors: [
+      {
+        label: "MME 9 vs MME 21",
+        value: bullishCross
+          ? "Cruzamento comprador"
+          : bearishCross
+            ? "Cruzamento vendedor"
+            : "Ainda sem cruzamento limpo",
+        impact: bullishCross || bearishCross ? "positive" : "neutral",
+      },
+      {
+        label: "Preço vs MMS 200",
+        value: above200 ? "Acima" : below200 ? "Abaixo" : "Próximo / indefinido",
+        impact:
+          (bullishCross && above200) || (bearishCross && below200)
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "Contexto da nuvem",
+        value: input.cloudBiasLabel || "--",
+        impact:
+          (bullishCross && cloud.includes("acima")) ||
+          (bearishCross && cloud.includes("abaixo"))
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "MACD / histograma",
+        value: input.macdBiasLabel || "--",
+        impact:
+          (bullishCross && macdBias.includes("compr")) ||
+          (bearishCross && macdBias.includes("vend"))
+            ? "positive"
+            : "neutral",
+      },
+    ],
+  };
+}
+
 export function buildStrategySection(
   input: MarketStrategyInput,
 ): StrategySection {
@@ -553,6 +955,9 @@ export function buildStrategySection(
     buildPullbackStrategy(input),
     buildRangeBreakoutStrategy(input),
     buildFadeStrategy(input),
+    buildMeanReversionStrategy(input),
+    buildVolatilityBreakoutStrategy(input),
+    buildMovingAverageCrossoverStrategy(input),
   ].sort((a, b) => b.score - a.score);
 
   const bestCard = cards[0] ?? null;

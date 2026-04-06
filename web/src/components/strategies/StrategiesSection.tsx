@@ -133,7 +133,7 @@ function buildCardStyle(score: number): React.CSSProperties {
     border: `1px solid ${accent.borderColor}`,
     background: "#ffffff",
     borderRadius: 14,
-    padding: 16,
+    padding: 12,
     borderLeft: `3px solid rgba(${accent.sideColor}, 0.95)`,
     boxShadow: `
       inset 3px 0 0 rgba(${accent.sideColor}, 0.95),
@@ -178,6 +178,28 @@ function scoreBadgeStyle(score: number): React.CSSProperties {
     color: accent.scoreColor,
     border: `1px solid ${accent.scoreBorder}`,
     whiteSpace: "nowrap",
+  };
+}
+
+function toggleButtonStyle(score: number): React.CSSProperties {
+  const tone = getToneByScore(score);
+  const accent = getToneStyles(tone);
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    border: `1px solid ${accent.pillBorder}`,
+    background: "#ffffff",
+    color: accent.pillColor,
+    fontSize: 16,
+    fontWeight: 700,
+    lineHeight: 1,
+    cursor: "pointer",
+    flexShrink: 0,
   };
 }
 
@@ -254,6 +276,146 @@ function SectionCard({
 
       {children}
     </div>
+  );
+}
+
+function StrategyCardView({
+  card,
+}: {
+  card: StrategyCard;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const tone = getToneByScore(card.score);
+  const toneStyles = getToneStyles(tone);
+
+  return (
+    <article style={buildCardStyle(card.score)}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "nowrap",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <strong style={{ fontSize: 15, color: "#0f172a" }}>
+              {card.title}
+            </strong>
+
+            <div style={scoreBadgeStyle(card.score)}>{card.score}%</div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={pillStyle(card.score)}>
+              {getStatusLabel(card.status)}
+            </span>
+            <span style={pillStyle(card.score)}>
+              {getDirectionLabel(card.direction)}
+            </span>
+            <span style={pillStyle(card.score)}>
+              Leitura {toneStyles.signalLabel}
+            </span>
+          </div>
+
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: "#475569",
+            }}
+          >
+            {card.summary}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setExpanded((previous) => !previous)}
+          style={toggleButtonStyle(card.score)}
+          aria-expanded={expanded}
+          aria-label={expanded ? `Ocultar ${card.title}` : `Expandir ${card.title}`}
+        >
+          {expanded ? "−" : "+"}
+        </button>
+      </div>
+
+      {expanded ? (
+        <div style={{ marginTop: 14 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <SectionCard title="Execução">
+              <SummaryRow label="Zona ideal" value={card.idealZone || "--"} />
+              <SummaryRow label="Gatilho" value={card.trigger || "--"} />
+              <SummaryRow label="Entrada" value={card.entry || "--"} />
+              <SummaryRow
+                label="Alvos"
+                value={card.targets?.join(" / ") || "--"}
+              />
+              <SummaryRow
+                label="Invalidação"
+                value={card.invalidation || "--"}
+              />
+            </SectionCard>
+
+            <SectionCard title="Condições previstas para dar match">
+              <div style={{ display: "grid", gap: 0 }}>
+                {(card.factors || []).map((factor) => (
+                  <SummaryRow
+                    key={`${card.id}-${factor.label}`}
+                    label={factor.label}
+                    value={factor.value}
+                  />
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
+          <SectionCard title="Justificativa">
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.6,
+                color: "#475569",
+              }}
+            >
+              {card.rationale || "--"}
+            </div>
+          </SectionCard>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -360,7 +522,7 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
         </span>
       </button>
 
-      {expanded && (
+      {expanded ? (
         <div style={{ padding: 8 }}>
           {section.cards.length === 0 ? (
             <div
@@ -385,122 +547,13 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
                 alignItems: "start",
               }}
             >
-              {section.cards.map((card) => {
-                const tone = getToneByScore(card.score);
-                const toneStyles = getToneStyles(tone);
-
-                return (
-                  <article key={card.id} style={buildCardStyle(card.score)}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        marginBottom: 12,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 8,
-                          minWidth: 0,
-                          flex: 1,
-                        }}
-                      >
-                        <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                          {card.title}
-                        </strong>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <span style={pillStyle(card.score)}>
-                            {getStatusLabel(card.status)}
-                          </span>
-                          <span style={pillStyle(card.score)}>
-                            {getDirectionLabel(card.direction)}
-                          </span>
-                          <span style={pillStyle(card.score)}>
-                            Leitura {toneStyles.signalLabel}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={scoreBadgeStyle(card.score)}>{card.score}%</div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginBottom: 14,
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                        color: "#475569",
-                      }}
-                    >
-                      {card.summary}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                        gap: 8,
-                        marginBottom: 12,
-                      }}
-                    >
-                      <SectionCard title="Execução">
-                        <SummaryRow label="Zona ideal" value={card.idealZone || "--"} />
-                        <SummaryRow label="Gatilho" value={card.trigger || "--"} />
-                        <SummaryRow label="Entrada" value={card.entry || "--"} />
-                        <SummaryRow
-                          label="Alvos"
-                          value={card.targets?.join(" / ") || "--"}
-                        />
-                        <SummaryRow
-                          label="Invalidação"
-                          value={card.invalidation || "--"}
-                        />
-                      </SectionCard>
-
-                      <SectionCard title="Condições previstas para dar match">
-                        <div style={{ display: "grid", gap: 0 }}>
-                          {(card.factors || []).map((factor) => (
-                            <SummaryRow
-                              key={`${card.id}-${factor.label}`}
-                              label={factor.label}
-                              value={factor.value}
-                            />
-                          ))}
-                        </div>
-                      </SectionCard>
-                    </div>
-
-                    <SectionCard title="Justificativa">
-                      <div
-                        style={{
-                          fontSize: 12,
-                          lineHeight: 1.6,
-                          color: "#475569",
-                        }}
-                      >
-                        {card.rationale || "--"}
-                      </div>
-                    </SectionCard>
-                  </article>
-                );
-              })}
+              {section.cards.map((card) => (
+                <StrategyCardView key={card.id} card={card} />
+              ))}
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
