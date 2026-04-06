@@ -1,5 +1,6 @@
 // web/src/components/runs/RunSummaryCard.tsx
 
+import { useState } from "react";
 import type { CandleTickState, RunDetailsResponse } from "../../types/trading";
 import { formatDateTime } from "../../utils/format";
 
@@ -161,7 +162,7 @@ function buildSummary(runDetails: RunDetailsResponse) {
 function summaryMetricCard(
   label: string,
   value: string | number,
-  accent?: React.CSSProperties["borderTop"]
+  accent?: React.CSSProperties["borderTop"],
 ) {
   return (
     <div
@@ -199,19 +200,19 @@ function summaryMetricCard(
 
 function buildOutcomeLists(cases: OutcomeLikeCase[]) {
   const hits = cases.filter(
-    (item) => String(item.outcome ?? "").trim().toLowerCase() === "hit"
+    (item) => String(item.outcome ?? "").trim().toLowerCase() === "hit",
   );
 
   const fails = cases.filter(
-    (item) => String(item.outcome ?? "").trim().toLowerCase() === "fail"
+    (item) => String(item.outcome ?? "").trim().toLowerCase() === "fail",
   );
 
   const sortByTimeDesc = (a: OutcomeLikeCase, b: OutcomeLikeCase) => {
     const aTime = new Date(
-      a.close_time ?? a.entry_time ?? a.trigger_time ?? 0
+      a.close_time ?? a.entry_time ?? a.trigger_time ?? 0,
     ).getTime();
     const bTime = new Date(
-      b.close_time ?? b.entry_time ?? b.trigger_time ?? 0
+      b.close_time ?? b.entry_time ?? b.trigger_time ?? 0,
     ).getTime();
     return bTime - aTime;
   };
@@ -265,7 +266,7 @@ function getGroupSnapshot(
     | "volatility"
     | "structure"
     | "trigger_candle"
-    | "bollinger"
+    | "bollinger",
 ): Record<string, unknown> | null {
   const snapshot = getAnalysisSnapshot(item);
   if (!snapshot) return null;
@@ -278,7 +279,7 @@ function getGroupSnapshot(
 
 function getSnapshotNestedValue(
   snapshot: Record<string, unknown> | null,
-  path: string[]
+  path: string[],
 ): unknown {
   if (!snapshot) return null;
 
@@ -293,7 +294,7 @@ function getSnapshotNestedValue(
 
 function getFirstSnapshotValue(
   item: OutcomeLikeCase,
-  candidatePaths: string[][]
+  candidatePaths: string[][],
 ): unknown {
   const snapshot = getAnalysisSnapshot(item);
 
@@ -640,7 +641,7 @@ function getSimplePriceVsEmaContext(value: unknown): SimpleTextContext {
 
 function getSimpleDistanceContext(
   value: unknown,
-  kind: "support" | "resistance"
+  kind: "support" | "resistance",
 ): SimpleTextContext {
   const numericValue = toNumber(value);
 
@@ -718,7 +719,7 @@ function getSimpleTriggerCandleContext(
   bodyRatio: unknown,
   candleType: unknown,
   upperWick: unknown,
-  lowerWick: unknown
+  lowerWick: unknown,
 ): SimpleTextContext {
   const bodyRatioValue = toNumber(bodyRatio);
   const upperWickValue = toNumber(upperWick);
@@ -767,7 +768,7 @@ function getSimpleTriggerCandleContext(
 function getSimpleBollingerContext(
   reentryLong: unknown,
   reentryShort: unknown,
-  closePosition: unknown
+  closePosition: unknown,
 ): SimpleTextContext {
   const isLong = Boolean(reentryLong);
   const isShort = Boolean(reentryShort);
@@ -1166,7 +1167,7 @@ function buildDevelopmentPotential(params: {
 function getUsefulSpaceToTargetText(
   sideLabel: string,
   supportDistanceInfo: SimpleTextContext,
-  resistanceDistanceInfo: SimpleTextContext
+  resistanceDistanceInfo: SimpleTextContext,
 ): string {
   if (sideLabel === "Compra") {
     if (isNearZone(resistanceDistanceInfo.label)) {
@@ -1204,7 +1205,7 @@ function getAtrNotTooHighText(atrInfo: SimpleAtrContext): string {
 function getEma20NotTooAgainstText(
   sideLabel: string,
   ema20SlopeInfo: SimpleTextContext,
-  priceVsEma20Info: SimpleTextContext
+  priceVsEma20Info: SimpleTextContext,
 ): string {
   if (sideLabel === "Compra") {
     if (
@@ -1333,7 +1334,7 @@ function getVolumeIndicatorText(item: OutcomeLikeCase): string {
 
 function getVwapIndicatorText(
   sideLabel: string,
-  item: OutcomeLikeCase
+  item: OutcomeLikeCase,
 ): string {
   const rawValue = getFirstSnapshotValue(item, [
     ["vwap", "state"],
@@ -1497,7 +1498,7 @@ function pairedInfoRow(
   leftLabel: string,
   leftValue: string,
   rightLabel: string,
-  rightValue: string
+  rightValue: string,
 ) {
   return (
     <div
@@ -1619,7 +1620,7 @@ function buildCombinedValue(primary: string, detail: string): string {
 function outcomeListCard(
   title: string,
   items: OutcomeLikeCase[],
-  accentColor: string
+  accentColor: string,
 ) {
   const headerColors = getCardHeaderColors(accentColor);
 
@@ -1661,47 +1662,47 @@ function outcomeListCard(
 
             const sideLabel = getTradeSideLabel(item);
             const structureInfo = getSimpleStructureContext(
-              structure?.market_structure ?? null
+              structure?.market_structure ?? null,
             );
             const emaAlignmentInfo = getSimpleEmaAlignmentContext(
-              trend?.ema_alignment ?? null
+              trend?.ema_alignment ?? null,
             );
             const ema20SlopeInfo = getSimpleSlopeContext(
-              trend?.ema_20_slope ?? null
+              trend?.ema_20_slope ?? null,
             );
             const macdInfo = getSimpleMacdContext(momentum?.macd_state ?? null);
             const ifrInfo = getSimpleIfrContext(momentum?.rsi_14 ?? null);
             const atrInfo = getSimpleAtrContext(
               volatility?.atr_14 ?? null,
-              volatility?.atr_regime ?? null
+              volatility?.atr_regime ?? null,
             );
             const priceVsEma20Info = getSimplePriceVsEmaContext(
-              trend?.price_vs_ema_20 ?? null
+              trend?.price_vs_ema_20 ?? null,
             );
             const priceVsEma40Info = getSimplePriceVsEmaContext(
-              trend?.price_vs_ema_40 ?? null
+              trend?.price_vs_ema_40 ?? null,
             );
             const supportDistanceInfo = getSimpleDistanceContext(
               structure?.distance_to_recent_support ?? null,
-              "support"
+              "support",
             );
             const resistanceDistanceInfo = getSimpleDistanceContext(
               structure?.distance_to_recent_resistance ?? null,
-              "resistance"
+              "resistance",
             );
             const candleVsAtrInfo = getSimpleCandleVsAtrContext(
-              volatility?.candle_range_vs_atr ?? null
+              volatility?.candle_range_vs_atr ?? null,
             );
             const triggerCandleInfo = getSimpleTriggerCandleContext(
               triggerCandle?.body_ratio ?? null,
               triggerCandle?.candle_type ?? null,
               triggerCandle?.upper_wick ?? null,
-              triggerCandle?.lower_wick ?? null
+              triggerCandle?.lower_wick ?? null,
             );
             const bollingerInfo = getSimpleBollingerContext(
               bollinger?.reentered_inside_band_long ?? null,
               bollinger?.reentered_inside_band_short ?? null,
-              bollinger?.close_position_in_band ?? null
+              bollinger?.close_position_in_band ?? null,
             );
 
             const confirmation = buildBbReversalConfirmation({
@@ -1735,13 +1736,13 @@ function outcomeListCard(
             const usefulSpaceText = getUsefulSpaceToTargetText(
               sideLabel,
               supportDistanceInfo,
-              resistanceDistanceInfo
+              resistanceDistanceInfo,
             );
             const atrNotTooHighText = getAtrNotTooHighText(atrInfo);
             const ema20NotAgainstText = getEma20NotTooAgainstText(
               sideLabel,
               ema20SlopeInfo,
-              priceVsEma20Info
+              priceVsEma20Info,
             );
             const nextCandleConfirmationText = getNextCandleConfirmationText(item);
             const volumeIndicatorText = getVolumeIndicatorText(item);
@@ -1760,11 +1761,11 @@ function outcomeListCard(
               >
                 {metricBadge(
                   "Confirmação",
-                  formatPercent(confirmation.confirmationPercent)
+                  formatPercent(confirmation.confirmationPercent),
                 )}
                 {metricBadge(
                   "Desenvolvimento",
-                  formatPercent(developmentPotential.potentialPercent)
+                  formatPercent(developmentPotential.potentialPercent),
                 )}
               </div>
             );
@@ -1816,13 +1817,13 @@ function outcomeListCard(
                       "Trigger:",
                       formatDateTime(item.trigger_time ?? null),
                       "Fechamento:",
-                      formatDateTime(item.close_time ?? null)
+                      formatDateTime(item.close_time ?? null),
                     )}
                     {pairedInfoRow(
                       "Entrada:",
                       formatPrice(item.entry_price),
                       "Saída:",
-                      formatPrice(item.close_price)
+                      formatPrice(item.close_price),
                     )}
                   </div>
 
@@ -1833,38 +1834,38 @@ function outcomeListCard(
                     {infoRow(
                       "Estrutura:",
                       buildCombinedValue(structureInfo.label, structureInfo.situation),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "Preço vs EMA 20:",
                       buildCombinedValue(
                         priceVsEma20Info.label,
-                        priceVsEma20Info.situation
+                        priceVsEma20Info.situation,
                       ),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "Preço vs EMA 40:",
                       buildCombinedValue(
                         priceVsEma40Info.label,
-                        priceVsEma40Info.situation
+                        priceVsEma40Info.situation,
                       ),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "EMAs:",
                       buildCombinedValue(
                         emaAlignmentInfo.label,
-                        emaAlignmentInfo.situation
+                        emaAlignmentInfo.situation,
                       ),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "EMA 20:",
                       buildCombinedValue(
                         ema20SlopeInfo.label,
-                        ema20SlopeInfo.situation
-                      )
+                        ema20SlopeInfo.situation,
+                      ),
                     )}
                   </div>
 
@@ -1876,17 +1877,17 @@ function outcomeListCard(
                       "Suporte:",
                       buildCombinedValue(
                         supportDistanceInfo.label,
-                        supportDistanceInfo.situation
+                        supportDistanceInfo.situation,
                       ),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "Resistência:",
                       buildCombinedValue(
                         resistanceDistanceInfo.label,
-                        resistanceDistanceInfo.situation
+                        resistanceDistanceInfo.situation,
                       ),
-                      true
+                      true,
                     )}
                   </div>
 
@@ -1898,29 +1899,29 @@ function outcomeListCard(
                       "Candle do gatilho:",
                       buildCombinedValue(
                         triggerCandleInfo.label,
-                        triggerCandleInfo.situation
+                        triggerCandleInfo.situation,
                       ),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "Candle vs ATR:",
                       buildCombinedValue(
                         candleVsAtrInfo.label,
-                        candleVsAtrInfo.situation
-                      )
+                        candleVsAtrInfo.situation,
+                      ),
                     )}
                     {infoRow(
                       "MACD:",
                       buildCombinedValue(macdInfo.direction, macdInfo.strength),
-                      true
+                      true,
                     )}
                     {infoRow(
                       "Bollinger:",
                       buildCombinedValue(
                         bollingerInfo.label,
-                        bollingerInfo.situation
+                        bollingerInfo.situation,
                       ),
-                      true
+                      true,
                     )}
                   </div>
 
@@ -1933,14 +1934,14 @@ function outcomeListCard(
                       "Qualidade do candle do gatilho:",
                       buildCombinedValue(
                         triggerCandleInfo.label,
-                        triggerCandleInfo.situation
-                      )
+                        triggerCandleInfo.situation,
+                      ),
                     )}
                     {infoRow("ATR não muito alta:", atrNotTooHighText)}
                     {infoRow("EMA 20 não muito contra:", ema20NotAgainstText)}
                     {infoRow(
                       "Confirmação no candle seguinte:",
-                      nextCandleConfirmationText
+                      nextCandleConfirmationText,
                     )}
                   </div>
 
@@ -1960,12 +1961,12 @@ function outcomeListCard(
                   <div style={{ display: "grid", gap: 6 }}>
                     {infoRow(
                       "IFR:",
-                      buildCombinedValue(ifrInfo.formattedValue, ifrInfo.strength)
+                      buildCombinedValue(ifrInfo.formattedValue, ifrInfo.strength),
                     )}
                     {infoRow("Situação IFR:", ifrInfo.situation)}
                     {infoRow(
                       "ATR:",
-                      buildCombinedValue(atrInfo.formattedValue, atrInfo.volatility)
+                      buildCombinedValue(atrInfo.formattedValue, atrInfo.volatility),
                     )}
                     {infoRow("Situação ATR:", atrInfo.situation)}
                   </div>
@@ -1979,6 +1980,18 @@ function outcomeListCard(
   );
 }
 
+function getRunSummaryHeaderStyles() {
+  return {
+    background: "linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%)",
+    borderBottom: "#bfdbfe",
+    titleColor: "#1e3a8a",
+    subtitleColor: "#475569",
+    badgeBackground: "#ffffff",
+    badgeColor: "#1e3a8a",
+    badgeBorder: "#93c5fd",
+  };
+}
+
 function RunSummaryCard({
   mainCardStyle,
   selectedRunId,
@@ -1986,145 +1999,284 @@ function RunSummaryCard({
   runDetailsError,
   runDetails,
 }: RunSummaryCardProps) {
+  const [expanded, setExpanded] = useState(true);
+
   const summary = runDetails ? buildSummary(runDetails) : null;
   const outcomeLists = runDetails
     ? buildOutcomeLists((runDetails.cases ?? []) as OutcomeLikeCase[])
     : { hits: [], fails: [] };
 
+  const headerStyles = getRunSummaryHeaderStyles();
+
   return (
-    <div style={mainCardStyle}>
-      <h2
+    <div
+      style={{
+        ...mainCardStyle,
+        padding: 0,
+        overflow: "hidden",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((previous) => !previous)}
         style={{
-          marginTop: 0,
-          marginBottom: 20,
-          textAlign: "center",
-          fontSize: 24,
-          fontWeight: 700,
-          color: "#0f172a",
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "14px 16px",
+          background: headerStyles.background,
+          border: "none",
+          borderBottom: expanded ? `1px solid ${headerStyles.borderBottom}` : "none",
+          cursor: "pointer",
+          textAlign: "left",
         }}
+        aria-expanded={expanded}
+        aria-label={
+          expanded
+            ? "Retrair Análise do run selecionado"
+            : "Expandir Análise do run selecionado"
+        }
       >
-        Análise do run selecionado
-      </h2>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <strong style={{ fontSize: 16, color: headerStyles.titleColor }}>
+              Análise do run selecionado
+            </strong>
 
-      {!selectedRunId && <p>Nenhum run selecionado.</p>}
+            {selectedRunId ? (
+              <span
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: headerStyles.badgeBackground,
+                  color: headerStyles.badgeColor,
+                  border: `1px solid ${headerStyles.badgeBorder}`,
+                }}
+              >
+                Run ativo
+              </span>
+            ) : (
+              <span
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: headerStyles.badgeBackground,
+                  color: "#64748b",
+                  border: `1px solid ${headerStyles.badgeBorder}`,
+                }}
+              >
+                Sem run
+              </span>
+            )}
+          </div>
 
-      {selectedRunId && loadingRunDetails && <p>A carregar detalhes do run...</p>}
-
-      {selectedRunId && !loadingRunDetails && runDetailsError && (
-        <div>
-          <p style={{ color: "#dc2626", fontWeight: "bold" }}>
-            Erro ao carregar detalhes do run
-          </p>
-          <p>{runDetailsError}</p>
+          <span style={{ fontSize: 12, color: headerStyles.subtitleColor }}>
+            {!selectedRunId
+              ? "Nenhum run selecionado."
+              : loadingRunDetails
+                ? "A carregar detalhes do run..."
+                : runDetailsError
+                  ? "Erro ao carregar os detalhes do run."
+                  : runDetails
+                    ? `${runDetails.run.strategy_key ?? "sem strategy_key"} • ${runDetails.run.symbol} • ${runDetails.run.timeframe}`
+                    : "Sem dados do run."}
+          </span>
         </div>
-      )}
 
-      {selectedRunId && !loadingRunDetails && !runDetailsError && runDetails && summary && (
-        <div style={{ display: "grid", gap: 20 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 14,
-              fontSize: 15,
-              color: "#334155",
-            }}
-          >
-            <div>
-              <strong>ID:</strong> {runDetails.run.id}
-            </div>
-            <div>
-              <strong>Strategy:</strong> {runDetails.run.strategy_key ?? "(sem strategy_key)"}
-            </div>
-            <div>
-              <strong>Symbol:</strong> {runDetails.run.symbol}
-            </div>
-            <div>
-              <strong>Timeframe:</strong> {runDetails.run.timeframe}
-            </div>
-            <div>
-              <strong>Status:</strong> {runDetails.run.status}
-            </div>
-            <div>
-              <strong>Mode:</strong> {runDetails.run.mode}
-            </div>
-            <div>
-              <strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}
-            </div>
-            <div>
-              <strong>End:</strong> {formatDateTime(runDetails.run.end_at)}
-            </div>
-          </div>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minWidth: 34,
+            width: 34,
+            height: 34,
+            borderRadius: 999,
+            border: `1px solid ${headerStyles.badgeBorder}`,
+            background: "#ffffff",
+            color: headerStyles.badgeColor,
+            fontSize: 16,
+            fontWeight: 700,
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          {expanded ? "−" : "+"}
+        </span>
+      </button>
 
-          <div
-            style={{
-              border: "1px solid #e2e8f0",
-              borderRadius: 14,
-              padding: 16,
-              background: "#ffffff",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: "#0f172a",
-                marginBottom: 8,
-              }}
-            >
-              Resumo do intervalo analisado
-            </div>
+      {expanded ? (
+        <div style={{ padding: 20 }}>
+          {!selectedRunId && <p style={{ margin: 0 }}>Nenhum run selecionado.</p>}
 
-            <div
-              style={{
-                fontSize: 14,
-                color: "#475569",
-                lineHeight: 1.7,
-                marginBottom: 16,
-              }}
-            >
-              <div>
-                <strong>Intervalo:</strong> {formatDateTime(runDetails.run.start_at)} →{" "}
-                {formatDateTime(runDetails.run.end_at)}
+          {selectedRunId && loadingRunDetails && (
+            <p style={{ margin: 0 }}>A carregar detalhes do run...</p>
+          )}
+
+          {selectedRunId && !loadingRunDetails && runDetailsError && (
+            <div>
+              <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+                Erro ao carregar detalhes do run
+              </p>
+              <p>{runDetailsError}</p>
+            </div>
+          )}
+
+          {selectedRunId &&
+            !loadingRunDetails &&
+            !runDetailsError &&
+            runDetails &&
+            summary && (
+              <div style={{ display: "grid", gap: 20 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 14,
+                    fontSize: 15,
+                    color: "#334155",
+                  }}
+                >
+                  <div>
+                    <strong>ID:</strong> {runDetails.run.id}
+                  </div>
+                  <div>
+                    <strong>Strategy:</strong>{" "}
+                    {runDetails.run.strategy_key ?? "(sem strategy_key)"}
+                  </div>
+                  <div>
+                    <strong>Symbol:</strong> {runDetails.run.symbol}
+                  </div>
+                  <div>
+                    <strong>Timeframe:</strong> {runDetails.run.timeframe}
+                  </div>
+                  <div>
+                    <strong>Status:</strong> {runDetails.run.status}
+                  </div>
+                  <div>
+                    <strong>Mode:</strong> {runDetails.run.mode}
+                  </div>
+                  <div>
+                    <strong>Start:</strong> {formatDateTime(runDetails.run.start_at)}
+                  </div>
+                  <div>
+                    <strong>End:</strong> {formatDateTime(runDetails.run.end_at)}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 14,
+                    padding: 16,
+                    background: "#ffffff",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Resumo do intervalo analisado
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 14,
+                      color: "#475569",
+                      lineHeight: 1.7,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <div>
+                      <strong>Intervalo:</strong>{" "}
+                      {formatDateTime(runDetails.run.start_at)} →{" "}
+                      {formatDateTime(runDetails.run.end_at)}
+                    </div>
+                    <div>
+                      <strong>Candles analisados:</strong>{" "}
+                      {runDetails.run.candles_count ?? "-"}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {summaryMetricCard(
+                      "Total de Cases",
+                      summary.totalCases,
+                      "4px solid #94a3b8",
+                    )}
+                    {summaryMetricCard("Hits", summary.totalHits, "4px solid #16a34a")}
+                    {summaryMetricCard(
+                      "Fails",
+                      summary.totalFails,
+                      "4px solid #dc2626",
+                    )}
+                    {summaryMetricCard(
+                      "Timeouts",
+                      summary.totalTimeouts,
+                      "4px solid #f59e0b",
+                    )}
+                    {summaryMetricCard(
+                      "Hit Rate",
+                      formatPercent(summary.hitRate),
+                      "4px solid #16a34a",
+                    )}
+                    {summaryMetricCard(
+                      "Fail Rate",
+                      formatPercent(summary.failRate),
+                      "4px solid #dc2626",
+                    )}
+                    {summaryMetricCard(
+                      "Timeout Rate",
+                      formatPercent(summary.timeoutRate),
+                      "4px solid #f59e0b",
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                    gap: 16,
+                  }}
+                >
+                  {outcomeListCard("Lista de Hits", outcomeLists.hits, "#16a34a")}
+                  {outcomeListCard("Lista de Fails", outcomeLists.fails, "#dc2626")}
+                </div>
               </div>
-              <div>
-                <strong>Candles analisados:</strong> {runDetails.run.candles_count ?? "-"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: 12,
-              }}
-            >
-              {summaryMetricCard("Total de Cases", summary.totalCases, "4px solid #94a3b8")}
-              {summaryMetricCard("Hits", summary.totalHits, "4px solid #16a34a")}
-              {summaryMetricCard("Fails", summary.totalFails, "4px solid #dc2626")}
-              {summaryMetricCard("Timeouts", summary.totalTimeouts, "4px solid #f59e0b")}
-              {summaryMetricCard("Hit Rate", formatPercent(summary.hitRate), "4px solid #16a34a")}
-              {summaryMetricCard("Fail Rate", formatPercent(summary.failRate), "4px solid #dc2626")}
-              {summaryMetricCard(
-                "Timeout Rate",
-                formatPercent(summary.timeoutRate),
-                "4px solid #f59e0b"
-              )}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {outcomeListCard("Lista de Hits", outcomeLists.hits, "#16a34a")}
-            {outcomeListCard("Lista de Fails", outcomeLists.fails, "#dc2626")}
-          </div>
+            )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
