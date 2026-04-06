@@ -12,7 +12,6 @@ import type {
 } from "../../types/trading";
 import { CHART_HEIGHT } from "../../constants/chart";
 import IndicatorMenu from "./IndicatorMenu";
-import ChartHeader from "./ChartHeader";
 import ChartMarketInfo from "./ChartMarketInfo";
 import ChartPriceScale from "./ChartPriceScale";
 import ChartCurrentPriceLine from "./ChartCurrentPriceLine";
@@ -79,6 +78,14 @@ function parseDateValue(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatHeaderPrice(value: number | null): string {
+  if (value === null) return "-";
+  return value.toLocaleString("pt-PT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  });
+}
+
 function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
   const now = Date.now();
   const lastCloseMs = parseDateValue(feedDiagnostics.coverageLastCloseUtc);
@@ -139,6 +146,52 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
   };
 }
 
+function getHeaderToneByCoverage(
+  coverageStatus: CoverageStatus
+): {
+  background: string;
+  borderBottom: string;
+  titleColor: string;
+  subtitleColor: string;
+  badgeBackground: string;
+  badgeColor: string;
+  badgeBorder: string;
+} {
+  if (coverageStatus.level === "danger") {
+    return {
+      background: "linear-gradient(90deg, #fee2e2 0%, #fff7ed 100%)",
+      borderBottom: "#fdba74",
+      titleColor: "#7f1d1d",
+      subtitleColor: "#9a3412",
+      badgeBackground: "#ffffff",
+      badgeColor: "#9a3412",
+      badgeBorder: "#fdba74",
+    };
+  }
+
+  if (coverageStatus.level === "warning") {
+    return {
+      background: "linear-gradient(90deg, #fef3c7 0%, #fffbeb 100%)",
+      borderBottom: "#fcd34d",
+      titleColor: "#78350f",
+      subtitleColor: "#92400e",
+      badgeBackground: "#ffffff",
+      badgeColor: "#92400e",
+      badgeBorder: "#fcd34d",
+    };
+  }
+
+  return {
+    background: "linear-gradient(90deg, #dcfce7 0%, #f0fdf4 100%)",
+    borderBottom: "#86efac",
+    titleColor: "#14532d",
+    subtitleColor: "#166534",
+    badgeBackground: "#ffffff",
+    badgeColor: "#166534",
+    badgeBorder: "#86efac",
+  };
+}
+
 function CandlesChartCard(props: CandlesChartCardProps) {
   const {
     mainCardStyle,
@@ -164,6 +217,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   } = props;
 
   const [isIndicatorMenuOpen, setIsIndicatorMenuOpen] = useState<boolean>(false);
+  const [isChartExpanded, setIsChartExpanded] = useState<boolean>(true);
 
   const marketLine = [
     selectedMarketTypeLabel || "-",
@@ -185,6 +239,10 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   const coverageStatus = useMemo(() => {
     return getCoverageStatus(feedDiagnostics);
   }, [feedDiagnostics]);
+
+  const headerTone = useMemo(() => {
+    return getHeaderToneByCoverage(coverageStatus);
+  }, [coverageStatus]);
 
   const hasOverlayContent =
     overlays.lines.length > 0 || overlays.markers.length > 0;
@@ -212,97 +270,207 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     !loadingCandles && !candlesError && chartData.length > 0;
 
   return (
-    <div style={mainCardStyle}>
-      <ChartHeader title="Gráfico de candles" />
-
-      <div
-        style={{
-          marginTop: 12,
-          marginBottom: 14,
-          padding: 12,
-          borderRadius: 12,
-          background: coverageStatus.background,
-          border: `1px solid ${coverageStatus.border}`,
-          color: coverageStatus.color,
-          fontSize: 13,
-          lineHeight: 1.6,
-        }}
-      >
-        <strong>{coverageStatus.title}</strong>
-        <div>{coverageStatus.message}</div>
-      </div>
-
-      {showMarketInfo && (
-        <ChartMarketInfo
-          marketLine={marketLine}
-          activeIndicatorLabels={activeIndicatorLabels}
-        />
-      )}
-
-      {loadingCandles && <ChartLoadingState />}
-
-      {!loadingCandles && candlesError && (
-        <ChartErrorState candlesError={candlesError} />
-      )}
-
-      <div style={{ width: "100%" }}>
-        <div
+    <section style={mainCardStyle}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <section
           style={{
-            position: "relative",
-            width: "100%",
-            height: CHART_HEIGHT,
             border: "1px solid #dbe2ea",
-            borderRadius: 14,
-            background: "#fff",
+            borderRadius: 16,
+            background: "#ffffff",
             overflow: "hidden",
           }}
         >
-          <IndicatorMenu
-            isOpen={isIndicatorMenuOpen}
-            onToggleOpen={() => setIsIndicatorMenuOpen((previous) => !previous)}
-            settings={indicatorSettings}
-            onSetIndicatorEnabled={onSetIndicatorEnabled}
-            onSetBollingerPeriod={onSetBollingerPeriod}
-            onSetBollingerStdDev={onSetBollingerStdDev}
-          />
-
-          <div
-            ref={chartContainerRef}
+          <button
+            type="button"
+            onClick={() => setIsChartExpanded((previous) => !previous)}
             style={{
               width: "100%",
-              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "14px 16px",
+              background: headerTone.background,
+              border: "none",
+              borderBottom: isChartExpanded
+                ? `1px solid ${headerTone.borderBottom}`
+                : "none",
+              cursor: "pointer",
+              textAlign: "left",
             }}
-          />
+            aria-expanded={isChartExpanded}
+            aria-label={isChartExpanded ? "Retrair gráfico" : "Expandir gráfico"}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <strong style={{ fontSize: 16, color: headerTone.titleColor }}>
+                  Gráfico de candles
+                </strong>
 
-          {showPriceScale && <ChartPriceScale levels={priceScaleData.levels} />}
+                <span
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: headerTone.badgeBackground,
+                    color: headerTone.badgeColor,
+                    border: `1px solid ${headerTone.badgeBorder}`,
+                  }}
+                >
+                  {effectiveChartSymbol || "-"}
+                </span>
 
-          {showCurrentPriceLine && (
-            <ChartCurrentPriceLine
-              top={priceScaleData.currentPriceTop as number}
-              price={currentPrice as number}
-            />
+                <span
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    background: headerTone.badgeBackground,
+                    color: headerTone.badgeColor,
+                    border: `1px solid ${headerTone.badgeBorder}`,
+                  }}
+                >
+                  Preço atual: {formatHeaderPrice(currentPrice)}
+                </span>
+              </div>
+
+              <span style={{ fontSize: 12, color: headerTone.subtitleColor }}>
+                {marketLine}
+              </span>
+            </div>
+
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: 34,
+                width: 34,
+                height: 34,
+                borderRadius: 999,
+                border: `1px solid ${headerTone.badgeBorder}`,
+                background: "#ffffff",
+                color: headerTone.badgeColor,
+                fontSize: 16,
+                fontWeight: 700,
+                lineHeight: 1,
+              }}
+            >
+              {isChartExpanded ? "−" : "+"}
+            </span>
+          </button>
+
+          {isChartExpanded && (
+            <div style={{ padding: 16 }}>
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  borderRadius: 12,
+                  background: coverageStatus.background,
+                  border: `1px solid ${coverageStatus.border}`,
+                  color: coverageStatus.color,
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>{coverageStatus.title}</strong>
+                <div>{coverageStatus.message}</div>
+              </div>
+
+              {showMarketInfo && (
+                <ChartMarketInfo
+                  marketLine={marketLine}
+                  activeIndicatorLabels={activeIndicatorLabels}
+                />
+              )}
+
+              {loadingCandles && <ChartLoadingState />}
+
+              {!loadingCandles && candlesError && (
+                <ChartErrorState candlesError={candlesError} />
+              )}
+
+              <div style={{ width: "100%" }}>
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    height: CHART_HEIGHT,
+                    border: "1px solid #dbe2ea",
+                    borderRadius: 14,
+                    background: "#fff",
+                    overflow: "hidden",
+                  }}
+                >
+                  <IndicatorMenu
+                    isOpen={isIndicatorMenuOpen}
+                    onToggleOpen={() =>
+                      setIsIndicatorMenuOpen((previous) => !previous)
+                    }
+                    settings={indicatorSettings}
+                    onSetIndicatorEnabled={onSetIndicatorEnabled}
+                    onSetBollingerPeriod={onSetBollingerPeriod}
+                    onSetBollingerStdDev={onSetBollingerStdDev}
+                  />
+
+                  <div
+                    ref={chartContainerRef}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                    }}
+                  />
+
+                  {showPriceScale && (
+                    <ChartPriceScale levels={priceScaleData.levels} />
+                  )}
+
+                  {showCurrentPriceLine && (
+                    <ChartCurrentPriceLine
+                      top={priceScaleData.currentPriceTop as number}
+                      price={currentPrice as number}
+                    />
+                  )}
+
+                  {showCountdown && (
+                    <ChartCountdownBadge countdownText={countdownText} />
+                  )}
+
+                  {showEmptyState && <ChartEmptyState />}
+
+                  {showOverlays && <ChartOverlays overlays={overlays} />}
+                </div>
+              </div>
+
+              {showFooter && (
+                <ChartLegend
+                  legendCloseColor={legendCloseColor}
+                  showStrategyOverlays={showStrategyOverlays}
+                />
+              )}
+            </div>
           )}
+        </section>
 
-          {showCountdown && (
-            <ChartCountdownBadge countdownText={countdownText} />
-          )}
-
-          {showEmptyState && <ChartEmptyState />}
-
-          {showOverlays && <ChartOverlays overlays={overlays} />}
-        </div>
+        {showFooter && <ChartSummary candles={candles} />}
       </div>
-
-      {showFooter && (
-        <>
-          <ChartSummary candles={candles} />
-          <ChartLegend
-            legendCloseColor={legendCloseColor}
-            showStrategyOverlays={showStrategyOverlays}
-          />
-        </>
-      )}
-    </div>
+    </section>
   );
 }
 
