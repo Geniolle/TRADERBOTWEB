@@ -8,6 +8,7 @@ import type {
 } from "../types/strategy";
 import {
   calcDistancePercent,
+  isAbove,
   isBelow,
   roundScore,
 } from "../utils/strategyHelpers";
@@ -28,7 +29,15 @@ function resolveStatus(score: number): StrategyStatus {
   return "invalid";
 }
 
-function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard | null {
+function formatMaybeNumber(value?: number): string {
+  if (value == null || Number.isNaN(value)) return "--";
+  return value.toLocaleString("pt-PT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
   const trend = (input.trendLabel || "").toLowerCase();
   const cloud = (input.cloudBiasLabel || "").toLowerCase();
   const macdBias = (input.macdBiasLabel || "").toLowerCase();
@@ -37,108 +46,226 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard | null 
   const currentPrice = input.currentPrice;
   const ema9 = input.ema9;
   const ema21 = input.ema21;
+  const rsi = input.rsiValue;
+  const adx = input.adxValue;
+  const macdHistogram = input.macdHistogram;
 
-  const bearishTrend = trend.includes("baixa");
   const bullishTrend = trend.includes("alta");
+  const bearishTrend = trend.includes("baixa");
+  const neutralTrend = !bullishTrend && !bearishTrend;
+
+  const aboveCloud = cloud.includes("acima");
   const belowCloud = cloud.includes("abaixo");
+
+  const aboveEma9 = isAbove(currentPrice, ema9);
+  const aboveEma21 = isAbove(currentPrice, ema21);
   const belowEma9 = isBelow(currentPrice, ema9);
   const belowEma21 = isBelow(currentPrice, ema21);
-
-  const rsi = input.rsiValue ?? null;
-  const adx = input.adxValue ?? null;
-  const macdHistogram = input.macdHistogram ?? null;
 
   const distToEma9 = calcDistancePercent(currentPrice, ema9);
   const distToEma21 = calcDistancePercent(currentPrice, ema21);
 
   let score = 0;
+  let direction: StrategyCard["direction"] = "neutral";
+  let summary =
+    "O mercado ainda não oferece contexto direcional suficientemente limpo para um pullback forte.";
+  let trigger =
+    "Esperar aproximação às médias e rejeição clara antes de considerar entrada.";
+  let entry =
+    "Sem entrada imediata. Aguardar formação do repique e reação na zona das médias.";
+  let targets = ["Estrutura recente", "Continuação do movimento"];
+  let invalidation = "Perda do contexto direcional.";
+  let rationale =
+    "O card permanece visível para mostrar quando o contexto começar a aproximar-se de um pullback operacional.";
 
-  if (bearishTrend) score += 20;
-  if (belowCloud) score += 15;
-  if (belowEma9) score += 10;
-  if (belowEma21) score += 10;
+  if (bullishTrend) {
+    direction = "buy";
+    score += 22;
+    if (aboveCloud) score += 14;
+    if (aboveEma9) score += 10;
+    if (aboveEma21) score += 10;
 
-  if (rsi != null && rsi >= 38 && rsi <= 50) {
-    score += 15;
-  } else if (rsi != null && rsi > 50 && rsi <= 56) {
-    score += 5;
-  } else if (rsi != null && rsi < 35) {
-    score -= 10;
+    if (rsi != null && rsi >= 50 && rsi <= 62) score += 15;
+    else if (rsi != null && rsi >= 46 && rsi < 50) score += 7;
+    else if (rsi != null && rsi > 68) score -= 10;
+
+    if (adx != null && adx >= 18 && adx <= 30) score += 10;
+    else if (adx != null && adx < 15) score -= 8;
+    else if (adx != null && adx > 35) score -= 5;
+
+    if (macdBias.includes("compr")) score += 10;
+    if (macdHistogram != null && macdHistogram > 0) score += 5;
+    if (macdBias.includes("vend")) score -= 12;
+
+    if (distToEma9 != null && Math.abs(distToEma9) <= 0.08) score += 7;
+    if (distToEma21 != null && Math.abs(distToEma21) <= 0.12) score += 7;
+    if (distToEma21 != null && Math.abs(distToEma21) > 0.25) score -= 10;
+
+    if (volume.includes("inconclusivo")) score -= 6;
+
+    summary =
+      "Compra em recuo até as médias, aproveitando o retorno técnico dentro de um contexto comprador.";
+    trigger =
+      "Preço recua até MME 9 ou MME 21 e mostra rejeição compradora, com pavio inferior ou fecho de reação.";
+    entry =
+      "Entrada após confirmação da reação compradora na zona da MME 9 ou, preferencialmente, MME 21.";
+    targets = ["Máxima anterior", "Extensão do impulso comprador"];
+    invalidation =
+      "Fecho abaixo da MME 21 com aceitação e quebra da estrutura compradora.";
+    rationale =
+      "O preço mantém-se acima das médias e o pullback tende a funcionar melhor quando o mercado respira sem perder o contexto de alta.";
+  } else if (bearishTrend) {
+    direction = "sell";
+    score += 22;
+    if (belowCloud) score += 14;
+    if (belowEma9) score += 10;
+    if (belowEma21) score += 10;
+
+    if (rsi != null && rsi >= 38 && rsi <= 50) score += 15;
+    else if (rsi != null && rsi > 50 && rsi <= 56) score += 7;
+    else if (rsi != null && rsi < 35) score -= 10;
+
+    if (adx != null && adx >= 18 && adx <= 30) score += 10;
+    else if (adx != null && adx < 15) score -= 8;
+    else if (adx != null && adx > 35) score -= 5;
+
+    if (macdBias.includes("vend")) score += 10;
+    if (macdHistogram != null && macdHistogram < 0) score += 5;
+    if (macdBias.includes("compr")) score -= 12;
+
+    if (distToEma9 != null && Math.abs(distToEma9) <= 0.08) score += 7;
+    if (distToEma21 != null && Math.abs(distToEma21) <= 0.12) score += 7;
+    if (distToEma21 != null && Math.abs(distToEma21) > 0.25) score -= 10;
+
+    if (volume.includes("inconclusivo")) score -= 6;
+
+    summary =
+      "Venda em repique até as médias, aproveitando o retorno técnico dentro de um contexto vendedor.";
+    trigger =
+      "Preço sobe até MME 9 ou MME 21 e mostra rejeição vendedora, com pavio superior ou falha em fechar acima.";
+    entry =
+      "Entrada após confirmação da rejeição vendedora na zona da MME 9 ou, preferencialmente, MME 21.";
+    targets = ["Mínima anterior", "Extensão do impulso vendedor"];
+    invalidation =
+      "Fecho acima da MME 21 com aceitação e quebra da estrutura vendedora.";
+    rationale =
+      "O preço mantém-se abaixo das médias e o pullback tende a funcionar melhor quando o mercado respira sem recuperar a estrutura.";
+  } else if (neutralTrend) {
+    if (adx != null && adx < 20) score += 12;
+    if (distToEma9 != null && Math.abs(distToEma9) <= 0.08) score += 8;
+    if (distToEma21 != null && Math.abs(distToEma21) <= 0.12) score += 8;
+    if (rsi != null && rsi >= 45 && rsi <= 55) score += 8;
+
+    summary =
+      "O mercado está neutro. O pullback ainda não está validado, mas o card acompanha a aproximação das condições.";
+    trigger =
+      "Aguardar definição de direção e reação limpa na zona das médias.";
+    entry =
+      "Sem entrada recomendada enquanto a tendência continuar neutra ou consolidada.";
+    targets = ["Aguardar direção", "Confirmação estrutural"];
+    invalidation = "Continuação da lateralização sem direção dominante.";
+    rationale =
+      "Neste estado, o card serve mais como radar de preparação do que como sinal operacional.";
   }
-
-  if (adx != null && adx >= 18 && adx <= 28) {
-    score += 10;
-  } else if (adx != null && adx < 15) {
-    score -= 10;
-  } else if (adx != null && adx > 35) {
-    score -= 5;
-  }
-
-  if (macdBias.includes("vendedor")) score += 10;
-  if (macdHistogram != null && macdHistogram < 0) score += 5;
-  if (macdBias.includes("comprador")) score -= 12;
-
-  if (distToEma9 != null && Math.abs(distToEma9) <= 0.05) score += 5;
-  if (distToEma21 != null && Math.abs(distToEma21) <= 0.1) score += 5;
-
-  if (volume.includes("inconclusivo")) score -= 8;
-  if (distToEma21 != null && Math.abs(distToEma21) > 0.2) score -= 10;
-  if (bullishTrend) score -= 30;
 
   score = roundScore(score);
-
-  if (score < 45) return null;
-
   const status = resolveStatus(score);
 
   return {
     id: "strategy-pullback",
     title: "Pullback",
-    direction: bearishTrend ? "sell" : "neutral",
+    direction,
     status,
     score,
-    summary: bearishTrend
-      ? "Venda em repique até as médias, a favor da estrutura vendedora."
-      : "Retorno técnico à média, mas sem alinhamento forte com o contexto.",
+    summary,
     setupType: "pullback",
     idealZone: "MME 9 / MME 21",
-    trigger:
-      "Toque ou aproximação da média com rejeição, pavio superior ou falha em fechar acima.",
-    entry:
-      "Entrada após confirmação da rejeição, preferencialmente na região da MME 21.",
-    targets: ["Mínima anterior", "Base da nuvem"],
-    invalidation:
-      "Fecho acima da MME 21 com aceitação e perda da estrutura vendedora.",
-    rationale: bearishTrend
-      ? "O preço mantém-se abaixo das médias e abaixo da nuvem. O ADX sugere espaço para respiração do mercado antes de nova continuação, e o RSI ainda não indica esgotamento vendedor."
-      : "Há alguns sinais de retorno à média, mas o contexto geral não favorece tanto a execução.",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
     factors: [
       {
-        label: "Tendência",
-        value: input.trendLabel || "--",
-        impact: bearishTrend ? "positive" : "negative",
+        label: "Tendência alinhada",
+        value: bullishTrend
+          ? "Sim, alta"
+          : bearishTrend
+          ? "Sim, baixa"
+          : "Não, neutra",
+        impact: bullishTrend || bearishTrend ? "positive" : "neutral",
       },
       {
-        label: "Preço vs MME 9",
-        value: belowEma9 ? "Abaixo" : "Acima",
-        impact: belowEma9 ? "positive" : "negative",
-      },
-      {
-        label: "Preço vs MME 21",
-        value: belowEma21 ? "Abaixo" : "Acima",
-        impact: belowEma21 ? "positive" : "negative",
-      },
-      {
-        label: "RSI",
-        value: rsi != null ? String(rsi).replace(".", ",") : "--",
+        label: "Preço em relação à MME 9",
+        value:
+          bullishTrend && aboveEma9
+            ? "Acima"
+            : bearishTrend && belowEma9
+            ? "Abaixo"
+            : "Sem alinhamento",
         impact:
-          rsi != null && rsi >= 38 && rsi <= 50 ? "positive" : "neutral",
+          (bullishTrend && aboveEma9) || (bearishTrend && belowEma9)
+            ? "positive"
+            : "neutral",
       },
       {
-        label: "ADX",
-        value: adx != null ? String(adx).replace(".", ",") : "--",
+        label: "Preço em relação à MME 21",
+        value:
+          bullishTrend && aboveEma21
+            ? "Acima"
+            : bearishTrend && belowEma21
+            ? "Abaixo"
+            : "Sem alinhamento",
         impact:
-          adx != null && adx >= 18 && adx <= 28 ? "positive" : "neutral",
+          (bullishTrend && aboveEma21) || (bearishTrend && belowEma21)
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "RSI em zona útil",
+        value:
+          rsi == null
+            ? "--"
+            : bullishTrend
+            ? rsi >= 50 && rsi <= 62
+              ? `Sim (${formatMaybeNumber(rsi)})`
+              : `Não (${formatMaybeNumber(rsi)})`
+            : bearishTrend
+            ? rsi >= 38 && rsi <= 50
+              ? `Sim (${formatMaybeNumber(rsi)})`
+              : `Não (${formatMaybeNumber(rsi)})`
+            : formatMaybeNumber(rsi),
+        impact:
+          rsi != null &&
+          ((bullishTrend && rsi >= 50 && rsi <= 62) ||
+            (bearishTrend && rsi >= 38 && rsi <= 50))
+            ? "positive"
+            : "neutral",
+      },
+      {
+        label: "ADX favorece respiração",
+        value:
+          adx == null
+            ? "--"
+            : adx >= 18 && adx <= 30
+            ? `Sim (${formatMaybeNumber(adx)})`
+            : `Não (${formatMaybeNumber(adx)})`,
+        impact:
+          adx != null && adx >= 18 && adx <= 30 ? "positive" : "neutral",
+      },
+      {
+        label: "Distância para MME 21",
+        value:
+          distToEma21 == null
+            ? "--"
+            : `${distToEma21.toLocaleString("pt-PT", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}%`,
+        impact:
+          distToEma21 != null && Math.abs(distToEma21) <= 0.12
+            ? "positive"
+            : "neutral",
       },
       {
         label: "Volume",
@@ -149,171 +276,20 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard | null 
   };
 }
 
-function buildContinuationStrategy(
-  input: MarketStrategyInput,
-): StrategyCard | null {
-  const trend = (input.trendLabel || "").toLowerCase();
-  const macdBias = (input.macdBiasLabel || "").toLowerCase();
-  const cloud = (input.cloudBiasLabel || "").toLowerCase();
+export function buildStrategySection(input: MarketStrategyInput): StrategySection {
+  const pullbackCard = buildPullbackStrategy(input);
 
-  const bearishTrend = trend.includes("baixa");
-  const belowCloud = cloud.includes("abaixo");
-  const rsi = input.rsiValue ?? null;
-  const adx = input.adxValue ?? null;
-
-  let score = 0;
-
-  if (bearishTrend) score += 20;
-  if (belowCloud) score += 15;
-  if (macdBias.includes("vendedor")) score += 15;
-  if (adx != null && adx >= 20 && adx <= 35) score += 15;
-  if (rsi != null && rsi >= 35 && rsi <= 48) score += 12;
-  if (
-    input.currentPrice != null &&
-    input.ema9 != null &&
-    input.currentPrice < input.ema9
-  ) {
-    score += 10;
-  }
-
-  if (adx != null && adx < 18) score -= 10;
-  if (rsi != null && rsi < 32) score -= 10;
-
-  score = roundScore(score);
-
-  if (score < 45) return null;
-
-  const status = resolveStatus(score);
-
-  return {
-    id: "strategy-continuation",
-    title: "Continuação",
-    direction: bearishTrend ? "sell" : "neutral",
-    status,
-    score,
-    summary:
-      "Continuação do movimento principal após confirmação de pressão vendedora.",
-    setupType: "continuation",
-    idealZone: "Perda da mínima recente / reteste falhado",
-    trigger: "Rompimento da mínima com continuidade e sem recuperação imediata.",
-    entry: "Venda após perda da estrutura curta ou falha de recuperação.",
-    targets: ["Nova mínima intradiária", "Extensão do impulso"],
-    invalidation:
-      "Recuperação da MME 9 com aceitação e enfraquecimento do momentum.",
-    rationale:
-      "A estratégia de continuação depende de o mercado voltar a acelerar a favor da tendência atual, sem necessidade de repique profundo.",
-    factors: [
-      {
-        label: "Tendência",
-        value: input.trendLabel || "--",
-        impact: bearishTrend ? "positive" : "negative",
-      },
-      {
-        label: "MACD",
-        value: input.macdBiasLabel || "--",
-        impact: macdBias.includes("vendedor") ? "positive" : "neutral",
-      },
-      {
-        label: "ADX",
-        value:
-          input.adxValue != null
-            ? String(input.adxValue).replace(".", ",")
-            : "--",
-        impact: adx != null && adx >= 20 ? "positive" : "neutral",
-      },
-    ],
-  };
-}
-
-function buildBreakoutStrategy(input: MarketStrategyInput): StrategyCard | null {
-  const trend = (input.trendLabel || "").toLowerCase();
-  const bearishTrend = trend.includes("baixa");
-  const adx = input.adxValue ?? null;
-  const macdBias = (input.macdBiasLabel || "").toLowerCase();
-
-  let score = 0;
-
-  if (bearishTrend) score += 20;
-  if (macdBias.includes("vendedor")) score += 15;
-  if (adx != null && adx >= 22) score += 18;
-  if (
-    input.currentPrice != null &&
-    input.ema9 != null &&
-    input.currentPrice < input.ema9
-  ) {
-    score += 10;
-  }
-
-  if (adx != null && adx < 18) score -= 10;
-  if ((input.volumeLabel || "").toLowerCase().includes("inconclusivo")) {
-    score -= 10;
-  }
-
-  score = roundScore(score);
-
-  if (score < 45) return null;
-
-  const status = resolveStatus(score);
-
-  return {
-    id: "strategy-breakout",
-    title: "Rompimento",
-    direction: bearishTrend ? "sell" : "neutral",
-    status,
-    score,
-    summary:
-      "Entrada em quebra de estrutura, desde que haja continuação real e não falso rompimento.",
-    setupType: "breakout",
-    idealZone: "Mínima relevante do intraday",
-    trigger: "Quebra da mínima com continuidade logo a seguir.",
-    entry: "Venda na perda da estrutura ou no reteste falhado do rompimento.",
-    targets: ["Expansão do movimento", "Nova mínima do dia"],
-    invalidation: "Retorno rápido para dentro da estrutura rompida.",
-    rationale:
-      "Funciona melhor quando o mercado deixa de apenas corrigir e volta a acelerar a favor da tendência principal.",
-    factors: [
-      {
-        label: "ADX",
-        value:
-          input.adxValue != null
-            ? String(input.adxValue).replace(".", ",")
-            : "--",
-        impact: adx != null && adx >= 22 ? "positive" : "neutral",
-      },
-      {
-        label: "MACD",
-        value: input.macdBiasLabel || "--",
-        impact: macdBias.includes("vendedor") ? "positive" : "neutral",
-      },
-    ],
-  };
-}
-
-export function buildStrategySection(
-  input: MarketStrategyInput,
-): StrategySection {
-  const cards = [
-    buildPullbackStrategy(input),
-    buildContinuationStrategy(input),
-    buildBreakoutStrategy(input),
-  ]
-    .filter((card): card is StrategyCard => Boolean(card))
-    .sort((a, b) => b.score - a.score);
-
-  const validCards = cards.filter((card) => card.status !== "invalid");
-  const activeCount = cards.filter((card) => card.status === "active").length;
-  const waitingCount = cards.filter(
-    (card) => card.status === "waiting_trigger",
-  ).length;
-
-  let summaryLabel = "Sem setup limpo neste momento.";
-
-  if (activeCount > 0) {
-    summaryLabel = `${activeCount} estratégia ativa no contexto atual`;
-  } else if (waitingCount > 0) {
-    summaryLabel = `${waitingCount} estratégia em aguardando gatilho`;
-  } else if (validCards.length > 0) {
-    summaryLabel = `${validCards.length} estratégia(s) em observação`;
+  let summaryLabel = "Radar operacional de pullback.";
+  if (pullbackCard.status === "active") {
+    summaryLabel = "Pullback ativo com bom contexto de entrada.";
+  } else if (pullbackCard.status === "waiting_trigger") {
+    summaryLabel = "Pullback bem alinhado, mas ainda a aguardar gatilho.";
+  } else if (pullbackCard.status === "watching") {
+    summaryLabel = "Pullback em observação.";
+  } else if (pullbackCard.status === "weak") {
+    summaryLabel = "Pullback fraco no contexto atual.";
+  } else {
+    summaryLabel = "Pullback ainda sem confirmação suficiente.";
   }
 
   return {
@@ -321,7 +297,7 @@ export function buildStrategySection(
     subtitle: "Setups compatíveis com o contexto atual",
     biasLabel: resolveBiasLabel(input),
     summaryLabel,
-    topScore: cards.length > 0 ? cards[0].score : null,
-    cards,
+    topScore: pullbackCard.score,
+    cards: [pullbackCard],
   };
 }

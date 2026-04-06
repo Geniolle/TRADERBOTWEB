@@ -1,7 +1,9 @@
 // web/src/components/chart/ChartSummary.tsx
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CandleItem } from "../../types/trading";
+import type { MarketStrategyInput } from "../../types/strategy";
+import StrategiesSection from "../strategies/StrategiesSection";
 
 type ChartSummaryProps = {
   candles: CandleItem[];
@@ -220,7 +222,7 @@ function calculateExponentialAverage(values: number[], period: number): number |
 
 function getAverageDirection(
   currentValue: number | null,
-  previousValue: number | null
+  previousValue: number | null,
 ): AverageDirection {
   if (currentValue === null || previousValue === null) return "flat";
   if (currentValue > previousValue) return "up";
@@ -230,7 +232,7 @@ function getAverageDirection(
 
 function calculateSimpleAverageWithDirection(
   values: number[],
-  period: number
+  period: number,
 ): AverageValue {
   const currentValue = calculateSimpleAverage(values, period);
   const previousValue = calculateSimpleAverage(values.slice(0, -1), period);
@@ -243,7 +245,7 @@ function calculateSimpleAverageWithDirection(
 
 function calculateExponentialAverageWithDirection(
   values: number[],
-  period: number
+  period: number,
 ): AverageValue {
   const currentValue = calculateExponentialAverage(values, period);
   const previousValue = calculateExponentialAverage(values.slice(0, -1), period);
@@ -356,7 +358,7 @@ function calculateMacd(values: number[]) {
     .map((value, index) =>
       Number.isFinite(value) && Number.isFinite(ema26Series[index])
         ? value - ema26Series[index]
-        : Number.NaN
+        : Number.NaN,
     )
     .filter((value) => Number.isFinite(value));
 
@@ -383,7 +385,7 @@ function calculateAdx(
   highs: number[],
   lows: number[],
   closes: number[],
-  period = 14
+  period = 14,
 ): { adx: number | null; previousAdx: number | null } {
   if (
     highs.length <= period * 2 ||
@@ -407,7 +409,7 @@ function calculateAdx(
     const tr = Math.max(
       highs[index] - lows[index],
       Math.abs(highs[index] - closes[index - 1]),
-      Math.abs(lows[index] - closes[index - 1])
+      Math.abs(lows[index] - closes[index - 1]),
     );
 
     trList.push(tr);
@@ -467,7 +469,7 @@ function calculateAdx(
 function calculateCloud(
   highs: number[],
   lows: number[],
-  closes: number[]
+  closes: number[],
 ): { top: number | null; bottom: number | null; price: number | null } {
   if (highs.length < 52 || lows.length < 52 || closes.length === 0) {
     return { top: null, bottom: null, price: null };
@@ -511,7 +513,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Preço esticado",
       hint: "Zona alta com risco de exaustão.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} indica forte domínio comprador, mas já em zona esticada. A alta pode continuar, porém o risco de correção aumenta.`,
       bias: "Alta",
       strength: "Forte",
@@ -523,7 +525,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Dominância compradora",
       hint: "Alta com boa qualidade.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} mostra compradores com controlo claro do momentum. A leitura favorece continuação da alta sem sinais imediatos de exaustão.`,
       bias: "Alta",
       strength: "Forte",
@@ -535,7 +537,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Alta saudável",
       hint: "Compradores mantêm vantagem.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} mostra alta saudável, com vantagem compradora ainda organizada. O cenário favorece continuidade, embora sem aceleração extrema.`,
       bias: "Alta",
       strength: "Moderada",
@@ -547,7 +549,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Equilíbrio",
       hint: "Mercado em transição.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} está muito próximo da linha de equilíbrio. Não há dominância clara entre compradores e vendedores, o que aumenta a probabilidade de consolidação ou sinais mistos.`,
       bias: "Lateral",
       strength: "Fraca",
@@ -559,7 +561,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Fraqueza compradora",
       hint: "Preço abaixo da zona saudável.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} mostra perda de força compradora e inclinação para o lado vendedor. Ainda não é pressão extrema, mas a vantagem já deixou de estar com os compradores.`,
       bias: "Baixa",
       strength: "Moderada",
@@ -571,7 +573,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
       state: "Pressão vendedora",
       hint: "Baixa com espaço para continuar.",
       interpretation: `O RSI em ${formatNumber(
-        rsi
+        rsi,
       )} confirma domínio vendedor no curto prazo. O mercado está fraco e favorece continuação da baixa, embora ainda sem sobrevenda extrema.`,
       bias: "Baixa",
       strength: "Forte",
@@ -582,7 +584,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
     state: "Preço muito pressionado",
     hint: "Zona de sobrevenda.",
     interpretation: `O RSI em ${formatNumber(
-      rsi
+      rsi,
     )} mostra mercado muito pressionado. A baixa é forte, mas o risco de reação técnica ou alívio aumenta por já estar numa zona esticada para baixo.`,
     bias: "Baixa",
     strength: "Forte",
@@ -591,7 +593,7 @@ function buildRsiNarrative(rsi: number | null): IndicatorNarrative {
 
 function buildAdxNarrative(
   adx: number | null,
-  adxRising: boolean | null
+  adxRising: boolean | null,
 ): IndicatorNarrative {
   if (adx === null) {
     return {
@@ -609,7 +611,7 @@ function buildAdxNarrative(
       state: "Mercado lateral",
       hint: "Força fraca e pouco deslocamento.",
       interpretation: `O ADX em ${formatNumber(
-        adx
+        adx,
       )} indica ausência de força direcional. O mercado está fraco, mais sujeito a ruído e cruzamentos falsos do que a uma tendência limpa.`,
       bias: "Lateral",
       strength: "Fraca",
@@ -621,7 +623,7 @@ function buildAdxNarrative(
       state: "Força em formação",
       hint: "Movimento ainda sem convicção total.",
       interpretation: `O ADX em ${formatNumber(
-        adx
+        adx,
       )} mostra que o mercado pode estar a sair da lateralização, mas ainda sem força suficiente para validar tendência sólida.`,
       bias: "Lateral",
       strength: "Moderada",
@@ -633,7 +635,7 @@ function buildAdxNarrative(
       state: "Tendência forte a acelerar",
       hint: "O impulso está a ganhar qualidade.",
       interpretation: `O ADX em ${formatNumber(
-        adx
+        adx,
       )} e em subida confirma que o movimento atual está a ganhar consistência. Quando a direção já estiver clara noutros indicadores, este valor funciona como reforço da tendência.`,
       bias: "Lateral",
       strength: "Forte",
@@ -645,7 +647,7 @@ function buildAdxNarrative(
       state: "Tendência forte em perda de fôlego",
       hint: "A estrutura ainda existe, mas com menos energia.",
       interpretation: `O ADX em ${formatNumber(
-        adx
+        adx,
       )} ainda mostra força técnica relevante, mas a direção descendente indica perda de impulso. O mercado pode continuar em tendência, porém com maior risco de consolidação.`,
       bias: "Lateral",
       strength: "Moderada",
@@ -657,7 +659,7 @@ function buildAdxNarrative(
       state: "Tendência muito forte",
       hint: "Movimento intenso e sustentado.",
       interpretation: `O ADX em ${formatNumber(
-        adx
+        adx,
       )} com inclinação positiva mostra um mercado com força direcional muito elevada. O movimento está forte, embora o risco de esticão aumente.`,
       bias: "Lateral",
       strength: "Forte",
@@ -668,7 +670,7 @@ function buildAdxNarrative(
     state: "Tendência muito forte com cansaço",
     hint: "Força alta, mas já a perder qualidade.",
     interpretation: `O ADX em ${formatNumber(
-      adx
+      adx,
     )} ainda é elevado, porém a inclinação descendente sugere que o impulso está a perder qualidade. A tendência segue forte, mas menos limpa do que antes.`,
     bias: "Lateral",
     strength: "Moderada",
@@ -677,7 +679,7 @@ function buildAdxNarrative(
 
 function buildVolumeNarrative(
   volumeNow: number | null,
-  volumeAverage20: number | null
+  volumeAverage20: number | null,
 ): IndicatorNarrative {
   if (volumeNow === null || volumeAverage20 === null) {
     return {
@@ -707,7 +709,8 @@ function buildVolumeNarrative(
     return {
       state: "Volume acima da média",
       hint: "Participação reforça o movimento.",
-      interpretation: `O volume atual está acima da média recente, mostrando maior participação do mercado. Quando combinado com direção clara noutros indicadores, isto reforça a validade do movimento.`,
+      interpretation:
+        "O volume atual está acima da média recente, mostrando maior participação do mercado. Quando combinado com direção clara noutros indicadores, isto reforça a validade do movimento.",
       bias: "Lateral",
       strength: "Moderada",
     };
@@ -737,7 +740,7 @@ function buildVolumeNarrative(
 function buildMacdNarrative(
   macdValue: number | null,
   signalValue: number | null,
-  histogramValue: number | null
+  histogramValue: number | null,
 ): IndicatorNarrative {
   if (
     macdValue === null ||
@@ -795,7 +798,7 @@ function buildMacdNarrative(
 function buildCloudNarrative(
   price: number | null,
   top: number | null,
-  bottom: number | null
+  bottom: number | null,
 ): IndicatorNarrative {
   if (price === null || top === null || bottom === null) {
     return {
@@ -812,7 +815,8 @@ function buildCloudNarrative(
     return {
       state: "Preço acima da nuvem",
       hint: "Contexto favorável de médio prazo.",
-      interpretation: `O preço está acima da nuvem, o que favorece uma leitura estrutural mais compradora. Enquanto se mantiver acima desta zona, o contexto técnico tende a apoiar a alta.`,
+      interpretation:
+        "O preço está acima da nuvem, o que favorece uma leitura estrutural mais compradora. Enquanto se mantiver acima desta zona, o contexto técnico tende a apoiar a alta.",
       bias: "Alta",
       strength: "Forte",
     };
@@ -822,7 +826,8 @@ function buildCloudNarrative(
     return {
       state: "Preço abaixo da nuvem",
       hint: "Contexto desfavorável de médio prazo.",
-      interpretation: `O preço está abaixo da nuvem, mantendo o ativo em estrutura mais fraca. Esta posição favorece continuidade vendedora enquanto a nuvem não for recuperada.`,
+      interpretation:
+        "O preço está abaixo da nuvem, mantendo o ativo em estrutura mais fraca. Esta posição favorece continuidade vendedora enquanto a nuvem não for recuperada.",
       bias: "Baixa",
       strength: "Forte",
     };
@@ -831,7 +836,8 @@ function buildCloudNarrative(
   return {
     state: "Preço dentro da nuvem",
     hint: "Zona de ruído e indecisão.",
-    interpretation: `O preço está dentro da nuvem, uma área de conflito entre compradores e vendedores. Enquanto não houver saída clara pelo topo ou pela base, a leitura estrutural continua neutra.`,
+    interpretation:
+      "O preço está dentro da nuvem, uma área de conflito entre compradores e vendedores. Enquanto não houver saída clara pelo topo ou pela base, a leitura estrutural continua neutra.",
     bias: "Lateral",
     strength: "Moderada",
   };
@@ -843,7 +849,7 @@ function buildMovingAverageNarrative(
   ema21: AverageValue,
   distanceToEma9Percent: number | null,
   distanceToEma21Percent: number | null,
-  globalState: "Alta" | "Baixa" | "Neutro"
+  globalState: "Alta" | "Baixa" | "Neutro",
 ): AverageNarrative {
   if (currentPrice === null || ema9.value === null || ema21.value === null) {
     return {
@@ -856,7 +862,8 @@ function buildMovingAverageNarrative(
     };
   }
 
-  const closeToEma9 = distanceToEma9Percent !== null && Math.abs(distanceToEma9Percent) <= 0.03;
+  const closeToEma9 =
+    distanceToEma9Percent !== null && Math.abs(distanceToEma9Percent) <= 0.03;
   const closeToEma21 =
     distanceToEma21Percent !== null && Math.abs(distanceToEma21Percent) <= 0.03;
 
@@ -986,7 +993,7 @@ function buildMovingAverageSummary(candles: CandleItem[]): MovingAverageSummary 
     ema21,
     distanceToEma9Percent,
     distanceToEma21Percent,
-    globalState
+    globalState,
   );
 
   return {
@@ -1093,7 +1100,7 @@ function buildConfirmationSummary(candles: CandleItem[]): ConfirmationSummary {
 function buildHeaderTrendSummary(
   trend: TrendSummary,
   movingAverages: MovingAverageSummary,
-  confirmation: ConfirmationSummary
+  confirmation: ConfirmationSummary,
 ): HeaderTrendSummary {
   let bullScore = 0;
   let bearScore = 0;
@@ -1553,15 +1560,18 @@ function InfoBlock({
 function ChartSummary({ candles }: ChartSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true);
 
-  const trend = buildTrendSummary(candles);
-  const movingAverages = buildMovingAverageSummary(candles);
-  const confirmation = buildConfirmationSummary(candles);
-  const headerTrend = buildHeaderTrendSummary(trend, movingAverages, confirmation);
+  const trend = useMemo(() => buildTrendSummary(candles), [candles]);
+  const movingAverages = useMemo(() => buildMovingAverageSummary(candles), [candles]);
+  const confirmation = useMemo(() => buildConfirmationSummary(candles), [candles]);
+  const headerTrend = useMemo(
+    () => buildHeaderTrendSummary(trend, movingAverages, confirmation),
+    [trend, movingAverages, confirmation],
+  );
 
   const trendBadgeStyles = getTrendBadgeStyles(trend.label);
   const averageBadgeStyles = getAverageBadgeStyles(movingAverages.globalState);
   const confirmationBadgeStyles = getConfirmationBadgeStyles(
-    confirmation.robustSignal
+    confirmation.robustSignal,
   );
   const headerStyles = getHeaderStyles(headerTrend.label);
 
@@ -1581,388 +1591,430 @@ function ChartSummary({ candles }: ChartSummaryProps) {
       ? "Baixa"
       : "Lateral";
 
+  const strategyInput = useMemo<MarketStrategyInput>(() => {
+  const adxDirectionLabel =
+    confirmation.adxRising === null
+      ? "-"
+      : confirmation.adxRising
+      ? "A subir"
+      : "A descer";
+
+  const trendLabelForStrategies =
+    headerTrend.label === "Consolidado" ? "Consolidado" : headerTrend.label;
+
+  return {
+    trendLabel: trendLabelForStrategies,
+    trendConfidence: headerTrend.confidence,
+    currentPrice: trend.currentPrice ?? undefined,
+
+    adxValue: confirmation.adx ?? undefined,
+    adxDirectionLabel,
+
+    rsiValue: confirmation.rsi ?? undefined,
+
+    macdLine: confirmation.macdValue ?? undefined,
+    macdSignal: confirmation.signalValue ?? undefined,
+    macdHistogram: confirmation.histogramValue ?? undefined,
+    macdBiasLabel: confirmation.macdState,
+
+    volumeLabel: confirmation.volumeState,
+
+    cloudBiasLabel: confirmation.cloudState,
+    cloudTop: confirmation.cloudTop ?? undefined,
+    cloudBase: confirmation.cloudBottom ?? undefined,
+
+    ema9: movingAverages.ema9.value ?? undefined,
+    ema21: movingAverages.ema21.value ?? undefined,
+    sma200: movingAverages.sma200.value ?? undefined,
+  };
+  }, [confirmation, headerTrend, movingAverages, trend]);
+
   return (
-    <section
-      style={{
-        marginTop: 18,
-        marginBottom: 18,
-        border: "1px solid #dbe2ea",
-        borderRadius: 16,
-        background: "#ffffff",
-        overflow: "hidden",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setIsExpanded((previous) => !previous)}
+    <>
+      <section
         style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "14px 16px",
-          background: headerStyles.background,
-          border: "none",
-          borderBottom: isExpanded ? `1px solid ${headerStyles.borderBottom}` : "none",
-          cursor: "pointer",
-          textAlign: "left",
+          marginTop: 18,
+          marginBottom: 18,
+          border: "1px solid #dbe2ea",
+          borderRadius: 16,
+          background: "#ffffff",
+          overflow: "hidden",
         }}
-        aria-expanded={isExpanded}
-        aria-label={isExpanded ? "Retrair Tendência" : "Expandir Tendência"}
       >
-        <div
+        <button
+          type="button"
+          onClick={() => setIsExpanded((previous) => !previous)}
           style={{
+            width: "100%",
             display: "flex",
-            flexDirection: "column",
-            gap: 4,
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "14px 16px",
+            background: headerStyles.background,
+            border: "none",
+            borderBottom: isExpanded ? `1px solid ${headerStyles.borderBottom}` : "none",
+            cursor: "pointer",
+            textAlign: "left",
           }}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Retrair Tendência" : "Expandir Tendência"}
         >
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
+              flexDirection: "column",
+              gap: 4,
             }}
           >
-            <strong style={{ fontSize: 16, color: headerStyles.titleColor }}>
-              Tendência
-            </strong>
-
-            <span
+            <div
               style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                background: headerStyles.badgeBackground,
-                color: headerStyles.badgeColor,
-                border: `1px solid ${headerStyles.badgeBorder}`,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              {headerTrend.label}
-            </span>
+              <strong style={{ fontSize: 16, color: headerStyles.titleColor }}>
+                Tendência
+              </strong>
 
-            <span
-              style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                background: headerStyles.badgeBackground,
-                color: headerStyles.badgeColor,
-                border: `1px solid ${headerStyles.badgeBorder}`,
-              }}
-            >
-              {formatIntegerPercent(headerTrend.confidence)}
+              <span
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: headerStyles.badgeBackground,
+                  color: headerStyles.badgeColor,
+                  border: `1px solid ${headerStyles.badgeBorder}`,
+                }}
+              >
+                {headerTrend.label}
+              </span>
+
+              <span
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: headerStyles.badgeBackground,
+                  color: headerStyles.badgeColor,
+                  border: `1px solid ${headerStyles.badgeBorder}`,
+                }}
+              >
+                {formatIntegerPercent(headerTrend.confidence)}
+              </span>
+            </div>
+
+            <span style={{ fontSize: 12, color: headerStyles.subtitleColor }}>
+              Resumo consolidado dos cards de leitura do mercado
             </span>
           </div>
 
-          <span style={{ fontSize: 12, color: headerStyles.subtitleColor }}>
-            Resumo consolidado dos cards de leitura do mercado
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 34,
+              width: 34,
+              height: 34,
+              borderRadius: 999,
+              border: `1px solid ${headerStyles.badgeBorder}`,
+              background: "#ffffff",
+              color: headerStyles.badgeColor,
+              fontSize: 16,
+              fontWeight: 700,
+              lineHeight: 1,
+            }}
+          >
+            {isExpanded ? "−" : "+"}
           </span>
-        </div>
+        </button>
 
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minWidth: 34,
-            width: 34,
-            height: 34,
-            borderRadius: 999,
-            border: `1px solid ${headerStyles.badgeBorder}`,
-            background: "#ffffff",
-            color: headerStyles.badgeColor,
-            fontSize: 16,
-            fontWeight: 700,
-            lineHeight: 1,
-          }}
-        >
-          {isExpanded ? "−" : "+"}
-        </span>
-      </button>
-
-      {isExpanded && (
-        <div
-          style={{
-            padding: 8,
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(320px, 1fr))",
-            gap: 8,
-            alignItems: "start",
-          }}
-        >
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={getCardStyleByTone(trend.label)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                  Contexto Geral
-                </strong>
-
-                <span
+        {isExpanded && (
+          <div
+            style={{
+              padding: 8,
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(320px, 1fr))",
+              gap: 8,
+              alignItems: "start",
+            }}
+          >
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={getCardStyleByTone(trend.label)}>
+                <div
                   style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: trendBadgeStyles.background,
-                    color: trendBadgeStyles.color,
-                    border: `1px solid ${trendBadgeStyles.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
                   }}
                 >
-                  {trend.label}
-                </span>
+                  <strong style={{ fontSize: 15, color: "#0f172a" }}>
+                    Contexto Geral
+                  </strong>
+
+                  <span
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: trendBadgeStyles.background,
+                      color: trendBadgeStyles.color,
+                      border: `1px solid ${trendBadgeStyles.border}`,
+                    }}
+                  >
+                    {trend.label}
+                  </span>
+                </div>
+
+                <NarrativeParagraph
+                  text={
+                    trend.label === "Alta"
+                      ? "O mercado está acima da abertura do dia e mantém vantagem compradora no intradiário. Esta leitura favorece continuidade de alta, desde que os outros indicadores confirmem força."
+                      : trend.label === "Baixa"
+                      ? "O mercado está abaixo da abertura do dia e mantém vantagem vendedora no intradiário. Esta leitura favorece continuidade de baixa, desde que não falte força nos demais indicadores."
+                      : "A variação do dia está demasiado curta para caracterizar uma direção limpa. O contexto intradiário continua mais compatível com equilíbrio ou consolidação."
+                  }
+                />
+
+                <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
+                  <SummaryRow label="Tendência" value={trend.label} />
+                  <SummaryRow label="Variação %" value={formatPercent(trend.percentChange)} />
+                  <SummaryRow label="Preço atual" value={formatPrice(trend.currentPrice)} />
+                </div>
               </div>
 
-              <NarrativeParagraph
-                text={
-                  trend.label === "Alta"
-                    ? "O mercado está acima da abertura do dia e mantém vantagem compradora no intradiário. Esta leitura favorece continuidade de alta, desde que os outros indicadores confirmem força."
-                    : trend.label === "Baixa"
-                    ? "O mercado está abaixo da abertura do dia e mantém vantagem vendedora no intradiário. Esta leitura favorece continuidade de baixa, desde que não falte força nos demais indicadores."
-                    : "A variação do dia está demasiado curta para caracterizar uma direção limpa. O contexto intradiário continua mais compatível com equilíbrio ou consolidação."
-                }
-              />
+              <div style={getCardStyleByTone(confirmationTone)}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <strong style={{ fontSize: 15, color: "#0f172a" }}>
+                    Força e Confirmação
+                  </strong>
 
-              <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
-                <SummaryRow label="Tendência" value={trend.label} />
-                <SummaryRow label="Variação %" value={formatPercent(trend.percentChange)} />
-                <SummaryRow label="Preço atual" value={formatPrice(trend.currentPrice)} />
+                  <span
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: confirmationBadgeStyles.background,
+                      color: confirmationBadgeStyles.color,
+                      border: `1px solid ${confirmationBadgeStyles.border}`,
+                    }}
+                  >
+                    Validação
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <InfoBlock
+                    title="ADX"
+                    state={confirmation.adxState}
+                    hint={confirmation.adxHint}
+                    interpretation={confirmation.adxInterpretation}
+                    rows={[
+                      {
+                        label: "Valor",
+                        value: formatNumber(confirmation.adx),
+                      },
+                      {
+                        label: "Direção",
+                        value:
+                          confirmation.adxRising === null
+                            ? "-"
+                            : confirmation.adxRising
+                            ? "A subir"
+                            : "A descer",
+                      },
+                    ]}
+                  />
+
+                  <InfoBlock
+                    title="Volume"
+                    state={confirmation.volumeState}
+                    hint={confirmation.volumeHint}
+                    interpretation={confirmation.volumeInterpretation}
+                    rows={[
+                      {
+                        label: "Volume atual",
+                        value: formatVolume(confirmation.volumeNow),
+                      },
+                      {
+                        label: "Média de 20",
+                        value: formatVolume(confirmation.volumeAverage20),
+                      },
+                    ]}
+                  />
+
+                  <InfoBlock
+                    title="Nuvem"
+                    state={confirmation.cloudState}
+                    hint={confirmation.cloudHint}
+                    interpretation={confirmation.cloudInterpretation}
+                    rows={[
+                      {
+                        label: "Topo",
+                        value: formatPrice(confirmation.cloudTop),
+                      },
+                      {
+                        label: "Base",
+                        value: formatPrice(confirmation.cloudBottom),
+                      },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
 
-            <div style={getCardStyleByTone(confirmationTone)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                  Força e Confirmação
-                </strong>
-
-                <span
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={getCardStyleByTone(movingAverages.globalState)}>
+                <div
                   style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: confirmationBadgeStyles.background,
-                    color: confirmationBadgeStyles.color,
-                    border: `1px solid ${confirmationBadgeStyles.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
                   }}
                 >
-                  Validação
-                </span>
+                  <strong style={{ fontSize: 15, color: "#0f172a" }}>
+                    O Mapa de Médias
+                  </strong>
+
+                  <span
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: averageBadgeStyles.background,
+                      color: averageBadgeStyles.color,
+                      border: `1px solid ${averageBadgeStyles.border}`,
+                    }}
+                  >
+                    {movingAverages.globalState}
+                  </span>
+                </div>
+
+                <NarrativeParagraph text={movingAverages.narrative.interpretation} />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <AverageInfoLine
+                    title="MME 9"
+                    description="Gatilho de curto prazo."
+                    item={movingAverages.ema9}
+                    distanceValue={movingAverages.distanceToEma9}
+                    distancePercent={movingAverages.distanceToEma9Percent}
+                  />
+
+                  <AverageInfoLine
+                    title="MME 21"
+                    description="O equilíbrio do preço."
+                    item={movingAverages.ema21}
+                    distanceValue={movingAverages.distanceToEma21}
+                    distancePercent={movingAverages.distanceToEma21Percent}
+                  />
+
+                  <AverageInfoLine
+                    title="MMS 200"
+                    description="O divisor de águas entre Bull e Bear Market."
+                    item={movingAverages.sma200}
+                    distanceValue={movingAverages.distanceToSma200}
+                    distancePercent={movingAverages.distanceToSma200Percent}
+                  />
+                </div>
               </div>
 
-              <div style={{ display: "grid", gap: 10 }}>
-                <InfoBlock
-                  title="ADX"
-                  state={confirmation.adxState}
-                  hint={confirmation.adxHint}
-                  interpretation={confirmation.adxInterpretation}
-                  rows={[
-                    {
-                      label: "Valor",
-                      value: formatNumber(confirmation.adx),
-                    },
-                    {
-                      label: "Direção",
-                      value:
-                        confirmation.adxRising === null
-                          ? "-"
-                          : confirmation.adxRising
-                          ? "A subir"
-                          : "A descer",
-                    },
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Volume"
-                  state={confirmation.volumeState}
-                  hint={confirmation.volumeHint}
-                  interpretation={confirmation.volumeInterpretation}
-                  rows={[
-                    {
-                      label: "Volume atual",
-                      value: formatVolume(confirmation.volumeNow),
-                    },
-                    {
-                      label: "Média de 20",
-                      value: formatVolume(confirmation.volumeAverage20),
-                    },
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Nuvem"
-                  state={confirmation.cloudState}
-                  hint={confirmation.cloudHint}
-                  interpretation={confirmation.cloudInterpretation}
-                  rows={[
-                    {
-                      label: "Topo",
-                      value: formatPrice(confirmation.cloudTop),
-                    },
-                    {
-                      label: "Base",
-                      value: formatPrice(confirmation.cloudBottom),
-                    },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={getCardStyleByTone(movingAverages.globalState)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                  O Mapa de Médias
-                </strong>
-
-                <span
+              <div style={getCardStyleByTone(momentumTone)}>
+                <div
                   style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: averageBadgeStyles.background,
-                    color: averageBadgeStyles.color,
-                    border: `1px solid ${averageBadgeStyles.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 12,
                   }}
                 >
-                  {movingAverages.globalState}
-                </span>
-              </div>
+                  <strong style={{ fontSize: 15, color: "#0f172a" }}>
+                    Momentum e Exaustão
+                  </strong>
 
-              <NarrativeParagraph text={movingAverages.narrative.interpretation} />
+                  <span
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: "#f8fafc",
+                      color: "#334155",
+                      border: "1px solid #cbd5e1",
+                    }}
+                  >
+                    Timing
+                  </span>
+                </div>
 
-              <div style={{ display: "grid", gap: 10 }}>
-                <AverageInfoLine
-                  title="MME 9"
-                  description="Gatilho de curto prazo."
-                  item={movingAverages.ema9}
-                  distanceValue={movingAverages.distanceToEma9}
-                  distancePercent={movingAverages.distanceToEma9Percent}
-                />
+                <div style={{ display: "grid", gap: 10 }}>
+                  <InfoBlock
+                    title="RSI"
+                    state={confirmation.rsiState}
+                    hint={confirmation.rsiHint}
+                    interpretation={confirmation.rsiInterpretation}
+                    rows={[
+                      {
+                        label: "Valor",
+                        value: formatNumber(confirmation.rsi),
+                      },
+                      {
+                        label: "Linha de equilíbrio",
+                        value: "50",
+                      },
+                    ]}
+                  />
 
-                <AverageInfoLine
-                  title="MME 21"
-                  description="O equilíbrio do preço."
-                  item={movingAverages.ema21}
-                  distanceValue={movingAverages.distanceToEma21}
-                  distancePercent={movingAverages.distanceToEma21Percent}
-                />
-
-                <AverageInfoLine
-                  title="MMS 200"
-                  description="O divisor de águas entre Bull e Bear Market."
-                  item={movingAverages.sma200}
-                  distanceValue={movingAverages.distanceToSma200}
-                  distancePercent={movingAverages.distanceToSma200Percent}
-                />
-              </div>
-            </div>
-
-            <div style={getCardStyleByTone(momentumTone)}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                  Momentum e Exaustão
-                </strong>
-
-                <span
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: "#f8fafc",
-                    color: "#334155",
-                    border: "1px solid #cbd5e1",
-                  }}
-                >
-                  Timing
-                </span>
-              </div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                <InfoBlock
-                  title="RSI"
-                  state={confirmation.rsiState}
-                  hint={confirmation.rsiHint}
-                  interpretation={confirmation.rsiInterpretation}
-                  rows={[
-                    {
-                      label: "Valor",
-                      value: formatNumber(confirmation.rsi),
-                    },
-                    {
-                      label: "Linha de equilíbrio",
-                      value: "50",
-                    },
-                  ]}
-                />
-
-                <InfoBlock
-                  title="MACD"
-                  state={confirmation.macdState}
-                  hint={confirmation.macdHint}
-                  interpretation={confirmation.macdInterpretation}
-                  rows={[
-                    {
-                      label: "Linha principal",
-                      value: formatPrice(confirmation.macdValue),
-                    },
-                    {
-                      label: "Linha de sinal",
-                      value: formatPrice(confirmation.signalValue),
-                    },
-                    {
-                      label: "Histograma",
-                      value: formatSignedPrice(confirmation.histogramValue),
-                    },
-                  ]}
-                />
+                  <InfoBlock
+                    title="MACD"
+                    state={confirmation.macdState}
+                    hint={confirmation.macdHint}
+                    interpretation={confirmation.macdInterpretation}
+                    rows={[
+                      {
+                        label: "Linha principal",
+                        value: formatPrice(confirmation.macdValue),
+                      },
+                      {
+                        label: "Linha de sinal",
+                        value: formatPrice(confirmation.signalValue),
+                      },
+                      {
+                        label: "Histograma",
+                        value: formatSignedPrice(confirmation.histogramValue),
+                      },
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </section>
+        )}
+      </section>
+
+      <StrategiesSection data={strategyInput} />
+    </>
   );
 }
 
