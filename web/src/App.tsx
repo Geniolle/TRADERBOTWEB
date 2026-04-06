@@ -616,7 +616,7 @@ function App() {
                   lineHeight: 1.6,
                 }}
               >
-                <strong>Estratégia selecionada para o gráfico:</strong>{" "}
+                <strong>Estratégia do motor selecionada:</strong>{" "}
                 {selectedStrategyNotice.name} ({selectedStrategyNotice.key})
                 <br />
                 <strong>Run selecionado:</strong>{" "}
@@ -628,8 +628,8 @@ function App() {
                   : "não suportados"}
                 <br />
                 {selectedStrategyNotice.supportsOverlays
-                  ? "Os overlays estratégicos só aparecem quando a estratégia escolhida no filtro coincide com a estratégia do run selecionado."
-                  : "Esta estratégia está ativa para seleção e execução, mas o contrato devolvido pelo backend indica que não há overlays estratégicos para desenhar no gráfico."}
+                  ? "Os overlays estratégicos só aparecem quando a estratégia técnica escolhida coincide com a estratégia do run selecionado."
+                  : "Esta estratégia técnica está ativa para seleção e execução, mas o backend indica que não há overlays próprios para desenhar no gráfico."}
               </div>
             )}
 

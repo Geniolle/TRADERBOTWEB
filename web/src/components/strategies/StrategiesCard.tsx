@@ -26,7 +26,21 @@ function StrategiesCard({
 
   return (
     <div style={mainCardStyle}>
-      <h2 style={sectionTitleStyle}>Estratégias disponíveis</h2>
+      <h2 style={sectionTitleStyle}>Estratégias técnicas do backend</h2>
+
+      <p
+        style={{
+          marginTop: -4,
+          marginBottom: 16,
+          fontSize: 13,
+          lineHeight: 1.55,
+          color: "#64748b",
+        }}
+      >
+        Esta secção mostra as estratégias registadas no motor de execução. Não
+        representa os setups e oportunidades do contexto atual apresentados nos
+        cards do gráfico.
+      </p>
 
       {loadingStrategies && <p>A carregar estratégias...</p>}
 
@@ -131,10 +145,6 @@ function StrategiesCard({
                     </div>
                     <div>
                       <strong>Category:</strong> {strategy.category}
-                    </div>
-                    <div>
-                      <strong>Family:</strong>{" "}
-                      {strategy.strategy_family ? strategy.strategy_family : "-"}
                     </div>
                     <div>
                       <strong>Overlays:</strong>{" "}
