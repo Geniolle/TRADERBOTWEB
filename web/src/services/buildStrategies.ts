@@ -420,11 +420,140 @@ function buildRangeBreakoutStrategy(input: MarketStrategyInput): StrategyCard {
   };
 }
 
+function buildFadeStrategy(input: MarketStrategyInput): StrategyCard {
+  const trend = (input.trendLabel || "").toLowerCase();
+  const macdBias = (input.macdBiasLabel || "").toLowerCase();
+  const volume = (input.volumeLabel || "").toLowerCase();
+
+  const adx = input.adxValue;
+  const rsi = input.rsiValue;
+  const currentPrice = input.currentPrice;
+  const ema9 = input.ema9;
+  const ema21 = input.ema21;
+  const macdHistogram = input.macdHistogram;
+
+  const bearishTrend = trend.includes("baixa");
+  const weakAdx = adx != null && adx >= 18 && adx <= 23;
+
+  const belowEma9 = isBelow(currentPrice, ema9);
+  const belowEma21 = isBelow(currentPrice, ema21);
+
+  const distToEma9 = calcDistancePercent(currentPrice, ema9);
+  const farFromEma9 = distToEma9 != null && distToEma9 <= -0.08;
+
+  let score = 0;
+
+  const direction: StrategyCard["direction"] = "buy";
+  const summary =
+    "Scalp de contra-tendência para capturar apenas o retorno do preço até a MME 9 quando a baixa perde força no curtíssimo prazo.";
+  const trigger =
+    "RSI próximo de 30 com preço esticado para baixo e sem força suficiente no ADX para sustentar nova queda limpa.";
+  const entry =
+    "Compra curta apenas quando o RSI estiver perto de 30 e o preço estiver claramente afastado da MME 9.";
+  const targets = ["Retorno até a MME 9", "Alívio técnico curto"];
+  const invalidation =
+    "Continuação da queda com ADX a acelerar, perda de fundo sem reação ou MACD a expandir fortemente a aceleração negativa.";
+  let rationale =
+    "É uma operação agressiva de scalp e contra o fluxo principal. Só faz sentido quando a tendência segue de baixa, mas a força da queda é curta e o preço já está demasiado esticado.";
+  let status = "invalid" as StrategyStatus;
+
+  if (bearishTrend) score += 18;
+  if (weakAdx) score += 18;
+  if (rsi != null && rsi <= 33) score += 24;
+  else if (rsi != null && rsi <= 36) score += 12;
+  else if (rsi != null && rsi > 40) score -= 10;
+
+  if (belowEma9) score += 8;
+  if (belowEma21) score += 6;
+  if (farFromEma9) score += 18;
+  else if (distToEma9 != null && distToEma9 > -0.03) score -= 8;
+
+  if (adx != null && adx >= 25) score -= 18;
+  if (macdBias.includes("vend")) score -= 6;
+  if (macdHistogram != null && macdHistogram < -0.00008) score -= 10;
+  if (volume.includes("inconclusivo")) score -= 4;
+
+  if (!bearishTrend) {
+    score -= 12;
+    rationale =
+      "Sem tendência de baixa dominante, a lógica do fade perde qualidade porque deixa de ser uma reação contra um fluxo principal identificado.";
+  }
+
+  score = roundScore(score);
+  status = resolveStatus(score);
+
+  return {
+    id: "strategy-fade",
+    title: "Fade",
+    direction,
+    status,
+    score,
+    summary,
+    setupType: "reversal",
+    idealZone: "Região de exaustão abaixo da MME 9",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
+    factors: [
+      {
+        label: "Tendência principal é baixa",
+        value: bearishTrend ? "Sim" : "Não",
+        impact: bearishTrend ? "positive" : "negative",
+      },
+      {
+        label: "ADX fraco / lateral",
+        value:
+          adx == null
+            ? "--"
+            : weakAdx
+              ? `Sim (${formatMaybeNumber(adx)})`
+              : `Não (${formatMaybeNumber(adx)})`,
+        impact: weakAdx ? "positive" : "neutral",
+      },
+      {
+        label: "RSI perto de 30",
+        value:
+          rsi == null
+            ? "--"
+            : rsi <= 33
+              ? `Sim (${formatMaybeNumber(rsi)})`
+              : `Não (${formatMaybeNumber(rsi)})`,
+        impact: rsi != null && rsi <= 33 ? "positive" : "neutral",
+      },
+      {
+        label: "Preço longe da MME 9",
+        value:
+          distToEma9 == null
+            ? "--"
+            : farFromEma9
+              ? `Sim (${formatPercentValue(distToEma9)})`
+              : `Não (${formatPercentValue(distToEma9)})`,
+        impact: farFromEma9 ? "positive" : "neutral",
+      },
+      {
+        label: "Preço abaixo da MME 9",
+        value: belowEma9 ? "Sim" : "Não",
+        impact: belowEma9 ? "positive" : "neutral",
+      },
+      {
+        label: "Risco operacional",
+        value: "Alto, contra a tendência principal",
+        impact: "negative",
+      },
+    ],
+  };
+}
+
 export function buildStrategySection(
   input: MarketStrategyInput,
 ): StrategySection {
-  const cards = [buildPullbackStrategy(input), buildRangeBreakoutStrategy(input)]
-    .sort((a, b) => b.score - a.score);
+  const cards = [
+    buildPullbackStrategy(input),
+    buildRangeBreakoutStrategy(input),
+    buildFadeStrategy(input),
+  ].sort((a, b) => b.score - a.score);
 
   const bestCard = cards[0] ?? null;
 
