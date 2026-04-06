@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
+  CandleItem,
   CandleTickState,
   CatalogInstrument,
   FeedDiagnostics,
@@ -33,7 +34,7 @@ type CandlesChartCardProps = {
   loadingCandles: boolean;
   candlesError: string;
   chartData: CandlestickData<UTCTimestamp>[];
-  candles: Array<{ open_time: string; close?: string }>;
+  candles: CandleItem[];
   overlays: {
     markers: OverlayMarker[];
     lines: OverlayLine[];
