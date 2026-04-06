@@ -36,10 +36,16 @@ function getDirectionLabel(direction: StrategyCard["direction"]): string {
   }
 }
 
-function getHeaderStyles(biasLabel: string) {
-  const normalized = biasLabel.toLowerCase();
+function getToneByScore(score: number): StrategyVisualTone {
+  if (score >= 90) return "green";
+  if (score >= 50) return "yellow";
+  return "red";
+}
 
-  if (normalized.includes("compra")) {
+function getHeaderStylesByScore(score: number | null) {
+  const tone = score == null ? "yellow" : getToneByScore(score);
+
+  if (tone === "green") {
     return {
       background: "linear-gradient(90deg, #dcfce7 0%, #f0fdf4 100%)",
       borderBottom: "#bbf7d0",
@@ -51,33 +57,27 @@ function getHeaderStyles(biasLabel: string) {
     };
   }
 
-  if (normalized.includes("venda")) {
+  if (tone === "yellow") {
     return {
-      background: "linear-gradient(90deg, #fee2e2 0%, #fff7ed 100%)",
-      borderBottom: "#fdba74",
-      titleColor: "#7f1d1d",
-      subtitleColor: "#9a3412",
+      background: "linear-gradient(90deg, #fef3c7 0%, #fffbeb 100%)",
+      borderBottom: "#fcd34d",
+      titleColor: "#78350f",
+      subtitleColor: "#92400e",
       badgeBackground: "#ffffff",
-      badgeColor: "#9a3412",
-      badgeBorder: "#fdba74",
+      badgeColor: "#92400e",
+      badgeBorder: "#fcd34d",
     };
   }
 
   return {
-    background: "linear-gradient(90deg, #fef3c7 0%, #fffbeb 100%)",
-    borderBottom: "#fcd34d",
-    titleColor: "#78350f",
-    subtitleColor: "#92400e",
+    background: "linear-gradient(90deg, #fee2e2 0%, #fff7ed 100%)",
+    borderBottom: "#fdba74",
+    titleColor: "#7f1d1d",
+    subtitleColor: "#9a3412",
     badgeBackground: "#ffffff",
-    badgeColor: "#92400e",
-    badgeBorder: "#fcd34d",
+    badgeColor: "#9a3412",
+    badgeBorder: "#fdba74",
   };
-}
-
-function getToneByScore(score: number): StrategyVisualTone {
-  if (score >= 90) return "green";
-  if (score >= 50) return "yellow";
-  return "red";
 }
 
 function getToneStyles(tone: StrategyVisualTone) {
@@ -90,6 +90,9 @@ function getToneStyles(tone: StrategyVisualTone) {
       pillColor: "#166534",
       pillBorder: "#86efac",
       signalLabel: "Forte",
+      scoreBackground: "#ecfdf5",
+      scoreColor: "#166534",
+      scoreBorder: "#86efac",
     };
   }
 
@@ -102,6 +105,9 @@ function getToneStyles(tone: StrategyVisualTone) {
       pillColor: "#92400e",
       pillBorder: "#fcd34d",
       signalLabel: "Moderada",
+      scoreBackground: "#fffbeb",
+      scoreColor: "#92400e",
+      scoreBorder: "#fcd34d",
     };
   }
 
@@ -113,6 +119,9 @@ function getToneStyles(tone: StrategyVisualTone) {
     pillColor: "#991b1b",
     pillBorder: "#fca5a5",
     signalLabel: "Fraca",
+    scoreBackground: "#fef2f2",
+    scoreColor: "#991b1b",
+    scoreBorder: "#fca5a5",
   };
 }
 
@@ -147,6 +156,28 @@ function pillStyle(score: number): React.CSSProperties {
     background: accent.pillBackground,
     color: accent.pillColor,
     border: `1px solid ${accent.pillBorder}`,
+    whiteSpace: "nowrap",
+  };
+}
+
+function scoreBadgeStyle(score: number): React.CSSProperties {
+  const tone = getToneByScore(score);
+  const accent = getToneStyles(tone);
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 68,
+    height: 40,
+    padding: "0 14px",
+    borderRadius: 12,
+    fontSize: 18,
+    fontWeight: 800,
+    background: accent.scoreBackground,
+    color: accent.scoreColor,
+    border: `1px solid ${accent.scoreBorder}`,
+    whiteSpace: "nowrap",
   };
 }
 
@@ -160,15 +191,68 @@ function SummaryRow({
   return (
     <div
       style={{
-        display: "flex",
-        justifyContent: "space-between",
+        display: "grid",
+        gridTemplateColumns: "minmax(110px, 150px) minmax(0, 1fr)",
         gap: 12,
-        padding: "6px 0",
+        alignItems: "start",
+        padding: "8px 0",
         borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
       }}
     >
-      <span style={{ color: "#64748b" }}>{label}</span>
-      <strong style={{ color: "#0f172a", textAlign: "right" }}>{value}</strong>
+      <span
+        style={{
+          color: "#64748b",
+          fontSize: 13,
+          lineHeight: 1.45,
+        }}
+      >
+        {label}
+      </span>
+
+      <strong
+        style={{
+          color: "#0f172a",
+          fontSize: 13,
+          lineHeight: 1.45,
+          textAlign: "left",
+          wordBreak: "break-word",
+          whiteSpace: "normal",
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        padding: 12,
+        background: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          marginBottom: 10,
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#0f172a",
+        }}
+      >
+        {title}
+      </div>
+
+      {children}
     </div>
   );
 }
@@ -178,8 +262,8 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
 
   const section = useMemo(() => buildStrategySection(data), [data]);
   const headerStyles = useMemo(
-    () => getHeaderStyles(section.biasLabel),
-    [section.biasLabel],
+    () => getHeaderStylesByScore(section.topScore),
+    [section.topScore],
   );
 
   return (
@@ -296,7 +380,7 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(320px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
                 gap: 8,
                 alignItems: "start",
               }}
@@ -310,42 +394,54 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
                     <div
                       style={{
                         display: "flex",
-                        alignItems: "center",
+                        alignItems: "flex-start",
                         justifyContent: "space-between",
                         gap: 12,
                         marginBottom: 12,
                         flexWrap: "wrap",
                       }}
                     >
-                      <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                        {card.title}
-                      </strong>
-
                       <div
                         style={{
                           display: "flex",
-                          alignItems: "center",
+                          flexDirection: "column",
                           gap: 8,
-                          flexWrap: "wrap",
+                          minWidth: 0,
+                          flex: 1,
                         }}
                       >
-                        <span style={pillStyle(card.score)}>
-                          {getStatusLabel(card.status)}
-                        </span>
-                        <span style={pillStyle(card.score)}>
-                          {getDirectionLabel(card.direction)}
-                        </span>
-                        <span style={pillStyle(card.score)}>
-                          Leitura {toneStyles.signalLabel}
-                        </span>
+                        <strong style={{ fontSize: 15, color: "#0f172a" }}>
+                          {card.title}
+                        </strong>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <span style={pillStyle(card.score)}>
+                            {getStatusLabel(card.status)}
+                          </span>
+                          <span style={pillStyle(card.score)}>
+                            {getDirectionLabel(card.direction)}
+                          </span>
+                          <span style={pillStyle(card.score)}>
+                            Leitura {toneStyles.signalLabel}
+                          </span>
+                        </div>
                       </div>
+
+                      <div style={scoreBadgeStyle(card.score)}>{card.score}%</div>
                     </div>
 
                     <div
                       style={{
-                        marginBottom: 12,
+                        marginBottom: 14,
                         fontSize: 12,
-                        lineHeight: 1.55,
+                        lineHeight: 1.6,
                         color: "#475569",
                       }}
                     >
@@ -355,30 +451,12 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(280px, 1fr))",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
                         gap: 8,
                         marginBottom: 12,
                       }}
                     >
-                      <div
-                        style={{
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "#ffffff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            marginBottom: 10,
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: "#0f172a",
-                          }}
-                        >
-                          Execução
-                        </div>
-
+                      <SectionCard title="Execução">
                         <SummaryRow label="Zona ideal" value={card.idealZone || "--"} />
                         <SummaryRow label="Gatilho" value={card.trigger || "--"} />
                         <SummaryRow label="Entrada" value={card.entry || "--"} />
@@ -390,28 +468,10 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
                           label="Invalidação"
                           value={card.invalidation || "--"}
                         />
-                      </div>
+                      </SectionCard>
 
-                      <div
-                        style={{
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 12,
-                          padding: 12,
-                          background: "#ffffff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            marginBottom: 10,
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: "#0f172a",
-                          }}
-                        >
-                          Condições previstas para dar match
-                        </div>
-
-                        <div style={{ display: "grid", gap: 2 }}>
+                      <SectionCard title="Condições previstas para dar match">
+                        <div style={{ display: "grid", gap: 0 }}>
                           {(card.factors || []).map((factor) => (
                             <SummaryRow
                               key={`${card.id}-${factor.label}`}
@@ -420,38 +480,20 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
                             />
                           ))}
                         </div>
-                      </div>
+                      </SectionCard>
                     </div>
 
-                    <div
-                      style={{
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 12,
-                        padding: 12,
-                        background: "#ffffff",
-                      }}
-                    >
-                      <div
-                        style={{
-                          marginBottom: 8,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "#0f172a",
-                        }}
-                      >
-                        Justificativa
-                      </div>
-
+                    <SectionCard title="Justificativa">
                       <div
                         style={{
                           fontSize: 12,
-                          lineHeight: 1.55,
+                          lineHeight: 1.6,
                           color: "#475569",
                         }}
                       >
                         {card.rationale || "--"}
                       </div>
-                    </div>
+                    </SectionCard>
                   </article>
                 );
               })}

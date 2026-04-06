@@ -37,6 +37,14 @@ function formatMaybeNumber(value?: number): string {
   });
 }
 
+function formatPercentValue(value: number | null): string {
+  if (value == null || Number.isNaN(value)) return "--";
+  return `${value.toLocaleString("pt-PT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
 function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
   const trend = (input.trendLabel || "").toLowerCase();
   const cloud = (input.cloudBiasLabel || "").toLowerCase();
@@ -191,8 +199,8 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
         value: bullishTrend
           ? "Sim, alta"
           : bearishTrend
-          ? "Sim, baixa"
-          : "Não, neutra",
+            ? "Sim, baixa"
+            : "Não, neutra",
         impact: bullishTrend || bearishTrend ? "positive" : "neutral",
       },
       {
@@ -201,8 +209,8 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
           bullishTrend && aboveEma9
             ? "Acima"
             : bearishTrend && belowEma9
-            ? "Abaixo"
-            : "Sem alinhamento",
+              ? "Abaixo"
+              : "Sem alinhamento",
         impact:
           (bullishTrend && aboveEma9) || (bearishTrend && belowEma9)
             ? "positive"
@@ -214,8 +222,8 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
           bullishTrend && aboveEma21
             ? "Acima"
             : bearishTrend && belowEma21
-            ? "Abaixo"
-            : "Sem alinhamento",
+              ? "Abaixo"
+              : "Sem alinhamento",
         impact:
           (bullishTrend && aboveEma21) || (bearishTrend && belowEma21)
             ? "positive"
@@ -227,14 +235,14 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
           rsi == null
             ? "--"
             : bullishTrend
-            ? rsi >= 50 && rsi <= 62
-              ? `Sim (${formatMaybeNumber(rsi)})`
-              : `Não (${formatMaybeNumber(rsi)})`
-            : bearishTrend
-            ? rsi >= 38 && rsi <= 50
-              ? `Sim (${formatMaybeNumber(rsi)})`
-              : `Não (${formatMaybeNumber(rsi)})`
-            : formatMaybeNumber(rsi),
+              ? rsi >= 50 && rsi <= 62
+                ? `Sim (${formatMaybeNumber(rsi)})`
+                : `Não (${formatMaybeNumber(rsi)})`
+              : bearishTrend
+                ? rsi >= 38 && rsi <= 50
+                  ? `Sim (${formatMaybeNumber(rsi)})`
+                  : `Não (${formatMaybeNumber(rsi)})`
+                : formatMaybeNumber(rsi),
         impact:
           rsi != null &&
           ((bullishTrend && rsi >= 50 && rsi <= 62) ||
@@ -248,20 +256,14 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
           adx == null
             ? "--"
             : adx >= 18 && adx <= 30
-            ? `Sim (${formatMaybeNumber(adx)})`
-            : `Não (${formatMaybeNumber(adx)})`,
+              ? `Sim (${formatMaybeNumber(adx)})`
+              : `Não (${formatMaybeNumber(adx)})`,
         impact:
           adx != null && adx >= 18 && adx <= 30 ? "positive" : "neutral",
       },
       {
         label: "Distância para MME 21",
-        value:
-          distToEma21 == null
-            ? "--"
-            : `${distToEma21.toLocaleString("pt-PT", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}%`,
+        value: formatPercentValue(distToEma21),
         impact:
           distToEma21 != null && Math.abs(distToEma21) <= 0.12
             ? "positive"
@@ -276,20 +278,170 @@ function buildPullbackStrategy(input: MarketStrategyInput): StrategyCard {
   };
 }
 
-export function buildStrategySection(input: MarketStrategyInput): StrategySection {
-  const pullbackCard = buildPullbackStrategy(input);
+function buildRangeBreakoutStrategy(input: MarketStrategyInput): StrategyCard {
+  const trend = (input.trendLabel || "").toLowerCase();
+  const macdBias = (input.macdBiasLabel || "").toLowerCase();
 
-  let summaryLabel = "Radar operacional de pullback.";
-  if (pullbackCard.status === "active") {
-    summaryLabel = "Pullback ativo com bom contexto de entrada.";
-  } else if (pullbackCard.status === "waiting_trigger") {
-    summaryLabel = "Pullback bem alinhado, mas ainda a aguardar gatilho.";
-  } else if (pullbackCard.status === "watching") {
-    summaryLabel = "Pullback em observação.";
-  } else if (pullbackCard.status === "weak") {
-    summaryLabel = "Pullback fraco no contexto atual.";
-  } else {
-    summaryLabel = "Pullback ainda sem confirmação suficiente.";
+  const adx = input.adxValue;
+  const rsi = input.rsiValue;
+  const currentPrice = input.currentPrice;
+  const ema9 = input.ema9;
+  const ema21 = input.ema21;
+  const macdHistogram = input.macdHistogram;
+
+  const bearishTrend = trend.includes("baixa");
+  const neutralTrend =
+    trend.includes("consolid") ||
+    trend.includes("lateral") ||
+    trend.includes("neutro");
+
+  const belowEma9 = isBelow(currentPrice, ema9);
+  const belowEma21 = isBelow(currentPrice, ema21);
+
+  let score = 0;
+
+  const direction: StrategyCard["direction"] = "sell";
+  const summary =
+    "Estratégia de rompimento de range para venda, aguardando libertação de energia após lateralização.";
+  const trigger =
+    "Só considerar a entrada quando a mínima recente for rompida com ADX a sair da lateralização e MACD a aumentar a aceleração negativa.";
+  const entry =
+    "Venda apenas após rompimento confirmado da mínima do range, com ADX a ganhar força acima de 25.";
+  const targets = ["Expansão do range", "Nova mínima intradiária"];
+  const invalidation =
+    "Falha no rompimento, retorno para dentro do range ou perda da aceleração negativa no MACD.";
+  let rationale =
+    "Quando o ADX está baixo, o mercado tende a comprimir energia. O rompimento com ADX a subir e MACD a acelerar para baixo ajuda a confirmar libertação dessa energia do lado vendedor.";
+
+  if (neutralTrend || bearishTrend) score += 18;
+  if (adx != null && adx >= 18 && adx <= 24.99) score += 20;
+  else if (adx != null && adx >= 25 && adx <= 32) score += 12;
+  else if (adx != null && adx < 15) score -= 8;
+  else if (adx != null && adx > 35) score -= 6;
+
+  if (macdBias.includes("vend")) score += 12;
+  if (macdHistogram != null && macdHistogram < 0) score += 12;
+  if (macdHistogram != null && macdHistogram < -0.00005) score += 8;
+  if (macdBias.includes("compr")) score -= 14;
+
+  if (belowEma9) score += 8;
+  if (belowEma21) score += 8;
+
+  if (rsi != null && rsi >= 38 && rsi <= 52) score += 8;
+  else if (rsi != null && rsi < 32) score -= 8;
+
+  if (!bearishTrend && !neutralTrend) {
+    score -= 14;
+    rationale =
+      "A ideia continua válida como setup de breakout, mas o contexto atual não favorece venda com a mesma qualidade.";
+  }
+
+  score = roundScore(score);
+  const status = resolveStatus(score);
+
+  return {
+    id: "strategy-range-breakout",
+    title: "Rompimento de Range",
+    direction,
+    status,
+    score,
+    summary,
+    setupType: "breakout",
+    idealZone: "Mínima dos últimos candles / base do pequeno caixote",
+    trigger,
+    entry,
+    targets,
+    invalidation,
+    rationale,
+    factors: [
+      {
+        label: "Mercado em range",
+        value: neutralTrend
+          ? "Sim, lateral/consolidado"
+          : bearishTrend
+            ? "Parcial, com viés de baixa"
+            : "Não claro",
+        impact: neutralTrend || bearishTrend ? "positive" : "neutral",
+      },
+      {
+        label: "ADX em zona de compressão",
+        value:
+          adx == null
+            ? "--"
+            : adx >= 18 && adx <= 24.99
+              ? `Sim (${formatMaybeNumber(adx)})`
+              : `Não (${formatMaybeNumber(adx)})`,
+        impact:
+          adx != null && adx >= 18 && adx <= 24.99 ? "positive" : "neutral",
+      },
+      {
+        label: "ADX preparado para subir > 25",
+        value:
+          adx == null
+            ? "--"
+            : adx >= 22
+              ? `Próximo (${formatMaybeNumber(adx)})`
+              : `Ainda baixo (${formatMaybeNumber(adx)})`,
+        impact: adx != null && adx >= 22 ? "positive" : "neutral",
+      },
+      {
+        label: "MACD em aceleração negativa",
+        value:
+          macdHistogram == null
+            ? "--"
+            : macdHistogram < 0
+              ? `Sim (${formatMaybeNumber(macdHistogram)})`
+              : `Não (${formatMaybeNumber(macdHistogram)})`,
+        impact:
+          macdHistogram != null && macdHistogram < 0 ? "positive" : "neutral",
+      },
+      {
+        label: "Preço abaixo da MME 9",
+        value: belowEma9 ? "Sim" : "Não",
+        impact: belowEma9 ? "positive" : "neutral",
+      },
+      {
+        label: "Preço abaixo da MME 21",
+        value: belowEma21 ? "Sim" : "Não",
+        impact: belowEma21 ? "positive" : "neutral",
+      },
+      {
+        label: "RSI sem sobrevenda extrema",
+        value:
+          rsi == null
+            ? "--"
+            : rsi >= 38 && rsi <= 52
+              ? `Sim (${formatMaybeNumber(rsi)})`
+              : `Não (${formatMaybeNumber(rsi)})`,
+        impact:
+          rsi != null && rsi >= 38 && rsi <= 52 ? "positive" : "neutral",
+      },
+    ],
+  };
+}
+
+export function buildStrategySection(
+  input: MarketStrategyInput,
+): StrategySection {
+  const cards = [buildPullbackStrategy(input), buildRangeBreakoutStrategy(input)]
+    .sort((a, b) => b.score - a.score);
+
+  const bestCard = cards[0] ?? null;
+
+  let summaryLabel = "Radar operacional das estratégias principais.";
+
+  if (bestCard) {
+    if (bestCard.status === "active") {
+      summaryLabel = `${bestCard.title} ativo com bom contexto de entrada.`;
+    } else if (bestCard.status === "waiting_trigger") {
+      summaryLabel = `${bestCard.title} bem alinhado, mas ainda a aguardar gatilho.`;
+    } else if (bestCard.status === "watching") {
+      summaryLabel = `${bestCard.title} em observação.`;
+    } else if (bestCard.status === "weak") {
+      summaryLabel = `${bestCard.title} ainda fraco no contexto atual.`;
+    } else {
+      summaryLabel = `${bestCard.title} ainda sem confirmação suficiente.`;
+    }
   }
 
   return {
@@ -297,7 +449,7 @@ export function buildStrategySection(input: MarketStrategyInput): StrategySectio
     subtitle: "Setups compatíveis com o contexto atual",
     biasLabel: resolveBiasLabel(input),
     summaryLabel,
-    topScore: pullbackCard.score,
-    cards: [pullbackCard],
+    topScore: bestCard ? bestCard.score : null,
+    cards,
   };
 }
