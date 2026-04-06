@@ -1,6 +1,6 @@
 // web/src/components/api/ApiStatusCard.tsx
 
-import type { HealthResponse } from "../../types/trading";
+import type { CandleItem, HealthResponse } from "../../types/trading";
 
 type ApiStatusCardProps = {
   sidebarCardStyle: React.CSSProperties;
@@ -11,6 +11,7 @@ type ApiStatusCardProps = {
   lastWsEvent: string;
   providerErrorMessage: string;
   hasLoadedInitialCandles: boolean;
+  candles: CandleItem[];
 };
 
 function getStatusColor(kind: "ok" | "warn" | "error" | "neutral"): string {
@@ -227,6 +228,24 @@ function statusRow(
   );
 }
 
+function infoRow(label: string, value: string) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "6px 0",
+        borderBottom: "1px solid rgba(148, 163, 184, 0.18)",
+        fontSize: 13,
+      }}
+    >
+      <span style={{ color: "#64748b" }}>{label}</span>
+      <strong style={{ color: "#0f172a", textAlign: "right" }}>{value}</strong>
+    </div>
+  );
+}
+
 function ApiStatusCard({
   sidebarCardStyle,
   loadingHealth,
@@ -236,6 +255,7 @@ function ApiStatusCard({
   lastWsEvent,
   providerErrorMessage,
   hasLoadedInitialCandles,
+  candles,
 }: ApiStatusCardProps) {
   const apiInfo = getApiStatusInfo(loadingHealth, healthError, health);
   const wsInfo = getWebSocketStatusInfo(wsStatus, lastWsEvent);
@@ -244,6 +264,9 @@ function ApiStatusCard({
     hasLoadedInitialCandles,
     lastWsEvent
   );
+
+  const firstCandle = candles[0]?.open_time ?? "-";
+  const lastCandle = candles[candles.length - 1]?.open_time ?? "-";
 
   return (
     <div style={sidebarCardStyle}>
@@ -267,6 +290,33 @@ function ApiStatusCard({
           providerInfo.detail,
           providerInfo.kind
         )}
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #e2e8f0",
+          borderRadius: 12,
+          padding: 12,
+          background: "#ffffff",
+        }}
+      >
+        <div
+          style={{
+            marginBottom: 8,
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#0f172a",
+          }}
+        >
+          Dados carregados
+        </div>
+
+        <div style={{ display: "grid", gap: 2 }}>
+          {infoRow("Total candles", `${candles.length}`)}
+          {infoRow("Primeiro candle", firstCandle)}
+          {infoRow("Último candle", lastCandle)}
+        </div>
       </div>
 
       {health && (

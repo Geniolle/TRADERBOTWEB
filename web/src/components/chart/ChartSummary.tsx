@@ -14,44 +14,22 @@ type TrendSummary = {
   currentPrice: number | null;
 };
 
-type MovingAverageDirection = "up" | "down" | "flat";
-type RelativeColor = "green" | "red" | "neutral";
+type AverageDirection = "up" | "down" | "flat";
 
-type MovingAverageValue = {
+type AverageValue = {
   value: number | null;
-  direction: MovingAverageDirection;
+  direction: AverageDirection;
 };
 
 type MovingAverageSummary = {
-  sma5: MovingAverageValue;
-  sma10: MovingAverageValue;
-  sma20: MovingAverageValue;
-  sma30: MovingAverageValue;
-  sma40: MovingAverageValue;
-  sma60: MovingAverageValue;
-  ema5: MovingAverageValue;
-  ema10: MovingAverageValue;
-  ema20: MovingAverageValue;
-  ema30: MovingAverageValue;
-  ema40: MovingAverageValue;
-  ema60: MovingAverageValue;
   currentPrice: number | null;
-  shortBias:
-    | "Forte alta"
-    | "Alta"
-    | "Forte baixa"
-    | "Baixa"
-    | "Neutro";
-  mediumLongBias:
-    | "Forte alta"
-    | "Alta"
-    | "Forte baixa"
-    | "Baixa"
-    | "Neutro";
-  distanceToAverage20: number | null;
-  distanceToAverage20Percent: number | null;
-  distanceToAverage60: number | null;
-  distanceToAverage60Percent: number | null;
+  ema9: AverageValue;
+  ema21: AverageValue;
+  sma200: AverageValue;
+  distanceToEma9: number | null;
+  distanceToEma21: number | null;
+  distanceToSma200: number | null;
+  globalState: "Alta" | "Baixa" | "Neutro";
 };
 
 type ConfirmationSummary = {
@@ -97,19 +75,19 @@ function formatPrice(value: number | null): string {
   });
 }
 
-function formatPercent(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-PT", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}%`;
-}
-
 function formatSignedPrice(value: number | null): string {
   if (value === null) return "-";
   return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-PT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 6,
   })}`;
+}
+
+function formatPercent(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-PT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
 }
 
 function formatVolume(value: number | null): string {
@@ -183,7 +161,7 @@ function calculateExponentialAverage(
 function getAverageDirection(
   currentValue: number | null,
   previousValue: number | null
-): MovingAverageDirection {
+): AverageDirection {
   if (currentValue === null || previousValue === null) return "flat";
   if (currentValue > previousValue) return "up";
   if (currentValue < previousValue) return "down";
@@ -193,7 +171,7 @@ function getAverageDirection(
 function calculateSimpleAverageWithDirection(
   values: number[],
   period: number
-): MovingAverageValue {
+): AverageValue {
   const currentValue = calculateSimpleAverage(values, period);
   const previousValue = calculateSimpleAverage(values.slice(0, -1), period);
 
@@ -206,7 +184,7 @@ function calculateSimpleAverageWithDirection(
 function calculateExponentialAverageWithDirection(
   values: number[],
   period: number
-): MovingAverageValue {
+): AverageValue {
   const currentValue = calculateExponentialAverage(values, period);
   const previousValue = calculateExponentialAverage(values.slice(0, -1), period);
 
@@ -214,49 +192,6 @@ function calculateExponentialAverageWithDirection(
     value: currentValue,
     direction: getAverageDirection(currentValue, previousValue),
   };
-}
-
-function classifyBias(
-  firstFast: MovingAverageValue,
-  secondFast: MovingAverageValue,
-  thirdFast: MovingAverageValue,
-  firstSlow: MovingAverageValue,
-  secondSlow: MovingAverageValue,
-  thirdSlow: MovingAverageValue
-): "Forte alta" | "Alta" | "Forte baixa" | "Baixa" | "Neutro" {
-  const fastUp =
-    firstFast.value !== null &&
-    secondFast.value !== null &&
-    thirdFast.value !== null &&
-    firstFast.value > secondFast.value &&
-    secondFast.value > thirdFast.value;
-
-  const fastDown =
-    firstFast.value !== null &&
-    secondFast.value !== null &&
-    thirdFast.value !== null &&
-    firstFast.value < secondFast.value &&
-    secondFast.value < thirdFast.value;
-
-  const slowUp =
-    firstSlow.value !== null &&
-    secondSlow.value !== null &&
-    thirdSlow.value !== null &&
-    firstSlow.value > secondSlow.value &&
-    secondSlow.value > thirdSlow.value;
-
-  const slowDown =
-    firstSlow.value !== null &&
-    secondSlow.value !== null &&
-    thirdSlow.value !== null &&
-    firstSlow.value < secondSlow.value &&
-    secondSlow.value < thirdSlow.value;
-
-  if (fastUp && slowUp) return "Forte alta";
-  if (fastUp) return "Alta";
-  if (fastDown && slowDown) return "Forte baixa";
-  if (fastDown) return "Baixa";
-  return "Neutro";
 }
 
 function buildTrendSummary(candles: CandleItem[]): TrendSummary {
@@ -320,90 +255,58 @@ function buildMovingAverageSummary(
     ? closeValues[closeValues.length - 1]
     : null;
 
-  const sma5 = calculateSimpleAverageWithDirection(closeValues, 5);
-  const sma10 = calculateSimpleAverageWithDirection(closeValues, 10);
-  const sma20 = calculateSimpleAverageWithDirection(closeValues, 20);
-  const sma30 = calculateSimpleAverageWithDirection(closeValues, 30);
-  const sma40 = calculateSimpleAverageWithDirection(closeValues, 40);
-  const sma60 = calculateSimpleAverageWithDirection(closeValues, 60);
+  const ema9 = calculateExponentialAverageWithDirection(closeValues, 9);
+  const ema21 = calculateExponentialAverageWithDirection(closeValues, 21);
+  const sma200 = calculateSimpleAverageWithDirection(closeValues, 200);
 
-  const ema5 = calculateExponentialAverageWithDirection(closeValues, 5);
-  const ema10 = calculateExponentialAverageWithDirection(closeValues, 10);
-  const ema20 = calculateExponentialAverageWithDirection(closeValues, 20);
-  const ema30 = calculateExponentialAverageWithDirection(closeValues, 30);
-  const ema40 = calculateExponentialAverageWithDirection(closeValues, 40);
-  const ema60 = calculateExponentialAverageWithDirection(closeValues, 60);
-
-  const shortBias = classifyBias(ema5, ema10, ema20, sma5, sma10, sma20);
-  const mediumLongBias = classifyBias(ema30, ema40, ema60, sma30, sma40, sma60);
-
-  const distanceToAverage20 =
-    currentPrice !== null && ema20.value !== null
-      ? currentPrice - ema20.value
+  const distanceToEma9 =
+    currentPrice !== null && ema9.value !== null
+      ? currentPrice - ema9.value
       : null;
 
-  const distanceToAverage20Percent =
+  const distanceToEma21 =
+    currentPrice !== null && ema21.value !== null
+      ? currentPrice - ema21.value
+      : null;
+
+  const distanceToSma200 =
+    currentPrice !== null && sma200.value !== null
+      ? currentPrice - sma200.value
+      : null;
+
+  let globalState: "Alta" | "Baixa" | "Neutro" = "Neutro";
+
+  if (
     currentPrice !== null &&
-    ema20.value !== null &&
-    ema20.value !== 0
-      ? ((currentPrice - ema20.value) / ema20.value) * 100
-      : null;
-
-  const distanceToAverage60 =
-    currentPrice !== null && ema60.value !== null
-      ? currentPrice - ema60.value
-      : null;
-
-  const distanceToAverage60Percent =
-    currentPrice !== null &&
-    ema60.value !== null &&
-    ema60.value !== 0
-      ? ((currentPrice - ema60.value) / ema60.value) * 100
-      : null;
+    ema9.value !== null &&
+    ema21.value !== null &&
+    sma200.value !== null
+  ) {
+    if (
+      currentPrice > ema9.value &&
+      ema9.value > ema21.value &&
+      currentPrice > sma200.value
+    ) {
+      globalState = "Alta";
+    } else if (
+      currentPrice < ema9.value &&
+      ema9.value < ema21.value &&
+      currentPrice < sma200.value
+    ) {
+      globalState = "Baixa";
+    }
+  }
 
   return {
-    sma5,
-    sma10,
-    sma20,
-    sma30,
-    sma40,
-    sma60,
-    ema5,
-    ema10,
-    ema20,
-    ema30,
-    ema40,
-    ema60,
     currentPrice,
-    shortBias,
-    mediumLongBias,
-    distanceToAverage20,
-    distanceToAverage20Percent,
-    distanceToAverage60,
-    distanceToAverage60Percent,
+    ema9,
+    ema21,
+    sma200,
+    distanceToEma9,
+    distanceToEma21,
+    distanceToSma200,
+    globalState,
   };
-}
-
-function getRelativeColor(
-  currentValue: number | null,
-  comparisonValue: number | null
-): RelativeColor {
-  if (currentValue === null || comparisonValue === null) return "neutral";
-  if (currentValue > comparisonValue) return "green";
-  if (currentValue < comparisonValue) return "red";
-  return "neutral";
-}
-
-function getArrowColor(relativeColor: RelativeColor) {
-  if (relativeColor === "green") return "#022c22";
-  if (relativeColor === "red") return "#3f0a0a";
-  return "#0f172a";
-}
-
-function getArrowSymbol(direction: MovingAverageDirection) {
-  if (direction === "up") return "▲";
-  if (direction === "down") return "▼";
-  return "▶";
 }
 
 function calculateRsi(values: number[], period = 14): number | null {
@@ -639,7 +542,8 @@ function buildConfirmationSummary(candles: CandleItem[]): ConfirmationSummary {
       volumeHint = "O movimento está com mais combustível que o normal.";
     } else {
       volumeState = "Volume abaixo da média";
-      volumeHint = "Movimento com pouco combustível. Pode falhar com mais facilidade.";
+      volumeHint =
+        "Movimento com pouco combustível. Pode falhar com mais facilidade.";
     }
   }
 
@@ -669,13 +573,15 @@ function buildConfirmationSummary(candles: CandleItem[]): ConfirmationSummary {
   if (rsi !== null) {
     if (rsi >= 70) {
       rsiState = "Preço esticado";
-      rsiHint = "Zona alta. O movimento pode continuar, mas o risco de correção cresce.";
+      rsiHint =
+        "Zona alta. O movimento pode continuar, mas o risco de correção cresce.";
     } else if (rsi > 50) {
       rsiState = "Alta saudável";
       rsiHint = "O preço ainda mostra espaço favorável para continuação.";
     } else if (rsi <= 30) {
       rsiState = "Preço muito pressionado";
-      rsiHint = "Zona fraca. Pode haver reação, mas o mercado ainda está pesado.";
+      rsiHint =
+        "Zona fraca. Pode haver reação, mas o mercado ainda está pesado.";
     } else {
       rsiState = "Abaixo do equilíbrio";
       rsiHint = "O preço está abaixo da zona saudável de alta.";
@@ -725,27 +631,22 @@ function buildConfirmationSummary(candles: CandleItem[]): ConfirmationSummary {
     adxState,
     adxHint,
     adxRising,
-
     volumeNow,
     volumeAverage20,
     volumeState,
     volumeHint,
-
     macdValue: macd,
     signalValue: signal,
     histogramValue: histogram,
     macdState,
     macdHint,
-
     rsi,
     rsiState,
     rsiHint,
-
     cloudTop: cloud.top,
     cloudBottom: cloud.bottom,
     cloudState,
     cloudHint,
-
     robustSignal,
   };
 }
@@ -774,10 +675,8 @@ function getTrendBadgeStyles(label: TrendSummary["label"]) {
   };
 }
 
-function getBiasBadgeStyles(
-  bias: "Forte alta" | "Alta" | "Forte baixa" | "Baixa" | "Neutro"
-) {
-  if (bias === "Forte alta" || bias === "Alta") {
+function getAverageBadgeStyles(label: MovingAverageSummary["globalState"]) {
+  if (label === "Alta") {
     return {
       background: "#ecfdf5",
       color: "#166534",
@@ -785,7 +684,7 @@ function getBiasBadgeStyles(
     };
   }
 
-  if (bias === "Forte baixa" || bias === "Baixa") {
+  if (label === "Baixa") {
     return {
       background: "#fff7ed",
       color: "#9a3412",
@@ -824,6 +723,27 @@ function getConfirmationBadgeStyles(label: string) {
   };
 }
 
+function getArrowSymbol(direction: AverageDirection) {
+  if (direction === "up") return "▲";
+  if (direction === "down") return "▼";
+  return "▶";
+}
+
+function getArrowColor(direction: AverageDirection) {
+  if (direction === "up") return "#022c22";
+  if (direction === "down") return "#3f0a0a";
+  return "#0f172a";
+}
+
+const cardStyle: React.CSSProperties = {
+  border: "1px solid #dbe2ea",
+  background: "#ffffff",
+  borderRadius: 14,
+  padding: 16,
+  alignSelf: "start",
+  height: "fit-content",
+};
+
 function SummaryRow({
   label,
   value,
@@ -847,6 +767,81 @@ function SummaryRow({
   );
 }
 
+function AverageInfoLine({
+  title,
+  description,
+  item,
+}: {
+  title: string;
+  description: string;
+  item: AverageValue;
+}) {
+  const arrowSymbol = getArrowSymbol(item.direction);
+  const arrowColor = getArrowColor(item.direction);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        padding: 12,
+        background: "#ffffff",
+        alignSelf: "start",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 8,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 28,
+              width: 28,
+              height: 28,
+              fontSize: 19,
+              lineHeight: 1,
+              fontWeight: 900,
+              color: arrowColor,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {arrowSymbol}
+          </span>
+
+          <strong style={{ fontSize: 14, color: "#0f172a" }}>{title}</strong>
+        </div>
+
+        <strong style={{ color: "#0f172a" }}>{formatPrice(item.value)}</strong>
+      </div>
+
+      <div
+        style={{
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: "#64748b",
+        }}
+      >
+        {description}
+      </div>
+    </div>
+  );
+}
+
 function InfoBlock({
   title,
   state,
@@ -865,6 +860,7 @@ function InfoBlock({
         borderRadius: 12,
         padding: 12,
         background: "#ffffff",
+        alignSelf: "start",
       }}
     >
       <div
@@ -909,126 +905,12 @@ function InfoBlock({
   );
 }
 
-function AverageLine({
-  label,
-  item,
-  relativeColor,
-}: {
-  label: string;
-  item: MovingAverageValue;
-  relativeColor: RelativeColor;
-}) {
-  const arrowColor = getArrowColor(relativeColor);
-  const arrowSymbol = getArrowSymbol(item.direction);
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          color: "#475569",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minWidth: 28,
-            width: 28,
-            height: 28,
-            fontSize: 19,
-            lineHeight: 1,
-            fontWeight: 900,
-            color: arrowColor,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          {arrowSymbol}
-        </span>
-
-        <span>{label}</span>
-      </div>
-
-      <strong style={{ color: "#0f172a", textAlign: "right" }}>
-        {formatPrice(item.value)}
-      </strong>
-    </div>
-  );
-}
-
-function PeriodBlock({
-  period,
-  fastAverage,
-  simpleAverage,
-}: {
-  period: string;
-  fastAverage: MovingAverageValue;
-  simpleAverage: MovingAverageValue;
-}) {
-  const fastAverageColor = getRelativeColor(
-    fastAverage.value,
-    simpleAverage.value
-  );
-  const simpleAverageColor = getRelativeColor(
-    simpleAverage.value,
-    fastAverage.value
-  );
-
-  return (
-    <div
-      style={{
-        border: "1px solid #e2e8f0",
-        borderRadius: 12,
-        padding: 12,
-        background: "#ffffff",
-      }}
-    >
-      <div
-        style={{
-          marginBottom: 10,
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#334155",
-        }}
-      >
-        Período {period}
-      </div>
-
-      <div style={{ display: "grid", gap: 10 }}>
-        <AverageLine
-          label={`Média rápida ${period}`}
-          item={fastAverage}
-          relativeColor={fastAverageColor}
-        />
-        <AverageLine
-          label={`Média simples ${period}`}
-          item={simpleAverage}
-          relativeColor={simpleAverageColor}
-        />
-      </div>
-    </div>
-  );
-}
-
 function ChartSummary({ candles }: ChartSummaryProps) {
   const trend = buildTrendSummary(candles);
   const trendBadgeStyles = getTrendBadgeStyles(trend.label);
 
   const movingAverages = buildMovingAverageSummary(candles);
-  const shortBiasBadgeStyles = getBiasBadgeStyles(movingAverages.shortBias);
-  const mediumLongBiasBadgeStyles = getBiasBadgeStyles(
-    movingAverages.mediumLongBias
-  );
+  const averageBadgeStyles = getAverageBadgeStyles(movingAverages.globalState);
 
   const confirmation = buildConfirmationSummary(candles);
   const confirmationBadgeStyles = getConfirmationBadgeStyles(
@@ -1039,21 +921,16 @@ function ChartSummary({ candles }: ChartSummaryProps) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(360px, 1.05fr) minmax(360px, 1fr) minmax(320px, 0.9fr)",
+        gridTemplateColumns: "repeat(auto-fit, minmax(360px, max-content))",
         gap: 12,
         marginTop: 18,
         marginBottom: 18,
+        alignItems: "start",
+        justifyContent: "start",
       }}
     >
-      <div style={{ display: "grid", gap: 12 }}>
-        <div
-          style={{
-            border: "1px solid #dbe2ea",
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
+      <div style={{ display: "grid", gap: 12, alignSelf: "start" }}>
+        <div style={cardStyle}>
           <div
             style={{
               display: "flex",
@@ -1090,14 +967,7 @@ function ChartSummary({ candles }: ChartSummaryProps) {
           </div>
         </div>
 
-        <div
-          style={{
-            border: "1px solid #dbe2ea",
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
+        <div style={cardStyle}>
           <div
             style={{
               display: "flex",
@@ -1231,15 +1101,8 @@ function ChartSummary({ candles }: ChartSummaryProps) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 12 }}>
-        <div
-          style={{
-            border: "1px solid #dbe2ea",
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
+      <div style={{ display: "grid", gap: 12, alignSelf: "start" }}>
+        <div style={cardStyle}>
           <div
             style={{
               display: "flex",
@@ -1250,7 +1113,7 @@ function ChartSummary({ candles }: ChartSummaryProps) {
             }}
           >
             <strong style={{ fontSize: 15, color: "#0f172a" }}>
-              Médias Móveis de Curto Prazo
+              Médias Móveis
             </strong>
 
             <span
@@ -1259,138 +1122,48 @@ function ChartSummary({ candles }: ChartSummaryProps) {
                 borderRadius: 999,
                 fontSize: 12,
                 fontWeight: 700,
-                background: shortBiasBadgeStyles.background,
-                color: shortBiasBadgeStyles.color,
-                border: `1px solid ${shortBiasBadgeStyles.border}`,
+                background: averageBadgeStyles.background,
+                color: averageBadgeStyles.color,
+                border: `1px solid ${averageBadgeStyles.border}`,
               }}
             >
-              {movingAverages.shortBias}
+              {movingAverages.globalState}
             </span>
           </div>
 
           <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            <PeriodBlock
-              period="5"
-              fastAverage={movingAverages.ema5}
-              simpleAverage={movingAverages.sma5}
+            <AverageInfoLine
+              title="MME 9"
+              description="Para ver se o preço está acelerando agora."
+              item={movingAverages.ema9}
             />
-            <PeriodBlock
-              period="10"
-              fastAverage={movingAverages.ema10}
-              simpleAverage={movingAverages.sma10}
+
+            <AverageInfoLine
+              title="MME 21"
+              description="Para saber onde posicionar seu stop ou esperar um repique."
+              item={movingAverages.ema21}
             />
-            <PeriodBlock
-              period="20"
-              fastAverage={movingAverages.ema20}
-              simpleAverage={movingAverages.sma20}
+
+            <AverageInfoLine
+              title="MMS 200"
+              description="Para nunca operar contra a tendência principal do dia ou da semana."
+              item={movingAverages.sma200}
             />
           </div>
 
           <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
             <SummaryRow label="Preço atual" value={formatPrice(movingAverages.currentPrice)} />
             <SummaryRow
-              label="Distância para a média 20"
-              value={formatSignedPrice(movingAverages.distanceToAverage20)}
+              label="Distância para MME 9"
+              value={formatSignedPrice(movingAverages.distanceToEma9)}
             />
             <SummaryRow
-              label="Distância % para a média 20"
-              value={
-                movingAverages.distanceToAverage20Percent === null
-                  ? "-"
-                  : formatPercent(movingAverages.distanceToAverage20Percent)
-              }
-            />
-          </div>
-        </div>
-
-        <div
-          style={{
-            border: "1px solid #dbe2ea",
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <strong style={{ fontSize: 15, color: "#0f172a" }}>
-              Médias Móveis de Médio e Longo Prazo
-            </strong>
-
-            <span
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                background: mediumLongBiasBadgeStyles.background,
-                color: mediumLongBiasBadgeStyles.color,
-                border: `1px solid ${mediumLongBiasBadgeStyles.border}`,
-              }}
-            >
-              {movingAverages.mediumLongBias}
-            </span>
-          </div>
-
-          <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-            <PeriodBlock
-              period="30"
-              fastAverage={movingAverages.ema30}
-              simpleAverage={movingAverages.sma30}
-            />
-            <PeriodBlock
-              period="40"
-              fastAverage={movingAverages.ema40}
-              simpleAverage={movingAverages.sma40}
-            />
-            <PeriodBlock
-              period="60"
-              fastAverage={movingAverages.ema60}
-              simpleAverage={movingAverages.sma60}
-            />
-          </div>
-
-          <div style={{ display: "grid", gap: 2, fontSize: 14 }}>
-            <SummaryRow label="Preço atual" value={formatPrice(movingAverages.currentPrice)} />
-            <SummaryRow
-              label="Distância para a média 60"
-              value={formatSignedPrice(movingAverages.distanceToAverage60)}
+              label="Distância para MME 21"
+              value={formatSignedPrice(movingAverages.distanceToEma21)}
             />
             <SummaryRow
-              label="Distância % para a média 60"
-              value={
-                movingAverages.distanceToAverage60Percent === null
-                  ? "-"
-                  : formatPercent(movingAverages.distanceToAverage60Percent)
-              }
-            />
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gap: 12 }}>
-        <div
-          style={{
-            border: "1px solid #dbe2ea",
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: 16,
-            fontSize: 14,
-          }}
-        >
-          <div style={{ display: "grid", gap: 2 }}>
-            <SummaryRow label="Total candles" value={`${candles.length}`} />
-            <SummaryRow label="Primeiro candle" value={candles[0]?.open_time ?? "-"} />
-            <SummaryRow
-              label="Último candle"
-              value={candles[candles.length - 1]?.open_time ?? "-"}
+              label="Distância para MMS 200"
+              value={formatSignedPrice(movingAverages.distanceToSma200)}
             />
           </div>
         </div>

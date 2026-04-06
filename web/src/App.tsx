@@ -504,6 +504,7 @@ function App() {
                   lastWsEvent={lastWsEvent}
                   providerErrorMessage={providerErrorMessage}
                   hasLoadedInitialCandles={hasLoadedInitialCandles}
+                  candles={candles}
                 />
               </div>
             </div>
