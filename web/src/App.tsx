@@ -238,6 +238,8 @@ function App() {
     isClearingRuns,
     isCreatingRuns,
     clearRuns,
+    lastExecutionLog,
+    lastExecutionStatus,
   } = useStageTests({
     selectedSymbol: effectiveChartSymbol,
     selectedTimeframe: effectiveChartTimeframe,
@@ -578,6 +580,8 @@ function App() {
               onClearRuns={clearRuns}
               isClearingRuns={isClearingRuns}
               isCreatingRuns={isCreatingRuns}
+              lastExecutionLog={lastExecutionLog}
+              lastExecutionStatus={lastExecutionStatus}
             />
 
             {showSelectedStrategyNotice && selectedStrategyNotice && (

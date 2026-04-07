@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { StageTestSummaryItem } from "../../types/trading";
 
+type ExecutionLogStatus = "idle" | "waiting" | "running" | "success" | "error";
+
 type RunHistoryCardProps = {
   sidebarCardStyle: React.CSSProperties;
   runSearch: string;
@@ -16,6 +18,8 @@ type RunHistoryCardProps = {
   onClearRuns: () => Promise<void>;
   isClearingRuns: boolean;
   isCreatingRuns: boolean;
+  lastExecutionLog: string;
+  lastExecutionStatus: ExecutionLogStatus;
 };
 
 function formatPercent(value: number): string {
@@ -125,6 +129,30 @@ function compareStageTestsByHitRate(
   });
 }
 
+function getStatusDotColor(status: ExecutionLogStatus): string {
+  if (status === "running") return "#2563eb";
+  if (status === "success") return "#16a34a";
+  if (status === "error") return "#dc2626";
+  if (status === "waiting") return "#d97706";
+  return "#64748b";
+}
+
+function getStatusBackground(status: ExecutionLogStatus): string {
+  if (status === "running") return "#eff6ff";
+  if (status === "success") return "#f0fdf4";
+  if (status === "error") return "#fef2f2";
+  if (status === "waiting") return "#fffbeb";
+  return "#f8fafc";
+}
+
+function getStatusBorder(status: ExecutionLogStatus): string {
+  if (status === "running") return "#bfdbfe";
+  if (status === "success") return "#bbf7d0";
+  if (status === "error") return "#fecaca";
+  if (status === "waiting") return "#fde68a";
+  return "#cbd5e1";
+}
+
 function RunHistoryCard({
   sidebarCardStyle,
   runSearch,
@@ -138,6 +166,8 @@ function RunHistoryCard({
   onClearRuns,
   isClearingRuns,
   isCreatingRuns,
+  lastExecutionLog,
+  lastExecutionStatus,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -244,12 +274,12 @@ function RunHistoryCard({
           >
             <div
               style={{
-                border: "1px solid #bfdbfe",
+                border: `1px solid ${getStatusBorder(lastExecutionStatus)}`,
                 borderRadius: 10,
                 padding: "10px 12px",
-                background: isCreatingRuns ? "#eff6ff" : "#f8fafc",
+                background: getStatusBackground(lastExecutionStatus),
                 display: "grid",
-                gap: 4,
+                gap: 6,
               }}
             >
               <div
@@ -265,7 +295,7 @@ function RunHistoryCard({
                     width: 10,
                     height: 10,
                     borderRadius: 999,
-                    background: isCreatingRuns ? "#2563eb" : "#16a34a",
+                    background: getStatusDotColor(lastExecutionStatus),
                     flexShrink: 0,
                   }}
                 />
@@ -288,6 +318,17 @@ function RunHistoryCard({
                 }}
               >
                 {automationStatusDescription}
+              </span>
+
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#334155",
+                  lineHeight: 1.45,
+                  wordBreak: "break-word",
+                }}
+              >
+                <strong>Último log:</strong> {lastExecutionLog}
               </span>
             </div>
 

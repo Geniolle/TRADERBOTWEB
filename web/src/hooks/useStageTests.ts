@@ -11,6 +11,8 @@ type UseStageTestsParams = {
   lastCandleTick: CandleTickState;
 };
 
+type ExecutionLogStatus = "idle" | "waiting" | "running" | "success" | "error";
+
 type UseStageTestsResult = {
   stageTests: StageTestSummaryItem[];
   selectedRunId: string;
@@ -23,6 +25,8 @@ type UseStageTestsResult = {
   actionError: string;
   isClearingRuns: boolean;
   isCreatingRuns: boolean;
+  lastExecutionLog: string;
+  lastExecutionStatus: ExecutionLogStatus;
   reloadStageTests: () => Promise<void>;
   clearRuns: () => Promise<void>;
   createRuns: () => Promise<void>;
@@ -107,6 +111,10 @@ function toIsoWithoutMilliseconds(date: Date): string {
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function formatDateTime(value: Date): string {
+  return value.toLocaleString("pt-PT");
 }
 
 function createEmptyStageTestItem(
@@ -217,6 +225,11 @@ function useStageTests({
   const [actionError, setActionError] = useState("");
   const [isClearingRuns, setIsClearingRuns] = useState(false);
   const [isCreatingRuns, setIsCreatingRuns] = useState(false);
+  const [lastExecutionLog, setLastExecutionLog] = useState(
+    "A aguardar seleção de símbolo e timeframe."
+  );
+  const [lastExecutionStatus, setLastExecutionStatus] =
+    useState<ExecutionLogStatus>("idle");
 
   const lastAutoExecutionKeyRef = useRef<string>("");
 
@@ -281,9 +294,17 @@ function useStageTests({
       }
 
       await loadStageTests();
+      setLastExecutionStatus("idle");
+      setLastExecutionLog(
+        `Runs limpos manualmente em ${formatDateTime(new Date())}.`
+      );
     } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "Erro desconhecido ao limpar runs"
+      const message =
+        err instanceof Error ? err.message : "Erro desconhecido ao limpar runs";
+      setActionError(message);
+      setLastExecutionStatus("error");
+      setLastExecutionLog(
+        `Falha ao limpar runs em ${formatDateTime(new Date())}: ${message}`
       );
     } finally {
       setIsClearingRuns(false);
@@ -294,10 +315,21 @@ function useStageTests({
     try {
       setIsCreatingRuns(true);
       setActionError("");
+      setLastExecutionStatus("running");
 
       if (!selectedSymbol || !selectedTimeframe) {
         throw new Error("Selecione símbolo e timeframe antes de criar os runs.");
       }
+
+      const executionStartedAt = new Date();
+
+      setLastExecutionLog(
+        `Execução automática iniciada em ${formatDateTime(
+          executionStartedAt
+        )} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Candle=${
+          lastCandleTick?.open_time ?? "-"
+        }`
+      );
 
       const endAt = new Date();
       const startAt = new Date(endAt.getTime() - 1000 * 60 * 60 * 24 * 2);
@@ -330,19 +362,54 @@ function useStageTests({
           ? result.results[0]?.run?.id ?? ""
           : "";
 
+      const createdCount = Array.isArray(result?.results)
+        ? result.results.length
+        : 0;
+
       if (firstCreatedRunId) {
         setSelectedRunId(firstCreatedRunId);
       }
+
+      setLastExecutionStatus("success");
+      setLastExecutionLog(
+        `Última execução automática concluída em ${formatDateTime(
+          new Date()
+        )} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Candle=${
+          lastCandleTick?.open_time ?? "-"
+        } | Estratégias enviadas=${createdCount}`
+      );
     } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "Erro desconhecido ao criar runs"
+      const message =
+        err instanceof Error ? err.message : "Erro desconhecido ao criar runs";
+      setActionError(message);
+      setLastExecutionStatus("error");
+      setLastExecutionLog(
+        `Falha na execução automática em ${formatDateTime(
+          new Date()
+        )} | Símbolo=${selectedSymbol || "-"} | Timeframe=${
+          selectedTimeframe || "-"
+        } | Candle=${lastCandleTick?.open_time ?? "-"} | Erro=${message}`
       );
     } finally {
       setIsCreatingRuns(false);
     }
-  }, [selectedSymbol, selectedTimeframe, loadStageTests]);
+  }, [selectedSymbol, selectedTimeframe, lastCandleTick, loadStageTests]);
 
   useEffect(() => {
+    if (!selectedSymbol || !selectedTimeframe) {
+      setLastExecutionStatus("idle");
+      setLastExecutionLog("A aguardar seleção de símbolo e timeframe.");
+      return;
+    }
+
+    if (!lastCandleTick?.open_time) {
+      setLastExecutionStatus("waiting");
+      setLastExecutionLog(
+        `A aguardar novo candle para ${selectedSymbol} em ${selectedTimeframe}.`
+      );
+      return;
+    }
+
     const autoExecutionKey = buildAutoExecutionKey(
       selectedSymbol,
       selectedTimeframe,
@@ -354,6 +421,10 @@ function useStageTests({
     }
 
     if (lastAutoExecutionKeyRef.current === autoExecutionKey) {
+      setLastExecutionStatus(isCreatingRuns ? "running" : "waiting");
+      setLastExecutionLog(
+        `Último candle já processado: ${lastCandleTick.open_time} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe}`
+      );
       return;
     }
 
@@ -401,6 +472,8 @@ function useStageTests({
     actionError,
     isClearingRuns,
     isCreatingRuns,
+    lastExecutionLog,
+    lastExecutionStatus,
     reloadStageTests: loadStageTests,
     clearRuns,
     createRuns,
