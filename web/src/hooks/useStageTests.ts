@@ -44,6 +44,8 @@ type VisualStageStrategyDefinition = {
   aliases: string[];
 };
 
+const ENABLE_AUTO_RUNS = false;
+
 const VISUAL_STAGE_STRATEGIES: VisualStageStrategyDefinition[] = [
   {
     id: "pullback",
@@ -230,10 +232,12 @@ function useStageTests({
   const [isClearingRuns, setIsClearingRuns] = useState(false);
   const [isCreatingRuns, setIsCreatingRuns] = useState(false);
   const [lastExecutionLog, setLastExecutionLog] = useState(
-    "A aguardar seleção de símbolo e timeframe."
+    ENABLE_AUTO_RUNS
+      ? "A aguardar seleção de símbolo e timeframe."
+      : "Execução automática desativada para depuração do gráfico."
   );
   const [lastExecutionStatus, setLastExecutionStatus] =
-    useState<ExecutionLogStatus>("idle");
+    useState<ExecutionLogStatus>(ENABLE_AUTO_RUNS ? "idle" : "waiting");
 
   const lastAutoExecutionKeyRef = useRef<string>("");
 
@@ -298,7 +302,7 @@ function useStageTests({
       }
 
       await loadStageTests();
-      setLastExecutionStatus("idle");
+      setLastExecutionStatus(ENABLE_AUTO_RUNS ? "idle" : "waiting");
       setLastExecutionLog(
         `Runs limpos manualmente em ${formatDateTime(new Date())}.`
       );
@@ -400,6 +404,14 @@ function useStageTests({
   }, [selectedSymbol, selectedTimeframe, lastCandleTick, loadStageTests]);
 
   useEffect(() => {
+    if (!ENABLE_AUTO_RUNS) {
+      setLastExecutionStatus("waiting");
+      setLastExecutionLog(
+        "Execução automática desativada para depuração do gráfico."
+      );
+      return;
+    }
+
     if (!selectedSymbol || !selectedTimeframe) {
       setLastExecutionStatus("idle");
       setLastExecutionLog("A aguardar seleção de símbolo e timeframe.");

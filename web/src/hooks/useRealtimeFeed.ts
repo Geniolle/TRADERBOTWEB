@@ -379,15 +379,10 @@ function useRealtimeFeed({
             }),
           }));
 
-          if (
-            typeof reasonValue === "string" &&
-            reasonValue.toLowerCase().includes("reload")
-          ) {
-            try {
-              await reloadCandles(false);
-            } catch (error) {
-              console.error("[WS] reloadCandles failed:", error);
-            }
+          try {
+            await reloadCandles(false);
+          } catch (error) {
+            console.error("[WS] reloadCandles failed:", error);
           }
 
           return;
@@ -470,7 +465,10 @@ function useRealtimeFeed({
           const openTimeValue = data.open_time;
           const normalizedOpenTime =
             typeof openTimeValue === "string"
-              ? floorToTimeframeIso(openTimeValue, parsedTimeframe || currentTimeframe)
+              ? floorToTimeframeIso(
+                  openTimeValue,
+                  parsedTimeframe || currentTimeframe
+                )
               : "-";
 
           const nextTick: NonNullable<CandleTickState> = {
