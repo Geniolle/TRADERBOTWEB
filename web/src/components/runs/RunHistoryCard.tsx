@@ -14,10 +14,8 @@ type RunHistoryCardProps = {
   selectedRunId: string;
   setSelectedRunId: (value: string) => void;
   onClearRuns: () => Promise<void>;
-  onCreateRuns: () => Promise<void>;
   isClearingRuns: boolean;
   isCreatingRuns: boolean;
-  canCreateRuns: boolean;
 };
 
 function formatPercent(value: number): string {
@@ -138,16 +136,22 @@ function RunHistoryCard({
   selectedRunId,
   setSelectedRunId,
   onClearRuns,
-  onCreateRuns,
   isClearingRuns,
   isCreatingRuns,
-  canCreateRuns,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
 
   const orderedStageTests = useMemo(() => {
     return [...filteredStageTests].sort(compareStageTestsByHitRate);
   }, [filteredStageTests]);
+
+  const automationStatusLabel = isCreatingRuns
+    ? "A executar automaticamente..."
+    : "Execução automática ativa";
+
+  const automationStatusDescription = isCreatingRuns
+    ? "Novo candle detetado. O sistema está a correr todas as estratégias da lista."
+    : "Sempre que entra um novo candle, o sistema executa automaticamente todas as estratégias visíveis nesta secção.";
 
   return (
     <div
@@ -232,16 +236,66 @@ function RunHistoryCard({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: "1fr auto",
               gap: 8,
+              alignItems: "stretch",
               marginBottom: 12,
             }}
           >
+            <div
+              style={{
+                border: "1px solid #bfdbfe",
+                borderRadius: 10,
+                padding: "10px 12px",
+                background: isCreatingRuns ? "#eff6ff" : "#f8fafc",
+                display: "grid",
+                gap: 4,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: isCreatingRuns ? "#2563eb" : "#16a34a",
+                    flexShrink: 0,
+                  }}
+                />
+
+                <strong
+                  style={{
+                    fontSize: 13,
+                    color: "#0f172a",
+                  }}
+                >
+                  {automationStatusLabel}
+                </strong>
+              </div>
+
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#475569",
+                  lineHeight: 1.45,
+                }}
+              >
+                {automationStatusDescription}
+              </span>
+            </div>
+
             <button
               onClick={() => void onClearRuns()}
               disabled={isClearingRuns || isCreatingRuns}
               style={{
-                padding: "10px 12px",
+                padding: "10px 14px",
                 borderRadius: 10,
                 border: "1px solid #dc2626",
                 background: isClearingRuns ? "#fee2e2" : "#fff",
@@ -250,30 +304,10 @@ function RunHistoryCard({
                 cursor:
                   isClearingRuns || isCreatingRuns ? "not-allowed" : "pointer",
                 opacity: isClearingRuns || isCreatingRuns ? 0.7 : 1,
+                whiteSpace: "nowrap",
               }}
             >
               {isClearingRuns ? "A limpar..." : "Limpar runs"}
-            </button>
-
-            <button
-              onClick={() => void onCreateRuns()}
-              disabled={!canCreateRuns || isCreatingRuns || isClearingRuns}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #0f172a",
-                background: isCreatingRuns ? "#e2e8f0" : "#0f172a",
-                color: isCreatingRuns ? "#0f172a" : "#fff",
-                fontWeight: 700,
-                cursor:
-                  !canCreateRuns || isCreatingRuns || isClearingRuns
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  !canCreateRuns || isCreatingRuns || isClearingRuns ? 0.7 : 1,
-              }}
-            >
-              {isCreatingRuns ? "A criar..." : "Criar run"}
             </button>
           </div>
 
@@ -319,7 +353,7 @@ function RunHistoryCard({
 
           {!loadingRuns && !runsError && orderedStageTests.length > 0 && (
             <div style={{ display: "grid", gap: 12 }}>
-              {orderedStageTests.map((item) => {
+              {orderedStageTests.map((item, index) => {
                 const latestRunId = item.last_run?.run_id ?? "";
                 const isSelected =
                   latestRunId !== "" && selectedRunId === latestRunId;
@@ -361,21 +395,49 @@ function RunHistoryCard({
                       <div style={{ minWidth: 0 }}>
                         <div
                           style={{
-                            fontSize: 15,
-                            fontWeight: 700,
-                            lineHeight: 1.35,
-                            wordBreak: "break-word",
-                            color: "#0f172a",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            marginBottom: 4,
                           }}
                         >
-                          {item.strategy_name}
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              minWidth: 28,
+                              height: 22,
+                              padding: "0 8px",
+                              borderRadius: 999,
+                              border: "1px solid #cbd5e1",
+                              background: "#f8fafc",
+                              color: "#475569",
+                              fontSize: 11,
+                              fontWeight: 700,
+                            }}
+                          >
+                            #{index + 1}
+                          </span>
+
+                          <div
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 700,
+                              lineHeight: 1.35,
+                              wordBreak: "break-word",
+                              color: "#0f172a",
+                            }}
+                          >
+                            {item.strategy_name}
+                          </div>
                         </div>
 
                         <div
                           style={{
                             fontSize: 12,
                             color: "#64748b",
-                            marginTop: 4,
                             wordBreak: "break-word",
                           }}
                         >

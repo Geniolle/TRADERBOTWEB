@@ -1,14 +1,14 @@
 // web/src/hooks/useStageTests.ts
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
-import type { StageTestSummaryItem } from "../types/trading";
+import type { CandleTickState, StageTestSummaryItem } from "../types/trading";
 
 type UseStageTestsParams = {
   selectedSymbol: string;
   selectedTimeframe: string;
-  selectedStrategyKey: string;
+  lastCandleTick: CandleTickState;
 };
 
 type UseStageTestsResult = {
@@ -171,10 +171,43 @@ function mergeVisualStrategiesWithBackendStageTests(
   });
 }
 
+function buildBatchStrategiesPayload() {
+  return VISUAL_STAGE_STRATEGIES.map((strategy) => ({
+    strategy_key: strategy.id,
+    parameters: {
+      rsi_period: 14,
+      bollinger_period: 20,
+      bollinger_stddev: 2,
+      atr_period: 14,
+      ema_short_period: 9,
+      ema_long_period: 21,
+      target_percent: 0.15,
+      stop_percent: 0.1,
+    },
+    timeout_bars: 12,
+  }));
+}
+
+function buildAutoExecutionKey(
+  selectedSymbol: string,
+  selectedTimeframe: string,
+  lastCandleTick: CandleTickState
+): string {
+  if (!selectedSymbol || !selectedTimeframe || !lastCandleTick?.open_time) {
+    return "";
+  }
+
+  return [
+    normalizeText(selectedSymbol),
+    normalizeText(selectedTimeframe),
+    normalizeText(lastCandleTick.open_time),
+  ].join("::");
+}
+
 function useStageTests({
   selectedSymbol,
   selectedTimeframe,
-  selectedStrategyKey,
+  lastCandleTick,
 }: UseStageTestsParams): UseStageTestsResult {
   const [stageTests, setStageTests] = useState<StageTestSummaryItem[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
@@ -184,6 +217,8 @@ function useStageTests({
   const [actionError, setActionError] = useState("");
   const [isClearingRuns, setIsClearingRuns] = useState(false);
   const [isCreatingRuns, setIsCreatingRuns] = useState(false);
+
+  const lastAutoExecutionKeyRef = useRef<string>("");
 
   const loadStageTests = useCallback(async () => {
     try {
@@ -261,36 +296,21 @@ function useStageTests({
       setActionError("");
 
       if (!selectedSymbol || !selectedTimeframe) {
-        throw new Error("Selecione símbolo e timeframe antes de criar um run.");
-      }
-
-      if (!selectedStrategyKey) {
-        throw new Error("Selecione a estratégia antes de criar um run.");
+        throw new Error("Selecione símbolo e timeframe antes de criar os runs.");
       }
 
       const endAt = new Date();
       const startAt = new Date(endAt.getTime() - 1000 * 60 * 60 * 24 * 2);
 
       const payload = {
-        strategy_key: selectedStrategyKey,
         symbol: selectedSymbol,
         timeframe: selectedTimeframe,
         start_at: toIsoWithoutMilliseconds(startAt),
         end_at: toIsoWithoutMilliseconds(endAt),
-        parameters: {
-          rsi_period: 14,
-          bollinger_period: 20,
-          bollinger_stddev: 2,
-          atr_period: 14,
-          ema_short_period: 9,
-          ema_long_period: 21,
-          target_percent: 0.15,
-          stop_percent: 0.1,
-        },
-        timeout_bars: 12,
+        strategies: buildBatchStrategiesPayload(),
       };
 
-      const response = await fetch(`${API_HTTP_BASE_URL}/runs/historical`, {
+      const response = await fetch(`${API_HTTP_BASE_URL}/batch-runs/historical`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -305,18 +325,52 @@ function useStageTests({
       const result = await response.json();
       await loadStageTests();
 
-      const createdRunId = result?.run?.id;
-      if (createdRunId) {
-        setSelectedRunId(createdRunId);
+      const firstCreatedRunId =
+        Array.isArray(result?.results) && result.results.length > 0
+          ? result.results[0]?.run?.id ?? ""
+          : "";
+
+      if (firstCreatedRunId) {
+        setSelectedRunId(firstCreatedRunId);
       }
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : "Erro desconhecido ao criar run"
+        err instanceof Error ? err.message : "Erro desconhecido ao criar runs"
       );
     } finally {
       setIsCreatingRuns(false);
     }
-  }, [selectedSymbol, selectedTimeframe, selectedStrategyKey, loadStageTests]);
+  }, [selectedSymbol, selectedTimeframe, loadStageTests]);
+
+  useEffect(() => {
+    const autoExecutionKey = buildAutoExecutionKey(
+      selectedSymbol,
+      selectedTimeframe,
+      lastCandleTick
+    );
+
+    if (!autoExecutionKey) {
+      return;
+    }
+
+    if (lastAutoExecutionKeyRef.current === autoExecutionKey) {
+      return;
+    }
+
+    if (isCreatingRuns || isClearingRuns) {
+      return;
+    }
+
+    lastAutoExecutionKeyRef.current = autoExecutionKey;
+    void createRuns();
+  }, [
+    selectedSymbol,
+    selectedTimeframe,
+    lastCandleTick,
+    isCreatingRuns,
+    isClearingRuns,
+    createRuns,
+  ]);
 
   const filteredStageTests = useMemo(() => {
     const term = runSearch.trim().toLowerCase();

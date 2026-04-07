@@ -211,33 +211,6 @@ function App() {
   }, [isMarketSelectionComplete, effectiveSelectedTimeframe]);
 
   const {
-    selectedRunId,
-    setSelectedRunId,
-    runSearch,
-    setRunSearch,
-    filteredStageTests,
-    loadingRuns,
-    runsError,
-    actionError,
-    isClearingRuns,
-    isCreatingRuns,
-    clearRuns,
-    createRuns,
-  } = useStageTests({
-    selectedSymbol: effectiveChartSymbol,
-    selectedTimeframe: effectiveChartTimeframe,
-    selectedStrategyKey: effectiveSelectedChartStrategyKey,
-  });
-
-  const {
-    runDetails,
-    selectedCaseId,
-    setSelectedCaseId,
-    loadingRunDetails,
-    runDetailsError,
-  } = useRunDetails(selectedRunId);
-
-  const {
     candles,
     coverageMeta,
     setCandles,
@@ -267,6 +240,32 @@ function App() {
     setCandles,
     reloadCandles,
   });
+
+  const {
+    selectedRunId,
+    setSelectedRunId,
+    runSearch,
+    setRunSearch,
+    filteredStageTests,
+    loadingRuns,
+    runsError,
+    actionError,
+    isClearingRuns,
+    isCreatingRuns,
+    clearRuns,
+  } = useStageTests({
+    selectedSymbol: effectiveChartSymbol,
+    selectedTimeframe: effectiveChartTimeframe,
+    lastCandleTick,
+  });
+
+  const {
+    runDetails,
+    selectedCaseId,
+    setSelectedCaseId,
+    loadingRunDetails,
+    runDetailsError,
+  } = useRunDetails(selectedRunId);
 
   const loadingCandles = useMemo(() => {
     if (!isMarketSelectionComplete) return false;
@@ -595,14 +594,8 @@ function App() {
               selectedRunId={selectedRunId}
               setSelectedRunId={setSelectedRunId}
               onClearRuns={clearRuns}
-              onCreateRuns={createRuns}
               isClearingRuns={isClearingRuns}
               isCreatingRuns={isCreatingRuns}
-              canCreateRuns={Boolean(
-                effectiveChartSymbol &&
-                  effectiveChartTimeframe &&
-                  effectiveSelectedChartStrategyKey
-              )}
             />
 
             {showSelectedStrategyNotice && selectedStrategyNotice && (
