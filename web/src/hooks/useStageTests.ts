@@ -28,12 +28,147 @@ type UseStageTestsResult = {
   createRuns: () => Promise<void>;
 };
 
+type VisualStageStrategyDefinition = {
+  id: string;
+  title: string;
+  category: string | null;
+  description: string | null;
+  aliases: string[];
+};
+
+const VISUAL_STAGE_STRATEGIES: VisualStageStrategyDefinition[] = [
+  {
+    id: "pullback",
+    title: "Pullback",
+    category: "trend_following",
+    description:
+      "Compra ou venda em recuo até as médias, respeitando o contexto direcional principal.",
+    aliases: ["pullback"],
+  },
+  {
+    id: "moving_average_crossover",
+    title: "Cruzamento de Médias",
+    category: "trend_following",
+    description:
+      "Seguimento de tendência com base no cruzamento entre médias rápidas e confirmação estrutural.",
+    aliases: [
+      "moving_average_crossover",
+      "ema_crossover",
+      "ma_crossover",
+      "cross_moving_averages",
+    ],
+  },
+  {
+    id: "range_breakout",
+    title: "Rompimento de Range",
+    category: "breakout",
+    description:
+      "Entrada após libertação de energia de uma lateralização ou pequeno caixote.",
+    aliases: ["range_breakout", "breakout_range"],
+  },
+  {
+    id: "volatility_breakout",
+    title: "Rompimento de Volatilidade",
+    category: "breakout",
+    description:
+      "Breakout após compressão de volatilidade, normalmente em contexto de squeeze.",
+    aliases: [
+      "volatility_breakout",
+      "breakout_volatility",
+      "bollinger_walk_the_band",
+      "bollinger_band_walk",
+    ],
+  },
+  {
+    id: "mean_reversion",
+    title: "Reversão à Média",
+    category: "mean_reversion",
+    description:
+      "Operação contra esticão, procurando apenas o retorno técnico do preço à média.",
+    aliases: [
+      "mean_reversion",
+      "bollinger_reversal",
+      "bollinger_reversion",
+    ],
+  },
+  {
+    id: "fade",
+    title: "Fade",
+    category: "countertrend",
+    description:
+      "Scalp contra esticão de curtíssimo prazo, normalmente procurando apenas alívio técnico.",
+    aliases: ["fade"],
+  },
+];
+
 function toIsoWithoutMilliseconds(date: Date): string {
   return date.toISOString().split(".")[0];
 }
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function createEmptyStageTestItem(
+  definition: VisualStageStrategyDefinition
+): StageTestSummaryItem {
+  return {
+    strategy_key: definition.id,
+    strategy_name: definition.title,
+    strategy_description: definition.description,
+    strategy_category: definition.category,
+    total_runs: 0,
+    total_cases: 0,
+    total_hits: 0,
+    total_fails: 0,
+    total_timeouts: 0,
+    hit_rate: 0,
+    fail_rate: 0,
+    timeout_rate: 0,
+    last_run: null,
+  };
+}
+
+function findMatchingBackendStageTest(
+  backendItems: StageTestSummaryItem[],
+  definition: VisualStageStrategyDefinition
+): StageTestSummaryItem | null {
+  const aliasSet = new Set(
+    definition.aliases.map((alias) => normalizeText(alias))
+  );
+
+  for (const item of backendItems) {
+    const normalizedKey = normalizeText(item.strategy_key);
+    const normalizedName = normalizeText(item.strategy_name);
+
+    if (aliasSet.has(normalizedKey) || aliasSet.has(normalizedName)) {
+      return item;
+    }
+  }
+
+  return null;
+}
+
+function mergeVisualStrategiesWithBackendStageTests(
+  backendItems: StageTestSummaryItem[]
+): StageTestSummaryItem[] {
+  return VISUAL_STAGE_STRATEGIES.map((definition) => {
+    const backendMatch = findMatchingBackendStageTest(backendItems, definition);
+
+    if (!backendMatch) {
+      return createEmptyStageTestItem(definition);
+    }
+
+    return {
+      ...backendMatch,
+      strategy_key: definition.id,
+      strategy_name: definition.title,
+      strategy_description:
+        backendMatch.strategy_description || definition.description,
+      strategy_category:
+        backendMatch.strategy_category || definition.category,
+    };
+  });
 }
 
 function useStageTests({
@@ -61,24 +196,32 @@ function useStageTests({
       }
 
       const data: StageTestSummaryItem[] = await response.json();
-      setStageTests(data);
+      const mergedStageTests = mergeVisualStrategiesWithBackendStageTests(data);
+
+      setStageTests(mergedStageTests);
 
       setSelectedRunId((previousSelectedRunId) => {
-        const stillExists = data.some(
+        const stillExists = mergedStageTests.some(
           (item) => item.last_run?.run_id === previousSelectedRunId
         );
         if (stillExists) {
           return previousSelectedRunId;
         }
 
-        const firstWithRun = data.find((item) => item.last_run?.run_id);
+        const firstWithRun = mergedStageTests.find((item) => item.last_run?.run_id);
         return firstWithRun?.last_run?.run_id ?? "";
       });
     } catch (err) {
       setRunsError(
-        err instanceof Error ? err.message : "Erro desconhecido ao carregar Stage Testes"
+        err instanceof Error
+          ? err.message
+          : "Erro desconhecido ao carregar Stage Testes"
       );
-      setStageTests([]);
+      setStageTests(
+        VISUAL_STAGE_STRATEGIES.map((definition) =>
+          createEmptyStageTestItem(definition)
+        )
+      );
       setSelectedRunId("");
     } finally {
       setLoadingRuns(false);
