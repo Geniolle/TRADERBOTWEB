@@ -2,6 +2,8 @@
 
 import type { CandleItem, HealthResponse } from "../../types/trading";
 
+type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
+
 type ApiStatusCardProps = {
   sidebarCardStyle: React.CSSProperties;
   loadingHealth: boolean;
@@ -12,6 +14,10 @@ type ApiStatusCardProps = {
   providerErrorMessage: string;
   hasLoadedInitialCandles: boolean;
   candles: CandleItem[];
+  lastProviderUpdateLog: string;
+  lastProviderUpdateAt: string;
+  lastProviderUpdateEvent: string;
+  lastProviderUpdateStatus: ProviderUpdateStatus;
 };
 
 function getStatusColor(kind: "ok" | "warn" | "error" | "neutral"): string {
@@ -172,6 +178,51 @@ function getProviderStatusInfo(
   };
 }
 
+function getProviderUpdateInfo(
+  status: ProviderUpdateStatus,
+  log: string,
+  at: string,
+  eventName: string
+) {
+  if (status === "error") {
+    return {
+      label: "Falhou",
+      detail: log,
+      kind: "error" as const,
+      at: at || "-",
+      eventName: eventName || "-",
+    };
+  }
+
+  if (status === "success") {
+    return {
+      label: "Atualizado",
+      detail: log,
+      kind: "ok" as const,
+      at: at || "-",
+      eventName: eventName || "-",
+    };
+  }
+
+  if (status === "waiting") {
+    return {
+      label: "À espera",
+      detail: log,
+      kind: "warn" as const,
+      at: at || "-",
+      eventName: eventName || "-",
+    };
+  }
+
+  return {
+    label: "Sem dados",
+    detail: log || "Ainda sem atualização do provider.",
+    kind: "neutral" as const,
+    at: at || "-",
+    eventName: eventName || "-",
+  };
+}
+
 function statusRow(
   title: string,
   label: string,
@@ -252,6 +303,10 @@ function ApiStatusCard({
   providerErrorMessage,
   hasLoadedInitialCandles,
   candles,
+  lastProviderUpdateLog,
+  lastProviderUpdateAt,
+  lastProviderUpdateEvent,
+  lastProviderUpdateStatus,
 }: ApiStatusCardProps) {
   const apiInfo = getApiStatusInfo(loadingHealth, healthError, health);
   const wsInfo = getWebSocketStatusInfo(wsStatus, lastWsEvent);
@@ -260,6 +315,13 @@ function ApiStatusCard({
     hasLoadedInitialCandles,
     lastWsEvent,
     candles
+  );
+
+  const providerUpdateInfo = getProviderUpdateInfo(
+    lastProviderUpdateStatus,
+    lastProviderUpdateLog,
+    lastProviderUpdateAt,
+    lastProviderUpdateEvent
   );
 
   const firstCandle = candles[0]?.open_time ?? "-";
@@ -287,6 +349,12 @@ function ApiStatusCard({
           providerInfo.detail,
           providerInfo.kind
         )}
+        {statusRow(
+          "Última atualização do provider",
+          providerUpdateInfo.label,
+          providerUpdateInfo.detail,
+          providerUpdateInfo.kind
+        )}
       </div>
 
       <div
@@ -313,6 +381,8 @@ function ApiStatusCard({
           {infoRow("Total candles", `${candles.length}`)}
           {infoRow("Primeiro candle", firstCandle)}
           {infoRow("Último candle", lastCandle)}
+          {infoRow("Último evento provider", providerUpdateInfo.eventName)}
+          {infoRow("Última atualização", providerUpdateInfo.at)}
         </div>
       </div>
 

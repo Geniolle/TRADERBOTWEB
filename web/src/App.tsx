@@ -217,6 +217,10 @@ function App() {
     lastCandleTick,
     providerErrorMessage,
     hasLoadedInitialCandles,
+    lastProviderUpdateLog,
+    lastProviderUpdateAt,
+    lastProviderUpdateEvent,
+    lastProviderUpdateStatus,
   } = useRealtimeFeed({
     effectiveChartMarketType,
     effectiveChartCatalog,
@@ -512,6 +516,10 @@ function App() {
                   providerErrorMessage={providerErrorMessage}
                   hasLoadedInitialCandles={hasLoadedInitialCandles}
                   candles={candles}
+                  lastProviderUpdateLog={lastProviderUpdateLog}
+                  lastProviderUpdateAt={lastProviderUpdateAt}
+                  lastProviderUpdateEvent={lastProviderUpdateEvent}
+                  lastProviderUpdateStatus={lastProviderUpdateStatus}
                 />
               </div>
             </div>

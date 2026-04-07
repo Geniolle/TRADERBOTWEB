@@ -1,6 +1,6 @@
 // web/src/hooks/useRealtimeFeed.ts
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { API_WS_BASE_URL } from "../constants/config";
 import type { CandleItem, CandleTickState, WsEnvelope } from "../types/trading";
@@ -16,6 +16,8 @@ type UseRealtimeFeedParams = {
   reloadCandles: (showLoader?: boolean) => Promise<void>;
 };
 
+type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
+
 type UseRealtimeFeedResult = {
   wsStatus: string;
   lastWsEvent: string;
@@ -26,6 +28,10 @@ type UseRealtimeFeedResult = {
   lastCandleTick: CandleTickState;
   providerErrorMessage: string;
   hasLoadedInitialCandles: boolean;
+  lastProviderUpdateLog: string;
+  lastProviderUpdateAt: string;
+  lastProviderUpdateEvent: string;
+  lastProviderUpdateStatus: ProviderUpdateStatus;
 };
 
 type RealtimeFeedState = {
@@ -39,6 +45,10 @@ type RealtimeFeedState = {
   lastCandleTick: CandleTickState;
   providerErrorMessage: string;
   hasLoadedInitialCandles: boolean;
+  lastProviderUpdateLog: string;
+  lastProviderUpdateAt: string;
+  lastProviderUpdateEvent: string;
+  lastProviderUpdateStatus: ProviderUpdateStatus;
 };
 
 const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
@@ -51,6 +61,10 @@ const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
   lastCandleTick: null,
   providerErrorMessage: "",
   hasLoadedInitialCandles: false,
+  lastProviderUpdateLog: "Ainda sem atualização do provider.",
+  lastProviderUpdateAt: "-",
+  lastProviderUpdateEvent: "-",
+  lastProviderUpdateStatus: "idle",
 };
 
 function normalizeSymbol(value: unknown): string {
@@ -107,6 +121,40 @@ function isValidCandleItem(item: unknown): item is CandleItem {
   );
 }
 
+function formatNowPt(): string {
+  return new Date().toLocaleString("pt-PT");
+}
+
+function buildProviderUpdateLog(params: {
+  eventName: string;
+  symbol: string;
+  timeframe: string;
+  openTime?: string;
+  count?: number | null;
+  extra?: string;
+}) {
+  const parts = [
+    `Atualizado em ${formatNowPt()}`,
+    `Evento=${params.eventName}`,
+    `Símbolo=${params.symbol || "-"}`,
+    `Timeframe=${params.timeframe || "-"}`,
+  ];
+
+  if (params.openTime) {
+    parts.push(`Candle=${params.openTime}`);
+  }
+
+  if (typeof params.count === "number" && Number.isFinite(params.count)) {
+    parts.push(`Count=${params.count}`);
+  }
+
+  if (params.extra) {
+    parts.push(params.extra);
+  }
+
+  return parts.join(" | ");
+}
+
 function useRealtimeFeed({
   effectiveChartMarketType,
   effectiveChartCatalog,
@@ -138,8 +186,27 @@ function useRealtimeFeed({
     ...DEFAULT_RESULT,
   });
 
+  const socketRef = useRef<WebSocket | null>(null);
+  const isIntentionalCloseRef = useRef(false);
+
   useEffect(() => {
     if (!hasSelection) {
+      const activeSocket = socketRef.current;
+      socketRef.current = null;
+      isIntentionalCloseRef.current = true;
+
+      if (
+        activeSocket &&
+        (activeSocket.readyState === WebSocket.OPEN ||
+          activeSocket.readyState === WebSocket.CONNECTING)
+      ) {
+        try {
+          activeSocket.close();
+        } catch {
+          // ignora
+        }
+      }
+
       return;
     }
 
@@ -149,7 +216,10 @@ function useRealtimeFeed({
     const currentSymbol = normalizeSymbol(effectiveChartSymbol);
     const currentTimeframe = normalizeTimeframe(effectiveChartTimeframe);
 
+    isIntentionalCloseRef.current = false;
+
     const socket = new WebSocket(API_WS_BASE_URL);
+    socketRef.current = socket;
 
     socket.onopen = () => {
       if (!isMounted) return;
@@ -159,19 +229,29 @@ function useRealtimeFeed({
         ...DEFAULT_RESULT,
         wsStatus: "connected",
         lastWsEvent: "connected",
+        lastProviderUpdateLog: `Ligação aberta em ${formatNowPt()}. A aguardar candles do provider.`,
+        lastProviderUpdateAt: "-",
+        lastProviderUpdateEvent: "-",
+        lastProviderUpdateStatus: "waiting",
       });
 
-      socket.send("frontend_connected");
+      try {
+        socket.send("frontend_connected");
 
-      socket.send(
-        JSON.stringify({
-          action: "subscribe",
-          market_type: effectiveChartMarketType || undefined,
-          catalog: effectiveChartCatalog || undefined,
-          symbol: effectiveChartSymbol,
-          timeframe: effectiveChartTimeframe,
-        })
-      );
+        socket.send(
+          JSON.stringify({
+            action: "subscribe",
+            market_type: effectiveChartMarketType || undefined,
+            catalog: effectiveChartCatalog || undefined,
+            symbol: effectiveChartSymbol,
+            timeframe: effectiveChartTimeframe,
+          })
+        );
+      } catch (error) {
+        if (!isIntentionalCloseRef.current) {
+          console.error("[WS] failed to send subscription message:", error);
+        }
+      }
     };
 
     socket.onmessage = async (event) => {
@@ -193,6 +273,12 @@ function useRealtimeFeed({
             scopeKey: currentScopeKey,
             wsStatus: nextEvent === "subscribed" ? "subscribed" : prev.wsStatus,
             lastWsEvent: nextEvent,
+            lastProviderUpdateStatus:
+              nextEvent === "subscribed" ? "waiting" : prev.lastProviderUpdateStatus,
+            lastProviderUpdateLog:
+              nextEvent === "subscribed"
+                ? `Subscrição confirmada em ${formatNowPt()}. A aguardar dados do provider para ${currentSymbol} em ${currentTimeframe}.`
+                : prev.lastProviderUpdateLog,
           }));
           return;
         }
@@ -230,6 +316,7 @@ function useRealtimeFeed({
 
           const countValue = data.count;
           const reasonValue = data.reason;
+          const nowText = formatNowPt();
 
           setState((prev) => ({
             ...prev,
@@ -241,6 +328,22 @@ function useRealtimeFeed({
                 : Number(countValue ?? 0),
             candlesRefreshReason:
               typeof reasonValue === "string" ? reasonValue : "-",
+            lastProviderUpdateAt: nowText,
+            lastProviderUpdateEvent: "candles_refresh",
+            lastProviderUpdateStatus: "success",
+            lastProviderUpdateLog: buildProviderUpdateLog({
+              eventName: "candles_refresh",
+              symbol: parsedSymbol || currentSymbol,
+              timeframe: parsedTimeframe || currentTimeframe,
+              count:
+                typeof countValue === "number"
+                  ? countValue
+                  : Number(countValue ?? 0),
+              extra:
+                typeof reasonValue === "string" && reasonValue
+                  ? `Motivo=${reasonValue}`
+                  : undefined,
+            }),
           }));
 
           if (
@@ -265,11 +368,19 @@ function useRealtimeFeed({
             safeString(data.error) ||
             "Erro ao obter candles do provider.";
 
+          const nowText = formatNowPt();
+
           setState((prev) => ({
             ...prev,
             scopeKey: currentScopeKey,
             lastWsEvent: "provider_error",
             providerErrorMessage: errorMessage,
+            lastProviderUpdateAt: nowText,
+            lastProviderUpdateEvent: "provider_error",
+            lastProviderUpdateStatus: "error",
+            lastProviderUpdateLog: `Erro do provider em ${nowText} | Símbolo=${
+              parsedSymbol || currentSymbol || "-"
+            } | Timeframe=${parsedTimeframe || currentTimeframe || "-"} | ${errorMessage}`,
           }));
           return;
         }
@@ -287,12 +398,29 @@ function useRealtimeFeed({
               timeframe: normalizeTimeframe(item.timeframe),
             }));
 
+          const lastOpenTime =
+            normalizedItems.length > 0
+              ? normalizedItems[normalizedItems.length - 1]?.open_time
+              : "-";
+
+          const nowText = formatNowPt();
+
           setState((prev) => ({
             ...prev,
             scopeKey: currentScopeKey,
             lastWsEvent: "initial_candles",
             hasLoadedInitialCandles: true,
             providerErrorMessage: "",
+            lastProviderUpdateAt: nowText,
+            lastProviderUpdateEvent: "initial_candles",
+            lastProviderUpdateStatus: "success",
+            lastProviderUpdateLog: buildProviderUpdateLog({
+              eventName: "initial_candles",
+              symbol: parsedSymbol || currentSymbol,
+              timeframe: parsedTimeframe || currentTimeframe,
+              openTime: lastOpenTime,
+              count: normalizedItems.length,
+            }),
           }));
 
           setCandles(() => normalizedItems as CandleItem[]);
@@ -329,6 +457,8 @@ function useRealtimeFeed({
             is_mock: typeof data.is_mock === "boolean" ? data.is_mock : null,
           };
 
+          const nowText = formatNowPt();
+
           setState((prev) => ({
             ...prev,
             scopeKey: currentScopeKey,
@@ -336,6 +466,16 @@ function useRealtimeFeed({
             providerErrorMessage: "",
             hasLoadedInitialCandles: true,
             lastCandleTick: nextTick,
+            lastProviderUpdateAt: nowText,
+            lastProviderUpdateEvent: "candle_tick",
+            lastProviderUpdateStatus: "success",
+            lastProviderUpdateLog: buildProviderUpdateLog({
+              eventName: "candle_tick",
+              symbol: nextTick.symbol,
+              timeframe: nextTick.timeframe,
+              openTime: nextTick.open_time,
+              count: nextTick.count,
+            }),
           }));
 
           setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
@@ -354,6 +494,7 @@ function useRealtimeFeed({
 
     socket.onerror = (error) => {
       if (!isMounted) return;
+      if (isIntentionalCloseRef.current) return;
 
       setState((prev) => ({
         ...prev,
@@ -365,20 +506,49 @@ function useRealtimeFeed({
       console.error("[WS] error:", error);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (!isMounted) return;
+
+      const wasIntentional = isIntentionalCloseRef.current;
 
       setState((prev) => ({
         ...prev,
         scopeKey: currentScopeKey,
         wsStatus: "closed",
-        lastWsEvent: prev.lastWsEvent || "closed",
+        lastWsEvent: wasIntentional
+          ? prev.lastWsEvent || "closed"
+          : "closed",
       }));
+
+      if (!wasIntentional && !event.wasClean) {
+        console.warn("[WS] closed unexpectedly:", {
+          code: event.code,
+          reason: event.reason,
+        });
+      }
     };
 
     return () => {
       isMounted = false;
-      socket.close();
+      isIntentionalCloseRef.current = true;
+
+      const activeSocket = socketRef.current;
+      socketRef.current = null;
+
+      if (!activeSocket) {
+        return;
+      }
+
+      if (
+        activeSocket.readyState === WebSocket.OPEN ||
+        activeSocket.readyState === WebSocket.CONNECTING
+      ) {
+        try {
+          activeSocket.close();
+        } catch {
+          // ignora
+        }
+      }
     };
   }, [
     hasSelection,
@@ -404,6 +574,10 @@ function useRealtimeFeed({
       lastCandleTick: DEFAULT_RESULT.lastCandleTick,
       providerErrorMessage: DEFAULT_RESULT.providerErrorMessage,
       hasLoadedInitialCandles: DEFAULT_RESULT.hasLoadedInitialCandles,
+      lastProviderUpdateLog: DEFAULT_RESULT.lastProviderUpdateLog,
+      lastProviderUpdateAt: DEFAULT_RESULT.lastProviderUpdateAt,
+      lastProviderUpdateEvent: DEFAULT_RESULT.lastProviderUpdateEvent,
+      lastProviderUpdateStatus: DEFAULT_RESULT.lastProviderUpdateStatus,
     };
   }
 
@@ -426,6 +600,18 @@ function useRealtimeFeed({
     hasLoadedInitialCandles:
       visibleState?.hasLoadedInitialCandles ??
       DEFAULT_RESULT.hasLoadedInitialCandles,
+    lastProviderUpdateLog:
+      visibleState?.lastProviderUpdateLog ??
+      DEFAULT_RESULT.lastProviderUpdateLog,
+    lastProviderUpdateAt:
+      visibleState?.lastProviderUpdateAt ??
+      DEFAULT_RESULT.lastProviderUpdateAt,
+    lastProviderUpdateEvent:
+      visibleState?.lastProviderUpdateEvent ??
+      DEFAULT_RESULT.lastProviderUpdateEvent,
+    lastProviderUpdateStatus:
+      visibleState?.lastProviderUpdateStatus ??
+      DEFAULT_RESULT.lastProviderUpdateStatus,
   };
 }
 
