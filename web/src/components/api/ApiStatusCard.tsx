@@ -59,7 +59,6 @@ function getApiStatusInfo(
 
 function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
   const normalizedStatus = String(wsStatus ?? "").trim().toLowerCase();
-  const normalizedEvent = String(lastWsEvent ?? "").trim().toLowerCase();
 
   if (normalizedStatus === "subscribed") {
     return {
@@ -101,14 +100,6 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
     };
   }
 
-  if (normalizedEvent && normalizedEvent !== "-") {
-    return {
-      label: "Inativo",
-      detail: `Último evento: ${lastWsEvent}`,
-      kind: "neutral" as const,
-    };
-  }
-
   return {
     label: "Desligado",
     detail: "-",
@@ -119,7 +110,8 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
 function getProviderStatusInfo(
   providerErrorMessage: string,
   hasLoadedInitialCandles: boolean,
-  lastWsEvent: string
+  lastWsEvent: string,
+  candles: CandleItem[]
 ) {
   const error = String(providerErrorMessage ?? "").trim();
   const normalizedError = error.toLowerCase();
@@ -150,13 +142,17 @@ function getProviderStatusInfo(
   }
 
   if (
+    candles.length > 0 ||
     hasLoadedInitialCandles ||
     normalizedEvent === "initial_candles" ||
     normalizedEvent === "candle_tick"
   ) {
     return {
       label: "A comunicar",
-      detail: "Candles recebidos com sucesso",
+      detail:
+        candles.length > 0
+          ? "Candles carregados com sucesso"
+          : "Candles recebidos com sucesso",
       kind: "ok" as const,
     };
   }
@@ -262,7 +258,8 @@ function ApiStatusCard({
   const providerInfo = getProviderStatusInfo(
     providerErrorMessage,
     hasLoadedInitialCandles,
-    lastWsEvent
+    lastWsEvent,
+    candles
   );
 
   const firstCandle = candles[0]?.open_time ?? "-";

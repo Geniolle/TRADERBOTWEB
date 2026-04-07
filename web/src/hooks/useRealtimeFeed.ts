@@ -129,13 +129,17 @@ function useRealtimeFeed({
     effectiveChartTimeframe,
   ]);
 
+  const hasSelection = useMemo(() => {
+    return Boolean(effectiveChartSymbol && effectiveChartTimeframe);
+  }, [effectiveChartSymbol, effectiveChartTimeframe]);
+
   const [state, setState] = useState<RealtimeFeedState>({
     scopeKey: "",
     ...DEFAULT_RESULT,
   });
 
   useEffect(() => {
-    if (!effectiveChartSymbol || !effectiveChartTimeframe) {
+    if (!hasSelection) {
       return;
     }
 
@@ -157,8 +161,6 @@ function useRealtimeFeed({
         lastWsEvent: "connected",
       });
 
-      console.log("[WS] connected");
-
       socket.send("frontend_connected");
 
       socket.send(
@@ -174,8 +176,6 @@ function useRealtimeFeed({
 
     socket.onmessage = async (event) => {
       if (!isMounted) return;
-
-      console.log("[WS] message:", event.data);
 
       try {
         const parsed: WsEnvelope = JSON.parse(event.data);
@@ -226,9 +226,7 @@ function useRealtimeFeed({
           : true;
 
         if (nextEvent === "candles_refresh") {
-          if (!isCurrentSubscription) {
-            return;
-          }
+          if (!isCurrentSubscription) return;
 
           const countValue = data.count;
           const reasonValue = data.reason;
@@ -260,9 +258,7 @@ function useRealtimeFeed({
         }
 
         if (nextEvent === "provider_error") {
-          if (!isCurrentSubscription) {
-            return;
-          }
+          if (!isCurrentSubscription) return;
 
           const errorMessage =
             safeString(data.message) ||
@@ -279,9 +275,7 @@ function useRealtimeFeed({
         }
 
         if (nextEvent === "initial_candles") {
-          if (!isCurrentSubscription) {
-            return;
-          }
+          if (!isCurrentSubscription) return;
 
           const items = Array.isArray(data.candles) ? data.candles : [];
 
@@ -306,9 +300,7 @@ function useRealtimeFeed({
         }
 
         if (nextEvent === "candle_tick") {
-          if (!isCurrentSubscription) {
-            return;
-          }
+          if (!isCurrentSubscription) return;
 
           const openTimeValue = data.open_time;
           const normalizedOpenTime =
@@ -342,6 +334,7 @@ function useRealtimeFeed({
             scopeKey: currentScopeKey,
             lastWsEvent: "candle_tick",
             providerErrorMessage: "",
+            hasLoadedInitialCandles: true,
             lastCandleTick: nextTick,
           }));
 
@@ -379,9 +372,8 @@ function useRealtimeFeed({
         ...prev,
         scopeKey: currentScopeKey,
         wsStatus: "closed",
+        lastWsEvent: prev.lastWsEvent || "closed",
       }));
-
-      console.log("[WS] closed");
     };
 
     return () => {
@@ -389,6 +381,7 @@ function useRealtimeFeed({
       socket.close();
     };
   }, [
+    hasSelection,
     scopeKey,
     effectiveChartMarketType,
     effectiveChartCatalog,
@@ -400,9 +393,23 @@ function useRealtimeFeed({
 
   const visibleState = state.scopeKey === scopeKey ? state : null;
 
+  if (!hasSelection) {
+    return {
+      wsStatus: DEFAULT_RESULT.wsStatus,
+      lastWsEvent: DEFAULT_RESULT.lastWsEvent,
+      heartbeatCount: DEFAULT_RESULT.heartbeatCount,
+      heartbeatMessage: DEFAULT_RESULT.heartbeatMessage,
+      candlesRefreshCount: DEFAULT_RESULT.candlesRefreshCount,
+      candlesRefreshReason: DEFAULT_RESULT.candlesRefreshReason,
+      lastCandleTick: DEFAULT_RESULT.lastCandleTick,
+      providerErrorMessage: DEFAULT_RESULT.providerErrorMessage,
+      hasLoadedInitialCandles: DEFAULT_RESULT.hasLoadedInitialCandles,
+    };
+  }
+
   return {
-    wsStatus: visibleState?.wsStatus ?? DEFAULT_RESULT.wsStatus,
-    lastWsEvent: visibleState?.lastWsEvent ?? DEFAULT_RESULT.lastWsEvent,
+    wsStatus: visibleState?.wsStatus ?? "connecting",
+    lastWsEvent: visibleState?.lastWsEvent ?? "connecting",
     heartbeatCount:
       visibleState?.heartbeatCount ?? DEFAULT_RESULT.heartbeatCount,
     heartbeatMessage:
