@@ -21,6 +21,12 @@ type UseCandlesResult = {
   reloadCandles: (showLoader?: boolean) => Promise<void>;
 };
 
+type FetchCandlesResult = {
+  items: CandleItem[];
+  coverageMeta: CandleCoverageMeta | null;
+  preserveExisting: boolean;
+};
+
 function normalizeSymbol(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim().toUpperCase();
@@ -282,6 +288,39 @@ function parsePayload(
   };
 }
 
+function extractErrorMessage(status: number, payloadText: string): string {
+  const text = String(payloadText ?? "").trim();
+
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message;
+    }
+  } catch {
+    // ignora
+  }
+
+  return text || `HTTP ${status}`;
+}
+
+function isQuotaError(status: number, message: string): boolean {
+  const normalized = String(message ?? "").toLowerCase();
+
+  return (
+    status === 429 ||
+    normalized.includes("quota") ||
+    normalized.includes("credits") ||
+    normalized.includes("api credits") ||
+    normalized.includes("run out of api credits") ||
+    normalized.includes("too many requests")
+  );
+}
+
 function useCandles({
   effectiveChartSymbol,
   effectiveChartTimeframe,
@@ -300,18 +339,30 @@ function useCandles({
 
   const activeRequestKeyRef = useRef("");
   const candlesRef = useRef<CandleItem[]>([]);
+  const coverageMetaRef = useRef<CandleCoverageMeta | null>(null);
 
   useEffect(() => {
     candlesRef.current = candles;
   }, [candles]);
 
+  useEffect(() => {
+    coverageMetaRef.current = coverageMeta;
+  }, [coverageMeta]);
+
   const fetchCandles = useCallback(
-    async (mode: "full" | "incremental", showLoader: boolean) => {
+    async (
+      mode: "full" | "incremental",
+      showLoader: boolean
+    ): Promise<FetchCandlesResult> => {
       const symbol = normalizeSymbol(effectiveChartSymbol);
       const timeframe = normalizeTimeframe(effectiveChartTimeframe);
 
       if (!symbol || !timeframe) {
-        return { items: [], coverageMeta: null as CandleCoverageMeta | null };
+        return {
+          items: [],
+          coverageMeta: null,
+          preserveExisting: false,
+        };
       }
 
       const currentRequestKey = `${symbol}::${timeframe}`;
@@ -346,7 +397,9 @@ function useCandles({
         );
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          const payloadText = await response.text();
+          const message = extractErrorMessage(response.status, payloadText);
+          throw new Error(message || `HTTP ${response.status}`);
         }
 
         const payload = await response.json();
@@ -360,22 +413,39 @@ function useCandles({
         );
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
-          return { items: [], coverageMeta: null as CandleCoverageMeta | null };
+          return {
+            items: [],
+            coverageMeta: null,
+            preserveExisting: false,
+          };
         }
 
-        return parsed;
+        return {
+          items: parsed.items,
+          coverageMeta: parsed.coverageMeta,
+          preserveExisting: false,
+        };
       } catch (error) {
         if (activeRequestKeyRef.current !== `${symbol}::${timeframe}`) {
-          return { items: [], coverageMeta: null as CandleCoverageMeta | null };
+          return {
+            items: [],
+            coverageMeta: null,
+            preserveExisting: false,
+          };
         }
 
-        setCandlesError(
+        const message =
           error instanceof Error
             ? error.message
-            : "Erro desconhecido ao carregar candles locais."
-        );
+            : "Erro desconhecido ao carregar candles locais.";
 
-        return { items: [], coverageMeta: null as CandleCoverageMeta | null };
+        setCandlesError(message);
+
+        return {
+          items: [],
+          coverageMeta: coverageMetaRef.current,
+          preserveExisting: isQuotaError(429, message),
+        };
       } finally {
         if (activeRequestKeyRef.current === `${symbol}::${timeframe}`) {
           setLoadingCandles(false);
@@ -395,13 +465,16 @@ function useCandles({
       }
 
       const parsed = await fetchCandles("incremental", showLoader);
-      const nextCoverageMeta = parsed.coverageMeta;
+
+      if (parsed.preserveExisting) {
+        return;
+      }
 
       if (parsed.items.length > 0) {
         setCandles((prev) => mergeCandles(prev, parsed.items, "incremental"));
       }
 
-      if (nextCoverageMeta) {
+      if (parsed.coverageMeta) {
         const mergedItems = mergeCandles(
           candlesRef.current,
           parsed.items,
@@ -411,15 +484,15 @@ function useCandles({
         setCoverageMeta(
           buildCoverageMeta(
             {
-              ...nextCoverageMeta,
+              ...parsed.coverageMeta,
               count: mergedItems.length,
             },
             mergedItems,
             symbol,
             timeframe,
             "incremental",
-            nextCoverageMeta.start_at,
-            nextCoverageMeta.end_at
+            parsed.coverageMeta.start_at,
+            parsed.coverageMeta.end_at
           )
         );
       }
@@ -443,11 +516,19 @@ function useCandles({
     void (async () => {
       const parsed = await fetchCandles("full", true);
 
+      if (parsed.preserveExisting) {
+        return;
+      }
+
       if (parsed.coverageMeta) {
         setCoverageMeta(parsed.coverageMeta);
       }
 
-      setCandles(mergeCandles([], parsed.items, "full"));
+      if (parsed.items.length > 0) {
+        setCandles(mergeCandles([], parsed.items, "full"));
+      } else {
+        setCandles([]);
+      }
     })();
   }, [requestKey, fetchCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 
