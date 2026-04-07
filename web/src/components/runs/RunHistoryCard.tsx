@@ -1,6 +1,6 @@
 // web/src/components/runs/RunHistoryCard.tsx
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { StageTestSummaryItem } from "../../types/trading";
 
 type RunHistoryCardProps = {
@@ -49,32 +49,82 @@ function metricPill(
         background: backgroundColor,
         display: "grid",
         gap: 4,
-        minWidth: 90,
+        minWidth: 0,
       }}
     >
       <span
         style={{
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 700,
           color: "#64748b",
           textTransform: "uppercase",
           letterSpacing: 0.3,
+          lineHeight: 1.1,
         }}
       >
         {label}
       </span>
+
       <span
         style={{
           fontSize: 16,
           fontWeight: 700,
           color: "#0f172a",
-          lineHeight: 1,
+          lineHeight: 1.1,
         }}
       >
         {value}
       </span>
     </div>
   );
+}
+
+function detailRow(label: string, value: string) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "120px minmax(0, 1fr)",
+        gap: 10,
+        alignItems: "start",
+      }}
+    >
+      <span style={{ color: "#64748b", fontSize: 12 }}>{label}</span>
+      <strong
+        style={{
+          color: "#0f172a",
+          fontSize: 12,
+          fontWeight: 600,
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function compareStageTestsByHitRate(
+  left: StageTestSummaryItem,
+  right: StageTestSummaryItem
+): number {
+  const leftHitRate = Number.isFinite(left.hit_rate) ? left.hit_rate : -1;
+  const rightHitRate = Number.isFinite(right.hit_rate) ? right.hit_rate : -1;
+
+  if (rightHitRate !== leftHitRate) {
+    return rightHitRate - leftHitRate;
+  }
+
+  const leftRuns = Number.isFinite(left.total_runs) ? left.total_runs : 0;
+  const rightRuns = Number.isFinite(right.total_runs) ? right.total_runs : 0;
+
+  if (rightRuns !== leftRuns) {
+    return rightRuns - leftRuns;
+  }
+
+  return left.strategy_name.localeCompare(right.strategy_name, "pt-PT", {
+    sensitivity: "base",
+  });
 }
 
 function RunHistoryCard({
@@ -94,6 +144,10 @@ function RunHistoryCard({
   canCreateRuns,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
+
+  const orderedStageTests = useMemo(() => {
+    return [...filteredStageTests].sort(compareStageTestsByHitRate);
+  }, [filteredStageTests]);
 
   return (
     <div
@@ -259,13 +313,13 @@ function RunHistoryCard({
             </div>
           )}
 
-          {!loadingRuns && !runsError && filteredStageTests.length === 0 && (
+          {!loadingRuns && !runsError && orderedStageTests.length === 0 && (
             <p style={{ margin: 0 }}>Nenhuma estratégia encontrada.</p>
           )}
 
-          {!loadingRuns && !runsError && filteredStageTests.length > 0 && (
+          {!loadingRuns && !runsError && orderedStageTests.length > 0 && (
             <div style={{ display: "grid", gap: 12 }}>
-              {filteredStageTests.map((item) => {
+              {orderedStageTests.map((item) => {
                 const latestRunId = item.last_run?.run_id ?? "";
                 const isSelected =
                   latestRunId !== "" && selectedRunId === latestRunId;
@@ -360,9 +414,9 @@ function RunHistoryCard({
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
                         gap: 8,
-                        marginBottom: 10,
+                        marginBottom: 12,
                       }}
                     >
                       {metricPill("Runs", item.total_runs, "#cbd5e1", "#f8fafc")}
@@ -370,7 +424,7 @@ function RunHistoryCard({
                       {metricPill("Hits", item.total_hits, "#16a34a", "#f0fdf4")}
                       {metricPill("Fails", item.total_fails, "#dc2626", "#fef2f2")}
                       {metricPill(
-                        "Timeouts",
+                        "Timeout",
                         item.total_timeouts,
                         "#f59e0b",
                         "#fffbeb"
@@ -385,42 +439,25 @@ function RunHistoryCard({
 
                     <div
                       style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 8,
                         fontSize: 12,
                         lineHeight: 1.55,
                         color: "#334155",
-                        display: "grid",
-                        gap: 4,
                       }}
                     >
-                      <div>
-                        <strong>Categoria:</strong> {item.strategy_category ?? "-"}
-                      </div>
-                      <div>
-                        <strong>Fail Rate:</strong> {formatPercent(item.fail_rate)}
-                      </div>
-                      <div>
-                        <strong>Timeout Rate:</strong>{" "}
-                        {formatPercent(item.timeout_rate)}
-                      </div>
-                      <div>
-                        <strong>Último run:</strong> {latestRunId || "-"}
-                      </div>
-                      <div>
-                        <strong>Último símbolo:</strong>{" "}
-                        {item.last_run?.symbol ?? "-"}
-                      </div>
-                      <div>
-                        <strong>Último timeframe:</strong>{" "}
-                        {item.last_run?.timeframe ?? "-"}
-                      </div>
-                      <div>
-                        <strong>Último status:</strong>{" "}
-                        {item.last_run?.status ?? "-"}
-                      </div>
-                      <div>
-                        <strong>Último início:</strong>{" "}
-                        {formatDateTime(item.last_run?.started_at)}
-                      </div>
+                      {detailRow("Categoria", item.strategy_category ?? "-")}
+                      {detailRow("Fail Rate", formatPercent(item.fail_rate))}
+                      {detailRow("Timeout Rate", formatPercent(item.timeout_rate))}
+                      {detailRow("Último run", latestRunId || "-")}
+                      {detailRow("Último símbolo", item.last_run?.symbol ?? "-")}
+                      {detailRow("Último timeframe", item.last_run?.timeframe ?? "-")}
+                      {detailRow("Último status", item.last_run?.status ?? "-")}
+                      {detailRow(
+                        "Último início",
+                        formatDateTime(item.last_run?.started_at)
+                      )}
                     </div>
                   </button>
                 );
