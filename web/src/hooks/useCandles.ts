@@ -1,5 +1,3 @@
-// web/src/hooks/useCandles.ts
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
@@ -95,22 +93,23 @@ function normalizeCandleItem(item: unknown): CandleItem | null {
   const candidate = item as Partial<CandleItem>;
 
   if (
-    typeof candidate.id !== "string" ||
     typeof candidate.symbol !== "string" ||
     typeof candidate.timeframe !== "string" ||
-    typeof candidate.open_time !== "string" ||
-    typeof candidate.close_time !== "string"
+    typeof candidate.open_time !== "string"
   ) {
     return null;
   }
 
   return {
-    id: candidate.id,
+    id: typeof candidate.id === "string" ? candidate.id : candidate.open_time,
     asset_id: typeof candidate.asset_id === "string" ? candidate.asset_id : null,
     symbol: normalizeSymbol(candidate.symbol),
     timeframe: normalizeTimeframe(candidate.timeframe),
     open_time: candidate.open_time,
-    close_time: candidate.close_time,
+    close_time:
+      typeof candidate.close_time === "string"
+        ? candidate.close_time
+        : candidate.open_time,
     open: String(candidate.open ?? "0"),
     high: String(candidate.high ?? "0"),
     low: String(candidate.low ?? "0"),

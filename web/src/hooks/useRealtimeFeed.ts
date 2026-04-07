@@ -1,5 +1,3 @@
-// web/src/hooks/useRealtimeFeed.ts
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { API_WS_BASE_URL } from "../constants/config";
@@ -183,6 +181,19 @@ function mergeCandlesByOpenTime(
   });
 }
 
+function shouldReloadCandles(reason: string | null | undefined): boolean {
+  const normalized = String(reason ?? "").trim().toLowerCase();
+
+  if (!normalized) return false;
+  if (normalized.includes("reload")) return true;
+  if (normalized.includes("resync")) return true;
+  if (normalized.includes("reconcile")) return true;
+  if (normalized.includes("bootstrap")) return true;
+  if (normalized.includes("subscription_reset")) return true;
+
+  return false;
+}
+
 function useRealtimeFeed({
   effectiveChartMarketType,
   effectiveChartCatalog,
@@ -344,6 +355,10 @@ function useRealtimeFeed({
 
           const countValue = data.count;
           const reasonValue = data.reason;
+          const latestOpenTimeValue =
+            typeof data.latest_open_time === "string"
+              ? data.latest_open_time
+              : undefined;
           const receivedAt = formatNowPt();
 
           setState((prev) => ({
@@ -364,9 +379,10 @@ function useRealtimeFeed({
               symbol: parsedSymbol || currentSymbol,
               timeframe: parsedTimeframe || currentTimeframe,
               candleTime:
-                prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                latestOpenTimeValue ||
+                (prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
                   ? prev.lastProviderUpdateAt
-                  : undefined,
+                  : undefined),
               receivedAt,
               count:
                 typeof countValue === "number"
@@ -379,10 +395,12 @@ function useRealtimeFeed({
             }),
           }));
 
-          try {
-            await reloadCandles(false);
-          } catch (error) {
-            console.error("[WS] reloadCandles failed:", error);
+          if (shouldReloadCandles(typeof reasonValue === "string" ? reasonValue : "")) {
+            try {
+              await reloadCandles(false);
+            } catch (error) {
+              console.error("[WS] reloadCandles failed:", error);
+            }
           }
 
           return;

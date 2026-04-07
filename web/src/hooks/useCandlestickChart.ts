@@ -1,5 +1,3 @@
-// web/src/hooks/useCandlestickChart.ts
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -230,10 +228,8 @@ function useCandlestickChart({
       const canUseIncrementalUpdate =
         previousData.length > 0 &&
         nextData.length > 0 &&
-        (
-          nextData.length === previousData.length ||
-          nextData.length === previousData.length + 1
-        );
+        (nextData.length === previousData.length ||
+          nextData.length === previousData.length + 1);
 
       if (!canUseIncrementalUpdate) {
         candleSeriesRef.current.setData(nextData);
@@ -266,9 +262,7 @@ function useCandlestickChart({
           candleSeriesRef.current.update(nextLast);
         } else if (!previousLast) {
           candleSeriesRef.current.setData(nextData);
-        } else if (areCandlesEqual(previousLast, nextLast)) {
-          // sem alteração visual relevante
-        } else {
+        } else if (!areCandlesEqual(previousLast, nextLast)) {
           candleSeriesRef.current.setData(nextData);
         }
       }
