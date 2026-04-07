@@ -72,7 +72,7 @@ type CoverageStatus = {
   color: string;
 };
 
-function parseDateValue(value: string): number | null {
+function parseDateValue(value: string | null | undefined): number | null {
   if (!value || value === "-") return null;
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : null;
@@ -86,15 +86,61 @@ function formatHeaderPrice(value: number | null): string {
   });
 }
 
-function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
-  const now = Date.now();
-  const lastCloseMs = parseDateValue(feedDiagnostics.coverageLastCloseUtc);
-  const startMs = parseDateValue(feedDiagnostics.coverageStartUtc);
-  const endMs = parseDateValue(feedDiagnostics.coverageEndUtc);
-  const count = Number(feedDiagnostics.coverageCount || 0);
-  const mode = feedDiagnostics.coverageMode;
+function normalizeTimeframe(value: string): string {
+  return String(value ?? "").trim().toLowerCase();
+}
 
-  if (!count || !lastCloseMs || !startMs || !endMs) {
+function timeframeToMinutes(timeframe: string): number {
+  const normalized = normalizeTimeframe(timeframe);
+
+  if (normalized === "1m") return 1;
+  if (normalized === "3m") return 3;
+  if (normalized === "5m") return 5;
+  if (normalized === "15m") return 15;
+  if (normalized === "30m") return 30;
+  if (normalized === "1h") return 60;
+  if (normalized === "4h") return 240;
+  if (normalized === "1d") return 1440;
+
+  return 5;
+}
+
+function buildCoverageStatus(params: {
+  candles: CandleItem[];
+  feedDiagnostics: FeedDiagnostics;
+  lastCandleTick: CandleTickState;
+  wsStatus: string;
+}): CoverageStatus {
+  const { candles, feedDiagnostics, lastCandleTick, wsStatus } = params;
+
+  const count = candles.length;
+  const timeframeMinutes = timeframeToMinutes(feedDiagnostics.timeframe || "5m");
+  const now = Date.now();
+
+  const firstCandleOpenMs =
+    parseDateValue(candles[0]?.open_time) ??
+    parseDateValue(feedDiagnostics.coverageFirstOpenUtc);
+
+  const lastCandleOpenMs =
+    parseDateValue(candles[candles.length - 1]?.open_time) ??
+    parseDateValue(feedDiagnostics.lastCandleUtc) ??
+    parseDateValue(feedDiagnostics.coverageLastCloseUtc);
+
+  const lastTickOpenMs = parseDateValue(lastCandleTick?.open_time);
+  const effectiveLastDataMs = lastTickOpenMs ?? lastCandleOpenMs;
+
+  const staleThresholdWarningMs = Math.max(timeframeMinutes * 3 * 60 * 1000, 45 * 60 * 1000);
+  const staleThresholdDangerMs = Math.max(timeframeMinutes * 10 * 60 * 1000, 3 * 60 * 60 * 1000);
+
+  const dataAgeMs =
+    effectiveLastDataMs !== null ? Math.max(now - effectiveLastDataMs, 0) : null;
+
+  const hasEnoughCandlesForChart = count >= 30;
+  const hasMinimumCandles = count >= 10;
+  const hasVeryFewCandles = count > 0 && count < 10;
+  const hasNoCandles = count === 0;
+
+  if (hasNoCandles) {
     return {
       level: "danger",
       title: "Cobertura insuficiente",
@@ -105,44 +151,79 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
     };
   }
 
-  const ageMinutes = (now - lastCloseMs) / 60000;
-  const requestedWindowMinutes = Math.max((endMs - startMs) / 60000, 1);
-  const averageSpacingMinutes = requestedWindowMinutes / Math.max(count, 1);
-
-  const isClearlyStale = ageMinutes > Math.max(averageSpacingMinutes * 6, 180);
-  const isSlightlyStale = ageMinutes > Math.max(averageSpacingMinutes * 3, 45);
-  const isCoverageThin =
-    (mode === "full" && count < 30) || (mode === "incremental" && count < 5);
-
-  if (isClearlyStale || isCoverageThin) {
+  if (hasVeryFewCandles) {
     return {
       level: "danger",
-      title: "Cobertura crítica",
-      message: "A cobertura local está curta ou antiga demais para confiar na ponta recente.",
+      title: "Cobertura muito curta",
+      message: `Foram carregados apenas ${count} candles. Isso é pouco para leitura confiável do gráfico.`,
       background: "#fef2f2",
       border: "#fca5a5",
       color: "#991b1b",
     };
   }
 
-  if (isSlightlyStale) {
+  if (
+    dataAgeMs !== null &&
+    dataAgeMs > staleThresholdDangerMs &&
+    wsStatus !== "subscribed"
+  ) {
     return {
       level: "warning",
-      title: "Cobertura aceitável com atenção",
-      message: "A base local ainda está utilizável, mas a ponta parece um pouco antiga.",
+      title: "Cobertura antiga",
+      message:
+        "Os candles existem e o gráfico está utilizável, mas a ponta recente parece desatualizada.",
       background: "#fffbeb",
       border: "#fcd34d",
       color: "#92400e",
     };
   }
 
+  if (
+    dataAgeMs !== null &&
+    dataAgeMs > staleThresholdWarningMs &&
+    hasMinimumCandles
+  ) {
+    return {
+      level: "warning",
+      title: "Cobertura aceitável com atenção",
+      message:
+        "Há candles suficientes para leitura, mas a atualização recente merece atenção.",
+      background: "#fffbeb",
+      border: "#fcd34d",
+      color: "#92400e",
+    };
+  }
+
+  if (!firstCandleOpenMs || !effectiveLastDataMs) {
+    return {
+      level: "warning",
+      title: "Cobertura sem metadata completa",
+      message:
+        "Os candles foram carregados, mas parte do metadata de cobertura não veio completa. O gráfico continua utilizável.",
+      background: "#fffbeb",
+      border: "#fcd34d",
+      color: "#92400e",
+    };
+  }
+
+  if (hasEnoughCandlesForChart) {
+    return {
+      level: "good",
+      title: "Cobertura saudável",
+      message: "A cobertura local parece suficiente para esta seleção.",
+      background: "#ecfdf5",
+      border: "#86efac",
+      color: "#166534",
+    };
+  }
+
   return {
-    level: "good",
-    title: "Cobertura saudável",
-    message: "A cobertura local parece consistente com a janela pedida.",
-    background: "#ecfdf5",
-    border: "#86efac",
-    color: "#166534",
+    level: "warning",
+    title: "Cobertura moderada",
+    message: `Foram carregados ${count} candles. O gráfico está utilizável, mas com histórico reduzido.`,
+    background: "#fffbeb",
+    border: "#fcd34d",
+    color: "#92400e",
   };
 }
 
@@ -214,6 +295,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     activeIndicatorLabels,
     lastCandleTick,
     feedDiagnostics,
+    wsStatus,
   } = props;
 
   const [isIndicatorMenuOpen, setIsIndicatorMenuOpen] = useState<boolean>(false);
@@ -237,8 +319,13 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   }, [chartData, currentPrice]);
 
   const coverageStatus = useMemo(() => {
-    return getCoverageStatus(feedDiagnostics);
-  }, [feedDiagnostics]);
+    return buildCoverageStatus({
+      candles,
+      feedDiagnostics,
+      lastCandleTick,
+      wsStatus,
+    });
+  }, [candles, feedDiagnostics, lastCandleTick, wsStatus]);
 
   const headerTone = useMemo(() => {
     return getHeaderToneByCoverage(coverageStatus);

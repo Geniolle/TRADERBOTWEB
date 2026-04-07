@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
-import type { CandleCoverageMeta, CandleItem, CandleListResponse } from "../types/trading";
+import type {
+  CandleCoverageMeta,
+  CandleItem,
+  CandleListResponse,
+} from "../types/trading";
 
 type UseCandlesParams = {
   effectiveChartSymbol: string;
@@ -43,7 +47,10 @@ function normalizeTimeframe(value: unknown): string {
   return aliases[normalized] ?? normalized;
 }
 
-function timeframeToWindowMs(timeframe: string, mode: "full" | "incremental"): number {
+function timeframeToWindowMs(
+  timeframe: string,
+  mode: "full" | "incremental"
+): number {
   const normalized = normalizeTimeframe(timeframe);
 
   if (mode === "incremental") {
@@ -110,9 +117,13 @@ function normalizeCandleItem(item: unknown): CandleItem | null {
     volume: String(candidate.volume ?? "0"),
     source: typeof candidate.source === "string" ? candidate.source : null,
     provider:
-      typeof candidate.provider === "string" ? candidate.provider : candidate.source ?? null,
+      typeof candidate.provider === "string"
+        ? candidate.provider
+        : candidate.source ?? null,
     market_session:
-      typeof candidate.market_session === "string" ? candidate.market_session : null,
+      typeof candidate.market_session === "string"
+        ? candidate.market_session
+        : null,
     timezone: typeof candidate.timezone === "string" ? candidate.timezone : "UTC",
     is_delayed:
       typeof candidate.is_delayed === "boolean" ? candidate.is_delayed : false,
@@ -128,28 +139,51 @@ function sortCandles(items: CandleItem[]): CandleItem[] {
   });
 }
 
+function getDerivedCoverageFromItems(items: CandleItem[]) {
+  if (items.length === 0) {
+    return {
+      firstOpenTime: null as string | null,
+      lastCloseTime: null as string | null,
+    };
+  }
+
+  const firstItem = items[0];
+  const lastItem = items[items.length - 1];
+
+  return {
+    firstOpenTime: firstItem?.open_time ?? null,
+    lastCloseTime: lastItem?.close_time ?? lastItem?.open_time ?? null,
+  };
+}
+
 function buildCoverageMeta(
   payload: Partial<CandleListResponse> | null,
+  items: CandleItem[],
   symbol: string,
   timeframe: string,
   mode: "full" | "incremental",
   startAt: string,
-  endAt: string,
-  count: number
+  endAt: string
 ): CandleCoverageMeta {
+  const derived = getDerivedCoverageFromItems(items);
+
   return {
     symbol,
     timeframe,
     mode: (payload?.mode === "incremental" ? "incremental" : mode) as
       | "full"
       | "incremental",
-    count: typeof payload?.count === "number" ? payload.count : count,
+    count: typeof payload?.count === "number" ? payload.count : items.length,
     start_at: typeof payload?.start_at === "string" ? payload.start_at : startAt,
     end_at: typeof payload?.end_at === "string" ? payload.end_at : endAt,
     first_open_time:
-      typeof payload?.first_open_time === "string" ? payload.first_open_time : null,
+      typeof payload?.first_open_time === "string" && payload.first_open_time
+        ? payload.first_open_time
+        : derived.firstOpenTime,
     last_close_time:
-      typeof payload?.last_close_time === "string" ? payload.last_close_time : null,
+      typeof payload?.last_close_time === "string" && payload.last_close_time
+        ? payload.last_close_time
+        : derived.lastCloseTime,
   };
 }
 
@@ -170,13 +204,22 @@ function parsePayload(
 
     return {
       items,
-      coverageMeta: buildCoverageMeta(null, symbol, timeframe, mode, startAt, endAt, items.length),
+      coverageMeta: buildCoverageMeta(
+        null,
+        items,
+        symbol,
+        timeframe,
+        mode,
+        startAt,
+        endAt
+      ),
     };
   }
 
   if (payload && typeof payload === "object") {
     const response = payload as Partial<CandleListResponse>;
     const rawItems = Array.isArray(response.items) ? response.items : [];
+
     const items = sortCandles(
       rawItems
         .map((item) => normalizeCandleItem(item))
@@ -187,19 +230,29 @@ function parsePayload(
       items,
       coverageMeta: buildCoverageMeta(
         response,
+        items,
         symbol,
         timeframe,
         mode,
         startAt,
-        endAt,
-        items.length
+        endAt
       ),
     };
   }
 
+  const emptyItems: CandleItem[] = [];
+
   return {
-    items: [],
-    coverageMeta: buildCoverageMeta(null, symbol, timeframe, mode, startAt, endAt, 0),
+    items: emptyItems,
+    coverageMeta: buildCoverageMeta(
+      null,
+      emptyItems,
+      symbol,
+      timeframe,
+      mode,
+      startAt,
+      endAt
+    ),
   };
 }
 
@@ -251,19 +304,29 @@ function useCandles({
           mode,
         });
 
-        const response = await fetch(`${API_HTTP_BASE_URL}/candles?${params.toString()}`, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
-        });
+        const response = await fetch(
+          `${API_HTTP_BASE_URL}/candles?${params.toString()}`,
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
 
         const payload = await response.json();
-        const parsed = parsePayload(payload, symbol, timeframe, mode, startAt, endAt);
+        const parsed = parsePayload(
+          payload,
+          symbol,
+          timeframe,
+          mode,
+          startAt,
+          endAt
+        );
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
           return { items: [], coverageMeta: null as CandleCoverageMeta | null };
