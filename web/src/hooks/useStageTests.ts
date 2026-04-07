@@ -11,7 +11,12 @@ type UseStageTestsParams = {
   lastCandleTick: CandleTickState;
 };
 
-type ExecutionLogStatus = "idle" | "waiting" | "running" | "success" | "error";
+export type ExecutionLogStatus =
+  | "idle"
+  | "waiting"
+  | "running"
+  | "success"
+  | "error";
 
 type UseStageTestsResult = {
   stageTests: StageTestSummaryItem[];
@@ -29,7 +34,6 @@ type UseStageTestsResult = {
   lastExecutionStatus: ExecutionLogStatus;
   reloadStageTests: () => Promise<void>;
   clearRuns: () => Promise<void>;
-  createRuns: () => Promise<void>;
 };
 
 type VisualStageStrategyDefinition = {
@@ -476,7 +480,6 @@ function useStageTests({
     lastExecutionStatus,
     reloadStageTests: loadStageTests,
     clearRuns,
-    createRuns,
   };
 }
 

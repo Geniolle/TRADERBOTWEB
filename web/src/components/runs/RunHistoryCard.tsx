@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { StageTestSummaryItem } from "../../types/trading";
-
-type ExecutionLogStatus = "idle" | "waiting" | "running" | "success" | "error";
+import type { ExecutionLogStatus } from "../../hooks/useStageTests";
 
 type RunHistoryCardProps = {
   sidebarCardStyle: React.CSSProperties;
