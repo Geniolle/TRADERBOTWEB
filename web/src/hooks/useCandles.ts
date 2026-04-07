@@ -32,6 +32,7 @@ function normalizeTimeframe(value: unknown): string {
   if (typeof value !== "string") return "";
 
   const normalized = value.trim().toLowerCase();
+
   const aliases: Record<string, string> = {
     "1min": "1m",
     "3min": "3m",
@@ -139,6 +140,32 @@ function sortCandles(items: CandleItem[]): CandleItem[] {
   });
 }
 
+function dedupeCandlesByOpenTime(items: CandleItem[]): CandleItem[] {
+  const map = new Map<string, CandleItem>();
+
+  for (const item of items) {
+    map.set(item.open_time, item);
+  }
+
+  return sortCandles(Array.from(map.values()));
+}
+
+function mergeCandles(
+  previous: CandleItem[],
+  incoming: CandleItem[],
+  mode: "full" | "incremental"
+): CandleItem[] {
+  if (mode === "full") {
+    return dedupeCandlesByOpenTime(incoming);
+  }
+
+  if (incoming.length === 0) {
+    return previous;
+  }
+
+  return dedupeCandlesByOpenTime([...previous, ...incoming]);
+}
+
 function getDerivedCoverageFromItems(items: CandleItem[]) {
   if (items.length === 0) {
     return {
@@ -196,7 +223,7 @@ function parsePayload(
   endAt: string
 ): { items: CandleItem[]; coverageMeta: CandleCoverageMeta } {
   if (Array.isArray(payload)) {
-    const items = sortCandles(
+    const items = dedupeCandlesByOpenTime(
       payload
         .map((item) => normalizeCandleItem(item))
         .filter((item): item is CandleItem => item !== null)
@@ -220,7 +247,7 @@ function parsePayload(
     const response = payload as Partial<CandleListResponse>;
     const rawItems = Array.isArray(response.items) ? response.items : [];
 
-    const items = sortCandles(
+    const items = dedupeCandlesByOpenTime(
       rawItems
         .map((item) => normalizeCandleItem(item))
         .filter((item): item is CandleItem => item !== null)
@@ -273,6 +300,11 @@ function useCandles({
   }, [effectiveChartSymbol, effectiveChartTimeframe]);
 
   const activeRequestKeyRef = useRef("");
+  const candlesRef = useRef<CandleItem[]>([]);
+
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
 
   const fetchCandles = useCallback(
     async (mode: "full" | "incremental", showLoader: boolean) => {
@@ -356,17 +388,44 @@ function useCandles({
 
   const reloadCandles = useCallback(
     async (showLoader = true) => {
+      const symbol = normalizeSymbol(effectiveChartSymbol);
+      const timeframe = normalizeTimeframe(effectiveChartTimeframe);
+
+      if (!symbol || !timeframe) {
+        return;
+      }
+
       const parsed = await fetchCandles("incremental", showLoader);
+      const nextCoverageMeta = parsed.coverageMeta;
 
       if (parsed.items.length > 0) {
-        setCandles(parsed.items);
+        setCandles((prev) => mergeCandles(prev, parsed.items, "incremental"));
       }
 
-      if (parsed.coverageMeta) {
-        setCoverageMeta(parsed.coverageMeta);
+      if (nextCoverageMeta) {
+        const mergedItems = mergeCandles(
+          candlesRef.current,
+          parsed.items,
+          "incremental"
+        );
+
+        setCoverageMeta(
+          buildCoverageMeta(
+            {
+              ...nextCoverageMeta,
+              count: mergedItems.length,
+            },
+            mergedItems,
+            symbol,
+            timeframe,
+            "incremental",
+            nextCoverageMeta.start_at,
+            nextCoverageMeta.end_at
+          )
+        );
       }
     },
-    [fetchCandles]
+    [effectiveChartSymbol, effectiveChartTimeframe, fetchCandles]
   );
 
   useEffect(() => {
@@ -384,8 +443,12 @@ function useCandles({
 
     void (async () => {
       const parsed = await fetchCandles("full", true);
-      setCandles(parsed.items);
-      setCoverageMeta(parsed.coverageMeta);
+
+      if (parsed.coverageMeta) {
+        setCoverageMeta(parsed.coverageMeta);
+      }
+
+      setCandles(mergeCandles([], parsed.items, "full"));
     })();
   }, [requestKey, fetchCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 

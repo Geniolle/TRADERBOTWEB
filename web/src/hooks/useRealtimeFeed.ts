@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { API_WS_BASE_URL } from "../constants/config";
 import type { CandleItem, CandleTickState, WsEnvelope } from "../types/trading";
 import { upsertRealtimeCandle } from "../utils/candles";
-import { floorToMinuteIso } from "../utils/format";
+import { floorToTimeframeIso } from "../utils/format";
 
 type UseRealtimeFeedParams = {
   effectiveChartMarketType: string;
@@ -158,6 +158,29 @@ function buildProviderUpdateLog(params: {
   }
 
   return parts.join(" | ");
+}
+
+function mergeCandlesByOpenTime(
+  previous: CandleItem[],
+  incoming: CandleItem[]
+): CandleItem[] {
+  if (incoming.length === 0) {
+    return previous;
+  }
+
+  const map = new Map<string, CandleItem>();
+
+  for (const item of previous) {
+    map.set(item.open_time, item);
+  }
+
+  for (const item of incoming) {
+    map.set(item.open_time, item);
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    return new Date(a.open_time).getTime() - new Date(b.open_time).getTime();
+  });
 }
 
 function useRealtimeFeed({
@@ -340,7 +363,10 @@ function useRealtimeFeed({
               eventName: "candles_refresh",
               symbol: parsedSymbol || currentSymbol,
               timeframe: parsedTimeframe || currentTimeframe,
-              candleTime: prevCandleTime(prev => prev.lastProviderUpdateAt),
+              candleTime:
+                prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                  ? prev.lastProviderUpdateAt
+                  : undefined,
               receivedAt,
               count:
                 typeof countValue === "number"
@@ -434,7 +460,7 @@ function useRealtimeFeed({
             }),
           }));
 
-          setCandles(() => normalizedItems as CandleItem[]);
+          setCandles((prev) => mergeCandlesByOpenTime(prev, normalizedItems));
           return;
         }
 
@@ -444,7 +470,7 @@ function useRealtimeFeed({
           const openTimeValue = data.open_time;
           const normalizedOpenTime =
             typeof openTimeValue === "string"
-              ? floorToMinuteIso(openTimeValue)
+              ? floorToTimeframeIso(openTimeValue, parsedTimeframe || currentTimeframe)
               : "-";
 
           const nextTick: NonNullable<CandleTickState> = {
@@ -630,18 +656,6 @@ function useRealtimeFeed({
       visibleState?.lastProviderUpdateStatus ??
       DEFAULT_RESULT.lastProviderUpdateStatus,
   };
-}
-
-function prevCandleTime(
-  getPrev: (
-    prev: Pick<RealtimeFeedState, "lastProviderUpdateAt">
-  ) => string
-): string | undefined {
-  try {
-    return getPrev({ lastProviderUpdateAt: "-" });
-  } catch {
-    return undefined;
-  }
 }
 
 export default useRealtimeFeed;

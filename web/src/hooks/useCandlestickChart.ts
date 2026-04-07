@@ -38,6 +38,19 @@ type UseCandlestickChartResult = {
   chartData: CandlestickData<UTCTimestamp>[];
 };
 
+function areCandlesEqual(
+  left: CandlestickData<UTCTimestamp>,
+  right: CandlestickData<UTCTimestamp>
+): boolean {
+  return (
+    left.time === right.time &&
+    left.open === right.open &&
+    left.high === right.high &&
+    left.low === right.low &&
+    left.close === right.close
+  );
+}
+
 function useCandlestickChart({
   candles,
   indicatorSeries = [],
@@ -46,6 +59,7 @@ function useCandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const previousChartDataRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
 
   const [chartSize, setChartSize] = useState({
     width: 0,
@@ -210,7 +224,56 @@ function useCandlestickChart({
         lastValueVisible: true,
       });
 
-      candleSeriesRef.current.setData(chartData);
+      const previousData = previousChartDataRef.current;
+      const nextData = chartData;
+
+      const canUseIncrementalUpdate =
+        previousData.length > 0 &&
+        nextData.length > 0 &&
+        (
+          nextData.length === previousData.length ||
+          nextData.length === previousData.length + 1
+        );
+
+      if (!canUseIncrementalUpdate) {
+        candleSeriesRef.current.setData(nextData);
+      } else {
+        const previousLast = previousData[previousData.length - 1];
+        const nextLast = nextData[nextData.length - 1];
+
+        const samePrefix =
+          previousData.length === 1 ||
+          previousData
+            .slice(0, Math.max(previousData.length - 1, 0))
+            .every((item, index) => {
+              const candidate = nextData[index];
+              return Boolean(candidate) && areCandlesEqual(item, candidate);
+            });
+
+        if (!samePrefix || !nextLast) {
+          candleSeriesRef.current.setData(nextData);
+        } else if (
+          previousLast &&
+          previousLast.time === nextLast.time &&
+          !areCandlesEqual(previousLast, nextLast)
+        ) {
+          candleSeriesRef.current.update(nextLast);
+        } else if (
+          previousLast &&
+          previousLast.time !== nextLast.time &&
+          nextData.length === previousData.length + 1
+        ) {
+          candleSeriesRef.current.update(nextLast);
+        } else if (!previousLast) {
+          candleSeriesRef.current.setData(nextData);
+        } else if (areCandlesEqual(previousLast, nextLast)) {
+          // sem alteração visual relevante
+        } else {
+          candleSeriesRef.current.setData(nextData);
+        }
+      }
+
+      previousChartDataRef.current = nextData;
     }
 
     const incomingIds = new Set(indicatorSeries.map((item) => item.id));
@@ -304,8 +367,8 @@ function useCandlestickChart({
         height: CHART_HEIGHT,
       });
 
-      if (chartData.length > 0) {
-        applyStableVisibleRange(chartRef.current, chartData.length);
+      if (previousChartDataRef.current.length > 0) {
+        applyStableVisibleRange(chartRef.current, previousChartDataRef.current.length);
         chartRef.current.timeScale().scrollToRealTime();
       } else {
         chartRef.current.timeScale().fitContent();
@@ -324,6 +387,7 @@ function useCandlestickChart({
 
     return () => {
       indicatorMap.clear();
+      previousChartDataRef.current = [];
 
       if (chartRef.current) {
         chartRef.current.remove();
