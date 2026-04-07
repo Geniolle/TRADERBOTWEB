@@ -102,8 +102,10 @@ function App() {
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
     readStoredTimeframe()
   );
-  const [selectedChartStrategyKey, setSelectedChartStrategyKey] =
-    useState<string>(() => readStoredChartStrategyKey());
+
+  const [storedChartStrategyKey] = useState<string>(() =>
+    readStoredChartStrategyKey()
+  );
 
   useEffect(() => {
     try {
@@ -132,33 +134,16 @@ function App() {
   }, [strategies]);
 
   const effectiveSelectedChartStrategyKey = useMemo(() => {
-    if (!selectedChartStrategyKey) {
+    if (!storedChartStrategyKey) {
       return "";
     }
 
     const existsInSelectableList = selectableStrategies.some(
-      (item) => item.key === selectedChartStrategyKey
+      (item) => item.key === storedChartStrategyKey
     );
 
-    return existsInSelectableList ? selectedChartStrategyKey : "";
-  }, [selectableStrategies, selectedChartStrategyKey]);
-
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-
-      if (effectiveSelectedChartStrategyKey) {
-        window.localStorage.setItem(
-          CHART_STRATEGY_STORAGE_KEY,
-          effectiveSelectedChartStrategyKey
-        );
-      } else {
-        window.localStorage.removeItem(CHART_STRATEGY_STORAGE_KEY);
-      }
-    } catch {
-      // Ignora erros de localStorage
-    }
-  }, [effectiveSelectedChartStrategyKey]);
+    return existsInSelectableList ? storedChartStrategyKey : "";
+  }, [selectableStrategies, storedChartStrategyKey]);
 
   const selectedChartStrategy = useMemo(() => {
     return (
@@ -510,9 +495,6 @@ function App() {
                   selectedTimeframe={effectiveSelectedTimeframe}
                   setSelectedTimeframe={setSelectedTimeframe}
                   timeframeOptions={TIMEFRAME_OPTIONS}
-                  strategies={selectableStrategies}
-                  selectedStrategyKey={effectiveSelectedChartStrategyKey}
-                  setSelectedStrategyKey={setSelectedChartStrategyKey}
                   selectedMarketTypeLabel={selectedMarketTypeLabel}
                   selectedCatalogLabel={selectedCatalogLabel}
                   selectedSymbolData={selectedSymbolData}
@@ -621,8 +603,8 @@ function App() {
                   : "não suportados"}
                 <br />
                 {selectedStrategyNotice.supportsOverlays
-                  ? "Os overlays estratégicos só aparecem quando a estratégia escolhida no filtro coincide com a estratégia do run selecionado."
-                  : "Esta estratégia está ativa para seleção e execução, mas o contrato devolvido pelo backend indica que não há overlays estratégicos para desenhar no gráfico."}
+                  ? "Os overlays estratégicos só aparecem quando a estratégia escolhida no storage coincide com a estratégia do run selecionado."
+                  : "Esta estratégia continua referenciada apenas para visualização de overlays, mas o contrato devolvido pelo backend indica que não há overlays estratégicos para desenhar no gráfico."}
               </div>
             )}
 
