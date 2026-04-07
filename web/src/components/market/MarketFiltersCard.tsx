@@ -4,7 +4,6 @@ import type {
   CatalogInstrument,
   CatalogProductSummary,
   CatalogSubproduct,
-  StrategyItem,
 } from "../../types/trading";
 
 type TimeframeOption = {
@@ -34,9 +33,6 @@ type MarketFiltersCardProps = {
   selectedTimeframe: string;
   setSelectedTimeframe: (value: string) => void;
   timeframeOptions: TimeframeOption[];
-  strategies: StrategyItem[];
-  selectedStrategyKey: string;
-  setSelectedStrategyKey: (value: string) => void;
   selectedMarketTypeLabel: string;
   selectedCatalogLabel: string;
   selectedSymbolData: CatalogInstrument | null;
@@ -167,16 +163,10 @@ function MarketFiltersCard({
   selectedTimeframe,
   setSelectedTimeframe,
   timeframeOptions,
-  strategies,
-  selectedStrategyKey,
-  setSelectedStrategyKey,
   selectedMarketTypeLabel,
   selectedCatalogLabel,
   selectedSymbolData,
 }: MarketFiltersCardProps) {
-  const selectedStrategy =
-    strategies.find((item) => item.key === selectedStrategyKey) ?? null;
-
   const marketStatusInfo = getMarketStatusInfo(
     selectedMarketTypeLabel,
     selectedCatalogLabel,
@@ -362,59 +352,17 @@ function MarketFiltersCard({
         <div
           style={{
             marginTop: 4,
-            paddingTop: 12,
-            borderTop: "1px solid #e2e8f0",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #bfdbfe",
+            background: "#f8fafc",
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "#475569",
           }}
         >
-          <label
-            htmlFor="chart-strategy"
-            style={{
-              display: "block",
-              marginBottom: 6,
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#334155",
-            }}
-          >
-            Estratégia do motor
-          </label>
-
-          <select
-            id="chart-strategy"
-            value={selectedStrategyKey}
-            onChange={(e) => setSelectedStrategyKey(e.target.value)}
-            disabled={loadingStrategies || strategies.length === 0}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid #cbd5e1",
-              outline: "none",
-              fontSize: 14,
-              background: "#fff",
-            }}
-          >
-            <option value="">Nenhuma estratégia</option>
-            {strategies.map((strategy) => (
-              <option key={strategy.key} value={strategy.key}>
-                {strategy.name} ({strategy.key})
-              </option>
-            ))}
-          </select>
-
-          <p
-            style={{
-              margin: "8px 0 0 0",
-              fontSize: 12,
-              lineHeight: 1.45,
-              color: "#64748b",
-            }}
-          >
-            Esta lista mostra as estratégias técnicas registadas no backend. Os
-            cards à direita mostram setups e leituras do contexto atual do
-            mercado, não esta mesma lista.
-          </p>
+          A execução dos runs é automática. Sempre que entra um novo candle, o
+          sistema corre todas as estratégias da secção Stage Testes.
         </div>
       </div>
 
@@ -501,8 +449,7 @@ function MarketFiltersCard({
               <strong>Timeframe:</strong> {selectedTimeframe || "-"}
             </div>
             <div>
-              <strong>Estratégia do motor:</strong>{" "}
-              {selectedStrategy ? selectedStrategy.name : "Nenhuma"}
+              <strong>Execução:</strong> Automática por novo candle
             </div>
           </div>
         )}
