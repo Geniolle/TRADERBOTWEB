@@ -514,7 +514,7 @@ function App() {
                   health={health}
                   wsStatus={wsStatus}
                   lastWsEvent={lastWsEvent}
-                  providerErrorMessage={providerErrorMessage}
+                  providerErrorMessage={providerErrorMessage || candlesErrorFromHttp}
                   hasLoadedInitialCandles={hasLoadedInitialCandles}
                   candles={candles}
                   lastProviderUpdateLog={lastProviderUpdateLog}

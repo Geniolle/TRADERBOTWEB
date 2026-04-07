@@ -123,6 +123,25 @@ function getProviderStatusInfo(
   const normalizedError = error.toLowerCase();
   const normalizedEvent = String(lastWsEvent ?? "").trim().toLowerCase();
 
+  const isQuotaError =
+    normalizedError.includes("429") ||
+    normalizedError.includes("quota") ||
+    normalizedError.includes("credits") ||
+    normalizedError.includes("api credits") ||
+    normalizedError.includes("run out of api credits") ||
+    normalizedError.includes("too many requests");
+
+  if (isQuotaError) {
+    return {
+      label: candles.length > 0 ? "Offline por quota" : "Quota esgotada",
+      detail:
+        candles.length > 0
+          ? `Quota do provider esgotada. Último candle mantido em cache local. ${error}`
+          : `Quota do provider esgotada e sem cache local disponível. ${error}`,
+      kind: "warn" as const,
+    };
+  }
+
   if (
     normalizedError.includes("token") ||
     normalizedError.includes("auth") ||
