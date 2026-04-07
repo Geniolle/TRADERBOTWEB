@@ -214,8 +214,13 @@ export type RunHistoryItem = {
   timeframe: string;
   status: string;
   mode: string;
+  start_at: string | null;
+  end_at: string | null;
   started_at: string | null;
   finished_at: string | null;
+  total_candles_processed?: number;
+  total_cases_opened?: number;
+  total_cases_closed?: number;
   candles_count: number;
   cases_count: number;
 };
@@ -232,8 +237,36 @@ export type RunSummary = {
   end_at: string | null;
   started_at: string | null;
   finished_at: string | null;
+  total_candles_processed?: number;
+  total_cases_opened?: number;
+  total_cases_closed?: number;
   candles_count: number;
   cases_count: number;
+};
+
+export type StageTestLatestRun = {
+  run_id: string | null;
+  status: string | null;
+  symbol: string | null;
+  timeframe: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export type StageTestSummaryItem = {
+  strategy_key: string;
+  strategy_name: string;
+  strategy_description: string | null;
+  strategy_category: string | null;
+  total_runs: number;
+  total_cases: number;
+  total_hits: number;
+  total_fails: number;
+  total_timeouts: number;
+  hit_rate: number;
+  fail_rate: number;
+  timeout_rate: number;
+  last_run: StageTestLatestRun | null;
 };
 
 export type RunMetricItem = {
@@ -360,6 +393,6 @@ export type RunCaseItem = {
 
 export type RunDetailsResponse = {
   run: RunSummary;
-  metrics: RunMetricItem[] | Record<string, unknown>;
+  metrics: RunMetricItem[] | Record<string, unknown> | null;
   cases: RunCaseItem[];
 };

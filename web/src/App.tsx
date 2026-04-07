@@ -26,7 +26,7 @@ import useIndicatorSettings from "./hooks/useIndicatorSettings";
 import useMarketCatalog from "./hooks/useMarketCatalog";
 import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
-import useRunHistory from "./hooks/useRunHistory";
+import useStageTests from "./hooks/useStageTests";
 import useStrategies from "./hooks/useStrategies";
 
 type TimeframeOption = {
@@ -215,7 +215,7 @@ function App() {
     setSelectedRunId,
     runSearch,
     setRunSearch,
-    filteredRuns,
+    filteredStageTests,
     loadingRuns,
     runsError,
     actionError,
@@ -223,7 +223,7 @@ function App() {
     isCreatingRuns,
     clearRuns,
     createRuns,
-  } = useRunHistory({
+  } = useStageTests({
     selectedSymbol: effectiveChartSymbol,
     selectedTimeframe: effectiveChartTimeframe,
     selectedStrategyKey: effectiveSelectedChartStrategyKey,
@@ -519,27 +519,6 @@ function App() {
                   selectedSymbolData={selectedSymbolData}
                 />
 
-                <RunHistoryCard
-                  sidebarCardStyle={sidebarCardStyle}
-                  runSearch={runSearch}
-                  setRunSearch={setRunSearch}
-                  loadingRuns={loadingRuns}
-                  runsError={runsError}
-                  actionError={actionError}
-                  filteredRuns={filteredRuns}
-                  selectedRunId={selectedRunId}
-                  setSelectedRunId={setSelectedRunId}
-                  onClearRuns={clearRuns}
-                  onCreateRuns={createRuns}
-                  isClearingRuns={isClearingRuns}
-                  isCreatingRuns={isCreatingRuns}
-                  canCreateRuns={Boolean(
-                    effectiveChartSymbol &&
-                      effectiveChartTimeframe &&
-                      effectiveSelectedChartStrategyKey
-                  )}
-                />
-
                 <ApiStatusCard
                   sidebarCardStyle={sidebarCardStyle}
                   loadingHealth={loadingHealth}
@@ -605,6 +584,27 @@ function App() {
               feedDiagnostics={feedDiagnostics}
             />
 
+            <RunHistoryCard
+              sidebarCardStyle={mainCardStyle}
+              runSearch={runSearch}
+              setRunSearch={setRunSearch}
+              loadingRuns={loadingRuns}
+              runsError={runsError}
+              actionError={actionError}
+              filteredStageTests={filteredStageTests}
+              selectedRunId={selectedRunId}
+              setSelectedRunId={setSelectedRunId}
+              onClearRuns={clearRuns}
+              onCreateRuns={createRuns}
+              isClearingRuns={isClearingRuns}
+              isCreatingRuns={isCreatingRuns}
+              canCreateRuns={Boolean(
+                effectiveChartSymbol &&
+                  effectiveChartTimeframe &&
+                  effectiveSelectedChartStrategyKey
+              )}
+            />
+
             {showSelectedStrategyNotice && selectedStrategyNotice && (
               <div
                 style={{
@@ -616,7 +616,7 @@ function App() {
                   lineHeight: 1.6,
                 }}
               >
-                <strong>Estratégia do motor selecionada:</strong>{" "}
+                <strong>Estratégia selecionada para o gráfico:</strong>{" "}
                 {selectedStrategyNotice.name} ({selectedStrategyNotice.key})
                 <br />
                 <strong>Run selecionado:</strong>{" "}
@@ -628,8 +628,8 @@ function App() {
                   : "não suportados"}
                 <br />
                 {selectedStrategyNotice.supportsOverlays
-                  ? "Os overlays estratégicos só aparecem quando a estratégia técnica escolhida coincide com a estratégia do run selecionado."
-                  : "Esta estratégia técnica está ativa para seleção e execução, mas o backend indica que não há overlays próprios para desenhar no gráfico."}
+                  ? "Os overlays estratégicos só aparecem quando a estratégia escolhida no filtro coincide com a estratégia do run selecionado."
+                  : "Esta estratégia está ativa para seleção e execução, mas o contrato devolvido pelo backend indica que não há overlays estratégicos para desenhar no gráfico."}
               </div>
             )}
 
