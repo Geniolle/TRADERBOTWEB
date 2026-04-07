@@ -1,8 +1,7 @@
 // web/src/components/api/ApiStatusCard.tsx
 
 import type { CandleItem, HealthResponse } from "../../types/trading";
-
-type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
+import type { ProviderUpdateStatus } from "../../hooks/useRealtimeFeed";
 
 type ApiStatusCardProps = {
   sidebarCardStyle: React.CSSProperties;
@@ -16,6 +15,7 @@ type ApiStatusCardProps = {
   candles: CandleItem[];
   lastProviderUpdateLog: string;
   lastProviderUpdateAt: string;
+  lastProviderReceivedAt: string;
   lastProviderUpdateEvent: string;
   lastProviderUpdateStatus: ProviderUpdateStatus;
 };
@@ -181,7 +181,8 @@ function getProviderStatusInfo(
 function getProviderUpdateInfo(
   status: ProviderUpdateStatus,
   log: string,
-  at: string,
+  candleAt: string,
+  receivedAt: string,
   eventName: string
 ) {
   if (status === "error") {
@@ -189,7 +190,8 @@ function getProviderUpdateInfo(
       label: "Falhou",
       detail: log,
       kind: "error" as const,
-      at: at || "-",
+      candleAt: candleAt || "-",
+      receivedAt: receivedAt || "-",
       eventName: eventName || "-",
     };
   }
@@ -199,7 +201,8 @@ function getProviderUpdateInfo(
       label: "Atualizado",
       detail: log,
       kind: "ok" as const,
-      at: at || "-",
+      candleAt: candleAt || "-",
+      receivedAt: receivedAt || "-",
       eventName: eventName || "-",
     };
   }
@@ -209,7 +212,8 @@ function getProviderUpdateInfo(
       label: "À espera",
       detail: log,
       kind: "warn" as const,
-      at: at || "-",
+      candleAt: candleAt || "-",
+      receivedAt: receivedAt || "-",
       eventName: eventName || "-",
     };
   }
@@ -218,7 +222,8 @@ function getProviderUpdateInfo(
     label: "Sem dados",
     detail: log || "Ainda sem atualização do provider.",
     kind: "neutral" as const,
-    at: at || "-",
+    candleAt: candleAt || "-",
+    receivedAt: receivedAt || "-",
     eventName: eventName || "-",
   };
 }
@@ -305,6 +310,7 @@ function ApiStatusCard({
   candles,
   lastProviderUpdateLog,
   lastProviderUpdateAt,
+  lastProviderReceivedAt,
   lastProviderUpdateEvent,
   lastProviderUpdateStatus,
 }: ApiStatusCardProps) {
@@ -321,6 +327,7 @@ function ApiStatusCard({
     lastProviderUpdateStatus,
     lastProviderUpdateLog,
     lastProviderUpdateAt,
+    lastProviderReceivedAt,
     lastProviderUpdateEvent
   );
 
@@ -382,7 +389,8 @@ function ApiStatusCard({
           {infoRow("Primeiro candle", firstCandle)}
           {infoRow("Último candle", lastCandle)}
           {infoRow("Último evento provider", providerUpdateInfo.eventName)}
-          {infoRow("Última atualização", providerUpdateInfo.at)}
+          {infoRow("Último candle provider", providerUpdateInfo.candleAt)}
+          {infoRow("Recebido em", providerUpdateInfo.receivedAt)}
         </div>
       </div>
 

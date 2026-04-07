@@ -219,6 +219,7 @@ function App() {
     hasLoadedInitialCandles,
     lastProviderUpdateLog,
     lastProviderUpdateAt,
+    lastProviderReceivedAt,
     lastProviderUpdateEvent,
     lastProviderUpdateStatus,
   } = useRealtimeFeed({
@@ -518,6 +519,7 @@ function App() {
                   candles={candles}
                   lastProviderUpdateLog={lastProviderUpdateLog}
                   lastProviderUpdateAt={lastProviderUpdateAt}
+                  lastProviderReceivedAt={lastProviderReceivedAt}
                   lastProviderUpdateEvent={lastProviderUpdateEvent}
                   lastProviderUpdateStatus={lastProviderUpdateStatus}
                 />

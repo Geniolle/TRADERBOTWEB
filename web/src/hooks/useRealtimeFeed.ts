@@ -16,7 +16,7 @@ type UseRealtimeFeedParams = {
   reloadCandles: (showLoader?: boolean) => Promise<void>;
 };
 
-type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
+export type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
 
 type UseRealtimeFeedResult = {
   wsStatus: string;
@@ -30,6 +30,7 @@ type UseRealtimeFeedResult = {
   hasLoadedInitialCandles: boolean;
   lastProviderUpdateLog: string;
   lastProviderUpdateAt: string;
+  lastProviderReceivedAt: string;
   lastProviderUpdateEvent: string;
   lastProviderUpdateStatus: ProviderUpdateStatus;
 };
@@ -47,6 +48,7 @@ type RealtimeFeedState = {
   hasLoadedInitialCandles: boolean;
   lastProviderUpdateLog: string;
   lastProviderUpdateAt: string;
+  lastProviderReceivedAt: string;
   lastProviderUpdateEvent: string;
   lastProviderUpdateStatus: ProviderUpdateStatus;
 };
@@ -63,6 +65,7 @@ const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
   hasLoadedInitialCandles: false,
   lastProviderUpdateLog: "Ainda sem atualização do provider.",
   lastProviderUpdateAt: "-",
+  lastProviderReceivedAt: "-",
   lastProviderUpdateEvent: "-",
   lastProviderUpdateStatus: "idle",
 };
@@ -129,20 +132,22 @@ function buildProviderUpdateLog(params: {
   eventName: string;
   symbol: string;
   timeframe: string;
-  openTime?: string;
+  candleTime?: string;
+  receivedAt: string;
   count?: number | null;
   extra?: string;
 }) {
   const parts = [
-    `Atualizado em ${formatNowPt()}`,
     `Evento=${params.eventName}`,
     `Símbolo=${params.symbol || "-"}`,
     `Timeframe=${params.timeframe || "-"}`,
   ];
 
-  if (params.openTime) {
-    parts.push(`Candle=${params.openTime}`);
+  if (params.candleTime) {
+    parts.push(`Candle=${params.candleTime}`);
   }
+
+  parts.push(`Recebido=${params.receivedAt}`);
 
   if (typeof params.count === "number" && Number.isFinite(params.count)) {
     parts.push(`Count=${params.count}`);
@@ -230,8 +235,6 @@ function useRealtimeFeed({
         wsStatus: "connected",
         lastWsEvent: "connected",
         lastProviderUpdateLog: `Ligação aberta em ${formatNowPt()}. A aguardar candles do provider.`,
-        lastProviderUpdateAt: "-",
-        lastProviderUpdateEvent: "-",
         lastProviderUpdateStatus: "waiting",
       });
 
@@ -274,7 +277,9 @@ function useRealtimeFeed({
             wsStatus: nextEvent === "subscribed" ? "subscribed" : prev.wsStatus,
             lastWsEvent: nextEvent,
             lastProviderUpdateStatus:
-              nextEvent === "subscribed" ? "waiting" : prev.lastProviderUpdateStatus,
+              nextEvent === "subscribed"
+                ? "waiting"
+                : prev.lastProviderUpdateStatus,
             lastProviderUpdateLog:
               nextEvent === "subscribed"
                 ? `Subscrição confirmada em ${formatNowPt()}. A aguardar dados do provider para ${currentSymbol} em ${currentTimeframe}.`
@@ -316,7 +321,7 @@ function useRealtimeFeed({
 
           const countValue = data.count;
           const reasonValue = data.reason;
-          const nowText = formatNowPt();
+          const receivedAt = formatNowPt();
 
           setState((prev) => ({
             ...prev,
@@ -328,13 +333,15 @@ function useRealtimeFeed({
                 : Number(countValue ?? 0),
             candlesRefreshReason:
               typeof reasonValue === "string" ? reasonValue : "-",
-            lastProviderUpdateAt: nowText,
+            lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "candles_refresh",
             lastProviderUpdateStatus: "success",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "candles_refresh",
               symbol: parsedSymbol || currentSymbol,
               timeframe: parsedTimeframe || currentTimeframe,
+              candleTime: prevCandleTime(prev => prev.lastProviderUpdateAt),
+              receivedAt,
               count:
                 typeof countValue === "number"
                   ? countValue
@@ -368,19 +375,21 @@ function useRealtimeFeed({
             safeString(data.error) ||
             "Erro ao obter candles do provider.";
 
-          const nowText = formatNowPt();
+          const receivedAt = formatNowPt();
 
           setState((prev) => ({
             ...prev,
             scopeKey: currentScopeKey,
             lastWsEvent: "provider_error",
             providerErrorMessage: errorMessage,
-            lastProviderUpdateAt: nowText,
+            lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "provider_error",
             lastProviderUpdateStatus: "error",
-            lastProviderUpdateLog: `Erro do provider em ${nowText} | Símbolo=${
+            lastProviderUpdateLog: `Erro do provider | Símbolo=${
               parsedSymbol || currentSymbol || "-"
-            } | Timeframe=${parsedTimeframe || currentTimeframe || "-"} | ${errorMessage}`,
+            } | Timeframe=${
+              parsedTimeframe || currentTimeframe || "-"
+            } | Recebido=${receivedAt} | ${errorMessage}`,
           }));
           return;
         }
@@ -400,10 +409,10 @@ function useRealtimeFeed({
 
           const lastOpenTime =
             normalizedItems.length > 0
-              ? normalizedItems[normalizedItems.length - 1]?.open_time
+              ? normalizedItems[normalizedItems.length - 1]?.open_time ?? "-"
               : "-";
 
-          const nowText = formatNowPt();
+          const receivedAt = formatNowPt();
 
           setState((prev) => ({
             ...prev,
@@ -411,14 +420,16 @@ function useRealtimeFeed({
             lastWsEvent: "initial_candles",
             hasLoadedInitialCandles: true,
             providerErrorMessage: "",
-            lastProviderUpdateAt: nowText,
+            lastProviderUpdateAt: lastOpenTime,
+            lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "initial_candles",
             lastProviderUpdateStatus: "success",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "initial_candles",
               symbol: parsedSymbol || currentSymbol,
               timeframe: parsedTimeframe || currentTimeframe,
-              openTime: lastOpenTime,
+              candleTime: lastOpenTime,
+              receivedAt,
               count: normalizedItems.length,
             }),
           }));
@@ -457,7 +468,7 @@ function useRealtimeFeed({
             is_mock: typeof data.is_mock === "boolean" ? data.is_mock : null,
           };
 
-          const nowText = formatNowPt();
+          const receivedAt = formatNowPt();
 
           setState((prev) => ({
             ...prev,
@@ -466,14 +477,16 @@ function useRealtimeFeed({
             providerErrorMessage: "",
             hasLoadedInitialCandles: true,
             lastCandleTick: nextTick,
-            lastProviderUpdateAt: nowText,
+            lastProviderUpdateAt: nextTick.open_time,
+            lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "candle_tick",
             lastProviderUpdateStatus: "success",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "candle_tick",
               symbol: nextTick.symbol,
               timeframe: nextTick.timeframe,
-              openTime: nextTick.open_time,
+              candleTime: nextTick.open_time,
+              receivedAt,
               count: nextTick.count,
             }),
           }));
@@ -576,6 +589,7 @@ function useRealtimeFeed({
       hasLoadedInitialCandles: DEFAULT_RESULT.hasLoadedInitialCandles,
       lastProviderUpdateLog: DEFAULT_RESULT.lastProviderUpdateLog,
       lastProviderUpdateAt: DEFAULT_RESULT.lastProviderUpdateAt,
+      lastProviderReceivedAt: DEFAULT_RESULT.lastProviderReceivedAt,
       lastProviderUpdateEvent: DEFAULT_RESULT.lastProviderUpdateEvent,
       lastProviderUpdateStatus: DEFAULT_RESULT.lastProviderUpdateStatus,
     };
@@ -606,6 +620,9 @@ function useRealtimeFeed({
     lastProviderUpdateAt:
       visibleState?.lastProviderUpdateAt ??
       DEFAULT_RESULT.lastProviderUpdateAt,
+    lastProviderReceivedAt:
+      visibleState?.lastProviderReceivedAt ??
+      DEFAULT_RESULT.lastProviderReceivedAt,
     lastProviderUpdateEvent:
       visibleState?.lastProviderUpdateEvent ??
       DEFAULT_RESULT.lastProviderUpdateEvent,
@@ -613,6 +630,18 @@ function useRealtimeFeed({
       visibleState?.lastProviderUpdateStatus ??
       DEFAULT_RESULT.lastProviderUpdateStatus,
   };
+}
+
+function prevCandleTime(
+  getPrev: (
+    prev: Pick<RealtimeFeedState, "lastProviderUpdateAt">
+  ) => string
+): string | undefined {
+  try {
+    return getPrev({ lastProviderUpdateAt: "-" });
+  } catch {
+    return undefined;
+  }
 }
 
 export default useRealtimeFeed;
