@@ -52,6 +52,26 @@ function normalizeTimeframe(value: unknown): string {
   return aliases[normalized] ?? normalized;
 }
 
+function normalizeIsoString(value: unknown): string {
+  if (typeof value !== "string") return "";
+
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) {
+    return value.trim();
+  }
+
+  return new Date(parsed).toISOString();
+}
+
+function candleTimestamp(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function candleKey(item: { open_time: string }): string {
+  return String(candleTimestamp(item.open_time));
+}
+
 function timeframeToWindowMs(
   timeframe: string,
   mode: "full" | "incremental"
@@ -106,16 +126,23 @@ function normalizeCandleItem(item: unknown): CandleItem | null {
     return null;
   }
 
+  const normalizedOpenTime = normalizeIsoString(candidate.open_time);
+  const normalizedCloseTime = normalizeIsoString(
+    typeof candidate.close_time === "string"
+      ? candidate.close_time
+      : candidate.open_time
+  );
+
   return {
-    id: typeof candidate.id === "string" ? candidate.id : candidate.open_time,
+    id:
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id
+        : normalizedOpenTime,
     asset_id: typeof candidate.asset_id === "string" ? candidate.asset_id : null,
     symbol: normalizeSymbol(candidate.symbol),
     timeframe: normalizeTimeframe(candidate.timeframe),
-    open_time: candidate.open_time,
-    close_time:
-      typeof candidate.close_time === "string"
-        ? candidate.close_time
-        : candidate.open_time,
+    open_time: normalizedOpenTime,
+    close_time: normalizedCloseTime || normalizedOpenTime,
     open: String(candidate.open ?? "0"),
     high: String(candidate.high ?? "0"),
     low: String(candidate.low ?? "0"),
@@ -139,20 +166,38 @@ function normalizeCandleItem(item: unknown): CandleItem | null {
 
 function sortCandles(items: CandleItem[]): CandleItem[] {
   return [...items].sort((a, b) => {
-    const left = new Date(a.open_time).getTime();
-    const right = new Date(b.open_time).getTime();
-    return left - right;
+    return candleTimestamp(a.open_time) - candleTimestamp(b.open_time);
   });
 }
 
 function dedupeCandlesByOpenTime(items: CandleItem[]): CandleItem[] {
   const map = new Map<string, CandleItem>();
+  let duplicatesRemoved = 0;
 
   for (const item of items) {
-    map.set(item.open_time, item);
+    const key = candleKey(item);
+
+    if (map.has(key)) {
+      duplicatesRemoved += 1;
+    }
+
+    map.set(key, item);
   }
 
-  return sortCandles(Array.from(map.values()));
+  const deduped = sortCandles(Array.from(map.values()));
+
+  if (duplicatesRemoved > 0) {
+    console.warn("[HTTP] candles duplicados removidos no useCandles()", {
+      totalRaw: items.length,
+      totalDeduped: deduped.length,
+      duplicatesRemoved,
+      duplicatedTimes: items
+        .map((item) => candleTimestamp(item.open_time))
+        .filter((time, index, array) => array.indexOf(time) !== index),
+    });
+  }
+
+  return deduped;
 }
 
 function mergeCandles(
@@ -210,11 +255,11 @@ function buildCoverageMeta(
     end_at: typeof payload?.end_at === "string" ? payload.end_at : endAt,
     first_open_time:
       typeof payload?.first_open_time === "string" && payload.first_open_time
-        ? payload.first_open_time
+        ? normalizeIsoString(payload.first_open_time)
         : derived.firstOpenTime,
     last_close_time:
       typeof payload?.last_close_time === "string" && payload.last_close_time
-        ? payload.last_close_time
+        ? normalizeIsoString(payload.last_close_time)
         : derived.lastCloseTime,
   };
 }
@@ -302,13 +347,17 @@ function extractErrorMessage(status: number, payloadText: string): string {
       return parsed.message;
     }
   } catch {
-    // ignora
+    // ignora parse inválido
   }
 
-  return text || `HTTP ${status}`;
+  if (text) {
+    return text;
+  }
+
+  return `HTTP ${status}`;
 }
 
-function isQuotaError(status: number, message: string): boolean {
+function isQuotaExceededError(status: number, message: string): boolean {
   const normalized = String(message ?? "").toLowerCase();
 
   return (
@@ -399,6 +448,15 @@ function useCandles({
         if (!response.ok) {
           const payloadText = await response.text();
           const message = extractErrorMessage(response.status, payloadText);
+
+          if (isQuotaExceededError(response.status, message)) {
+            const suffix =
+              candlesRef.current.length > 0
+                ? " Último candle mantido localmente."
+                : "";
+            throw new Error(`Offline por quota do provider. ${message}${suffix}`);
+          }
+
           throw new Error(message || `HTTP ${response.status}`);
         }
 
@@ -444,7 +502,7 @@ function useCandles({
         return {
           items: [],
           coverageMeta: coverageMetaRef.current,
-          preserveExisting: isQuotaError(429, message),
+          preserveExisting: isQuotaExceededError(429, message),
         };
       } finally {
         if (activeRequestKeyRef.current === `${symbol}::${timeframe}`) {
