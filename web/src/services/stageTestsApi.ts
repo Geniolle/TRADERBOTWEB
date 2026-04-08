@@ -4,20 +4,53 @@ import type {
   StageTestRunResponse,
 } from "../types/stageTests";
 
-const API_BASE =
-  (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
+type ErrorPayload = {
+  detail?: string;
+};
+
+type ImportMetaEnvLike = {
+  VITE_API_BASE_URL?: string;
+};
+
+type ImportMetaLike = {
+  env?: ImportMetaEnvLike;
+};
+
+function getApiBase(): string {
+  const meta = import.meta as ImportMetaLike;
+  const rawBase = meta.env?.VITE_API_BASE_URL?.trim();
+
+  if (!rawBase) {
+    return "http://127.0.0.1:8000";
+  }
+
+  return rawBase.replace(/\/$/, "");
+}
+
+const API_BASE = getApiBase();
 
 async function handleResponse<T>(response: Response): Promise<T> {
-  const contentType = response.headers.get("content-type") || "";
+  const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
 
-  const payload = isJson ? await response.json() : await response.text();
+  const payload: unknown = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const detail =
-      typeof payload === "string"
-        ? payload
-        : payload?.detail || "Erro inesperado na API";
+    let detail = "Erro inesperado na API";
+
+    if (typeof payload === "string" && payload.trim()) {
+      detail = payload;
+    } else if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "detail" in payload
+    ) {
+      const errorPayload = payload as ErrorPayload;
+      if (typeof errorPayload.detail === "string" && errorPayload.detail.trim()) {
+        detail = errorPayload.detail;
+      }
+    }
+
     throw new Error(detail);
   }
 
@@ -28,7 +61,7 @@ export async function fetchStageTestOptions(
   minCandles = 1
 ): Promise<StageTestOptionsResponse> {
   const response = await fetch(
-    `${API_BASE}/api/stage-tests/options?min_candles=${minCandles}`,
+    `${API_BASE}/api/v1/stage-tests/options?min_candles=${minCandles}`,
     {
       method: "GET",
     }
@@ -40,7 +73,7 @@ export async function fetchStageTestOptions(
 export async function runStageTest(
   payload: StageTestRunRequest
 ): Promise<StageTestRunResponse> {
-  const response = await fetch(`${API_BASE}/api/stage-tests/run`, {
+  const response = await fetch(`${API_BASE}/api/v1/stage-tests/run`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
