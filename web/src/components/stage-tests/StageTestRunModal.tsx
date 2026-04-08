@@ -21,6 +21,11 @@ type Props = {
 
 const REFRESH_MS = 15000;
 
+function fmtPct(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "-";
+  return `${value.toFixed(2)}%`;
+}
+
 export default function StageTestRunModal({ open, onClose }: Props) {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [running, setRunning] = useState(false);
@@ -238,7 +243,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
             value={extraArgsText}
             onChange={(e) => setExtraArgsText(e.target.value)}
             style={inputStyle}
-            placeholder="--from 2026-04-01 --to 2026-04-08"
+            placeholder="--rsi_period 14 --target_percent 0.15"
           />
         </label>
 
@@ -267,8 +272,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
               <strong>Key:</strong> {selectedStrategy.key}
             </div>
             <div>
-              <strong>Descrição:</strong>{" "}
-              {selectedStrategy.description || "-"}
+              <strong>Descrição:</strong> {selectedStrategy.description || "-"}
             </div>
           </div>
         )}
@@ -322,9 +326,62 @@ export default function StageTestRunModal({ open, onClose }: Props) {
               <div>
                 <strong>Return code:</strong> {runResult.return_code}
               </div>
-              <div>
-                <strong>Strategy:</strong> {runResult.strategy}
-              </div>
+
+              {runResult.metrics && (
+                <div style={metricsBoxStyle}>
+                  <div>
+                    <strong>Strategy class:</strong>{" "}
+                    {runResult.metrics.strategy_class}
+                  </div>
+                  <div>
+                    <strong>Runtime strategy:</strong>{" "}
+                    {runResult.metrics.runtime_strategy}
+                  </div>
+                  <div>
+                    <strong>Total candles:</strong>{" "}
+                    {runResult.metrics.total_candles}
+                  </div>
+                  <div>
+                    <strong>Warmup:</strong> {runResult.metrics.warmup}
+                  </div>
+                  <div>
+                    <strong>Triggers:</strong> {runResult.metrics.triggers}
+                  </div>
+                  <div>
+                    <strong>Closed cases:</strong>{" "}
+                    {runResult.metrics.closed_cases}
+                  </div>
+                  <div>
+                    <strong>Hits:</strong> {runResult.metrics.hits}
+                  </div>
+                  <div>
+                    <strong>Fails:</strong> {runResult.metrics.fails}
+                  </div>
+                  <div>
+                    <strong>Timeouts:</strong> {runResult.metrics.timeouts}
+                  </div>
+                  <div>
+                    <strong>Hit rate:</strong>{" "}
+                    {fmtPct(runResult.metrics.hit_rate)}
+                  </div>
+                  <div>
+                    <strong>Fail rate:</strong>{" "}
+                    {fmtPct(runResult.metrics.fail_rate)}
+                  </div>
+                  <div>
+                    <strong>Timeout rate:</strong>{" "}
+                    {fmtPct(runResult.metrics.timeout_rate)}
+                  </div>
+                  <div>
+                    <strong>Primeiro candle:</strong>{" "}
+                    {runResult.metrics.first_candle || "-"}
+                  </div>
+                  <div>
+                    <strong>Último candle:</strong>{" "}
+                    {runResult.metrics.last_candle || "-"}
+                  </div>
+                </div>
+              )}
 
               <div style={{ marginTop: 12 }}>
                 <strong>STDOUT</strong>
@@ -405,6 +462,16 @@ const infoBoxStyle: CSSProperties = {
 };
 
 const summaryBoxStyle: CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  background: "#0b1220",
+  border: "1px solid #1e293b",
+  display: "grid",
+  gap: 6,
+};
+
+const metricsBoxStyle: CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,

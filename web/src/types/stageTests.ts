@@ -31,6 +31,25 @@ export type StageTestRunRequest = {
   extra_args: string[];
 };
 
+export type StageTestMetrics = {
+  strategy_class: string;
+  runtime_strategy: string;
+  total_candles: number;
+  warmup: number;
+  triggers: number;
+  open_cases_final: number;
+  closed_cases: number;
+  hits: number;
+  fails: number;
+  timeouts: number;
+  others: number;
+  hit_rate: number;
+  fail_rate: number;
+  timeout_rate: number;
+  first_candle: string | null;
+  last_candle: string | null;
+};
+
 export type StageTestRunResponse = {
   ok: boolean;
   command: string[];
@@ -40,4 +59,5 @@ export type StageTestRunResponse = {
   stdout: string;
   stderr: string;
   return_code: number;
+  metrics: StageTestMetrics | null;
 };
