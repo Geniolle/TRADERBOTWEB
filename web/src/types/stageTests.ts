@@ -1,12 +1,24 @@
+// C:\TraderBotWeb\web\src\types\stageTests.ts
+// Backend:
+// - GET  /api/v1/stage-tests/options
+// - POST /api/v1/stage-tests/run
+
+export type StageTestStrategyOption = {
+  key: string;
+  label: string;
+  description: string | null;
+};
+
 export type StageTestOptionItem = {
   symbol: string;
   timeframe: string;
   candles_count: number;
-  first_candle: string;
-  last_candle: string;
+  first_candle: string | null;
+  last_candle: string | null;
 };
 
 export type StageTestOptionsResponse = {
+  strategies: StageTestStrategyOption[];
   items: StageTestOptionItem[];
   refreshed_at: string;
 };

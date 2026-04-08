@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+// C:\TraderBotWeb\web\src\components\stage-tests\StageTestRunModal.tsx
+// Backend:
+// - GET  /api/v1/stage-tests/options
+// - POST /api/v1/stage-tests/run
+
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   fetchStageTestOptions,
   runStageTest,
@@ -6,6 +11,7 @@ import {
 import type {
   StageTestOptionItem,
   StageTestRunResponse,
+  StageTestStrategyOption,
 } from "../../types/stageTests";
 
 type Props = {
@@ -18,14 +24,17 @@ const REFRESH_MS = 15000;
 export default function StageTestRunModal({ open, onClose }: Props) {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [running, setRunning] = useState(false);
+
   const [items, setItems] = useState<StageTestOptionItem[]>([]);
+  const [strategies, setStrategies] = useState<StageTestStrategyOption[]>([]);
   const [refreshedAt, setRefreshedAt] = useState<string>("");
+
   const [error, setError] = useState<string>("");
   const [runResult, setRunResult] = useState<StageTestRunResponse | null>(null);
 
   const [symbol, setSymbol] = useState("");
   const [timeframe, setTimeframe] = useState("");
-  const [strategy, setStrategy] = useState("default");
+  const [strategy, setStrategy] = useState("");
   const [minCandles, setMinCandles] = useState<number>(1);
   const [extraArgsText, setExtraArgsText] = useState("");
 
@@ -33,8 +42,11 @@ export default function StageTestRunModal({ open, onClose }: Props) {
     try {
       setLoadingOptions(true);
       setError("");
+
       const data = await fetchStageTestOptions(minCandles);
+
       setItems(data.items);
+      setStrategies(data.strategies);
       setRefreshedAt(data.refreshed_at);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar opções");
@@ -46,21 +58,24 @@ export default function StageTestRunModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
 
-    loadOptions();
+    void loadOptions();
 
     const timer = window.setInterval(() => {
-      loadOptions();
+      void loadOptions();
     }, REFRESH_MS);
 
     return () => window.clearInterval(timer);
   }, [open, minCandles]);
 
   const symbols = useMemo(() => {
-    return Array.from(new Set(items.map((item) => item.symbol))).sort();
+    return Array.from(new Set(items.map((item) => item.symbol))).sort((a, b) =>
+      a.localeCompare(b)
+    );
   }, [items]);
 
   useEffect(() => {
     if (!open) return;
+
     if (!symbols.length) {
       setSymbol("");
       return;
@@ -80,6 +95,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
 
   useEffect(() => {
     if (!open) return;
+
     if (!timeframesForSelectedSymbol.length) {
       setTimeframe("");
       return;
@@ -90,11 +106,30 @@ export default function StageTestRunModal({ open, onClose }: Props) {
     }
   }, [open, timeframesForSelectedSymbol, timeframe]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    if (!strategies.length) {
+      setStrategy("");
+      return;
+    }
+
+    const strategyExists = strategies.some((item) => item.key === strategy);
+
+    if (!strategy || !strategyExists) {
+      setStrategy(strategies[0].key);
+    }
+  }, [open, strategies, strategy]);
+
   const selectedItem = useMemo(() => {
     return items.find(
       (item) => item.symbol === symbol && item.timeframe === timeframe
     );
   }, [items, symbol, timeframe]);
+
+  const selectedStrategy = useMemo(() => {
+    return strategies.find((item) => item.key === strategy) ?? null;
+  }, [strategies, strategy]);
 
   async function handleRun() {
     if (!symbol || !timeframe || !strategy) return;
@@ -119,7 +154,9 @@ export default function StageTestRunModal({ open, onClose }: Props) {
 
       setRunResult(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao executar stage test");
+      setError(
+        err instanceof Error ? err.message : "Erro ao executar stage test"
+      );
     } finally {
       setRunning(false);
     }
@@ -169,13 +206,18 @@ export default function StageTestRunModal({ open, onClose }: Props) {
           </label>
 
           <label style={fieldStyle}>
-            <span>Strategy</span>
-            <input
+            <span>Estratégia</span>
+            <select
               value={strategy}
               onChange={(e) => setStrategy(e.target.value)}
               style={inputStyle}
-              placeholder="default"
-            />
+            >
+              {strategies.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label style={fieldStyle}>
@@ -203,15 +245,33 @@ export default function StageTestRunModal({ open, onClose }: Props) {
         <div style={infoBoxStyle}>
           <div>
             <strong>Atualizado:</strong>{" "}
-            {refreshedAt ? new Date(refreshedAt).toLocaleString() : "-"}
+            {refreshedAt ? new Date(refreshedAt).toLocaleString("pt-PT") : "-"}
           </div>
           <div>
-            <strong>Total de opções:</strong> {items.length}
+            <strong>Total de combinações:</strong> {items.length}
+          </div>
+          <div>
+            <strong>Total de estratégias:</strong> {strategies.length}
           </div>
           <div>
             <strong>Carregando:</strong> {loadingOptions ? "Sim" : "Não"}
           </div>
         </div>
+
+        {selectedStrategy && (
+          <div style={summaryBoxStyle}>
+            <div>
+              <strong>Estratégia:</strong> {selectedStrategy.label}
+            </div>
+            <div>
+              <strong>Key:</strong> {selectedStrategy.key}
+            </div>
+            <div>
+              <strong>Descrição:</strong>{" "}
+              {selectedStrategy.description || "-"}
+            </div>
+          </div>
+        )}
 
         {selectedItem && (
           <div style={summaryBoxStyle}>
@@ -223,10 +283,10 @@ export default function StageTestRunModal({ open, onClose }: Props) {
               <strong>Candles:</strong> {selectedItem.candles_count}
             </div>
             <div>
-              <strong>Primeiro:</strong> {selectedItem.first_candle}
+              <strong>Primeiro:</strong> {selectedItem.first_candle || "-"}
             </div>
             <div>
-              <strong>Último:</strong> {selectedItem.last_candle}
+              <strong>Último:</strong> {selectedItem.last_candle || "-"}
             </div>
           </div>
         )}
@@ -234,12 +294,12 @@ export default function StageTestRunModal({ open, onClose }: Props) {
         {error && <div style={errorStyle}>{error}</div>}
 
         <div style={actionsStyle}>
-          <button onClick={loadOptions} style={secondaryButtonStyle}>
+          <button onClick={() => void loadOptions()} style={secondaryButtonStyle}>
             Atualizar lista
           </button>
 
           <button
-            onClick={handleRun}
+            onClick={() => void handleRun()}
             disabled={running || !symbol || !timeframe || !strategy}
             style={primaryButtonStyle}
           >
@@ -262,6 +322,9 @@ export default function StageTestRunModal({ open, onClose }: Props) {
               <div>
                 <strong>Return code:</strong> {runResult.return_code}
               </div>
+              <div>
+                <strong>Strategy:</strong> {runResult.strategy}
+              </div>
 
               <div style={{ marginTop: 12 }}>
                 <strong>STDOUT</strong>
@@ -280,7 +343,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
   );
 }
 
-const overlayStyle: React.CSSProperties = {
+const overlayStyle: CSSProperties = {
   position: "fixed",
   inset: 0,
   background: "rgba(0,0,0,0.55)",
@@ -291,7 +354,7 @@ const overlayStyle: React.CSSProperties = {
   padding: 24,
 };
 
-const modalStyle: React.CSSProperties = {
+const modalStyle: CSSProperties = {
   width: "100%",
   maxWidth: 960,
   maxHeight: "90vh",
@@ -303,26 +366,26 @@ const modalStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-const headerStyle: React.CSSProperties = {
+const headerStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   marginBottom: 16,
 };
 
-const gridStyle: React.CSSProperties = {
+const gridStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   gap: 12,
 };
 
-const fieldStyle: React.CSSProperties = {
+const fieldStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 6,
 };
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   height: 40,
   borderRadius: 10,
   border: "1px solid #334155",
@@ -331,7 +394,7 @@ const inputStyle: React.CSSProperties = {
   padding: "0 12px",
 };
 
-const infoBoxStyle: React.CSSProperties = {
+const infoBoxStyle: CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,
@@ -341,7 +404,7 @@ const infoBoxStyle: React.CSSProperties = {
   gap: 6,
 };
 
-const summaryBoxStyle: React.CSSProperties = {
+const summaryBoxStyle: CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,
@@ -351,14 +414,14 @@ const summaryBoxStyle: React.CSSProperties = {
   gap: 6,
 };
 
-const actionsStyle: React.CSSProperties = {
+const actionsStyle: CSSProperties = {
   marginTop: 16,
   display: "flex",
   justifyContent: "flex-end",
   gap: 12,
 };
 
-const primaryButtonStyle: React.CSSProperties = {
+const primaryButtonStyle: CSSProperties = {
   height: 40,
   padding: "0 16px",
   borderRadius: 10,
@@ -368,7 +431,7 @@ const primaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   height: 40,
   padding: "0 16px",
   borderRadius: 10,
@@ -378,11 +441,11 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const closeButtonStyle: React.CSSProperties = {
+const closeButtonStyle: CSSProperties = {
   ...secondaryButtonStyle,
 };
 
-const errorStyle: React.CSSProperties = {
+const errorStyle: CSSProperties = {
   marginTop: 12,
   padding: 12,
   borderRadius: 12,
@@ -391,7 +454,7 @@ const errorStyle: React.CSSProperties = {
   color: "#fecaca",
 };
 
-const resultBoxStyle: React.CSSProperties = {
+const resultBoxStyle: CSSProperties = {
   marginTop: 18,
   padding: 12,
   borderRadius: 12,
@@ -399,7 +462,7 @@ const resultBoxStyle: React.CSSProperties = {
   border: "1px solid #1f2937",
 };
 
-const preStyle: React.CSSProperties = {
+const preStyle: CSSProperties = {
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
   padding: 12,

@@ -1,3 +1,8 @@
+// C:\TraderBotWeb\web\src\services\stageTestsApi.ts
+// Backend:
+// - GET  /api/v1/stage-tests/options
+// - POST /api/v1/stage-tests/run
+
 import type {
   StageTestOptionsResponse,
   StageTestRunRequest,

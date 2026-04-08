@@ -1,8 +1,17 @@
-// web/src/hooks/useStageTests.ts
+// C:\TraderBotWeb\web\src\hooks\useStageTests.ts
+// Backend:
+// - GET /api/v1/stage-tests/options
+//
+// Observação:
+// Este hook deixa de chamar a rota antiga /stage-tests e passa a consumir
+// diretamente o catálogo oficial do backend.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-import { API_HTTP_BASE_URL } from "../constants/config";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchStageTestOptions } from "../services/stageTestsApi";
+import type {
+  StageTestOptionItem,
+  StageTestStrategyOption,
+} from "../types/stageTests";
 import type { CandleTickState, StageTestSummaryItem } from "../types/trading";
 
 type UseStageTestsParams = {
@@ -36,85 +45,6 @@ type UseStageTestsResult = {
   clearRuns: () => Promise<void>;
 };
 
-type VisualStageStrategyDefinition = {
-  id: string;
-  title: string;
-  category: string | null;
-  description: string | null;
-  aliases: string[];
-};
-
-const ENABLE_AUTO_RUNS = false;
-
-const VISUAL_STAGE_STRATEGIES: VisualStageStrategyDefinition[] = [
-  {
-    id: "pullback",
-    title: "Pullback",
-    category: "trend_following",
-    description:
-      "Compra ou venda em recuo até as médias, respeitando o contexto direcional principal.",
-    aliases: ["pullback"],
-  },
-  {
-    id: "moving_average_crossover",
-    title: "Cruzamento de Médias",
-    category: "trend_following",
-    description:
-      "Seguimento de tendência com base no cruzamento entre médias rápidas e confirmação estrutural.",
-    aliases: [
-      "moving_average_crossover",
-      "ema_crossover",
-      "ma_crossover",
-      "cross_moving_averages",
-    ],
-  },
-  {
-    id: "range_breakout",
-    title: "Rompimento de Range",
-    category: "breakout",
-    description:
-      "Entrada após libertação de energia de uma lateralização ou pequeno caixote.",
-    aliases: ["range_breakout", "breakout_range"],
-  },
-  {
-    id: "volatility_breakout",
-    title: "Rompimento de Volatilidade",
-    category: "breakout",
-    description:
-      "Breakout após compressão de volatilidade, normalmente em contexto de squeeze.",
-    aliases: [
-      "volatility_breakout",
-      "breakout_volatility",
-      "bollinger_walk_the_band",
-      "bollinger_band_walk",
-    ],
-  },
-  {
-    id: "mean_reversion",
-    title: "Reversão à Média",
-    category: "mean_reversion",
-    description:
-      "Operação contra esticão, procurando apenas o retorno técnico do preço à média.",
-    aliases: [
-      "mean_reversion",
-      "bollinger_reversal",
-      "bollinger_reversion",
-    ],
-  },
-  {
-    id: "fade",
-    title: "Fade",
-    category: "countertrend",
-    description:
-      "Scalp contra esticão de curtíssimo prazo, normalmente procurando apenas alívio técnico.",
-    aliases: ["fade"],
-  },
-];
-
-function toIsoWithoutMilliseconds(date: Date): string {
-  return date.toISOString().split(".")[0];
-}
-
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
@@ -123,99 +53,76 @@ function formatDateTime(value: Date): string {
   return value.toLocaleString("pt-PT");
 }
 
-function createEmptyStageTestItem(
-  definition: VisualStageStrategyDefinition
+function findMatchingItems(
+  items: StageTestOptionItem[],
+  selectedSymbol: string,
+  selectedTimeframe: string
+): StageTestOptionItem[] {
+  const normalizedSymbol = normalizeText(selectedSymbol);
+  const normalizedTimeframe = normalizeText(selectedTimeframe);
+
+  if (!normalizedSymbol && !normalizedTimeframe) {
+    return items;
+  }
+
+  return items.filter((item) => {
+    const itemSymbol = normalizeText(item.symbol);
+    const itemTimeframe = normalizeText(item.timeframe);
+
+    const matchesSymbol = !normalizedSymbol || itemSymbol === normalizedSymbol;
+    const matchesTimeframe =
+      !normalizedTimeframe || itemTimeframe === normalizedTimeframe;
+
+    return matchesSymbol && matchesTimeframe;
+  });
+}
+
+function createSummaryItem(
+  strategy: StageTestStrategyOption,
+  items: StageTestOptionItem[],
+  selectedSymbol: string,
+  selectedTimeframe: string
 ): StageTestSummaryItem {
+  const matchedItems = findMatchingItems(items, selectedSymbol, selectedTimeframe);
+  const firstMatch = matchedItems[0] ?? null;
+  const totalCandles = matchedItems.reduce(
+    (sum, item) => sum + Number(item.candles_count || 0),
+    0
+  );
+
   return {
-    strategy_key: definition.id,
-    strategy_name: definition.title,
-    strategy_description: definition.description,
-    strategy_category: definition.category,
+    strategy_key: strategy.key,
+    strategy_name: strategy.label,
+    strategy_description: strategy.description,
+    strategy_category: null,
     total_runs: 0,
-    total_cases: 0,
+    total_cases: totalCandles,
     total_hits: 0,
     total_fails: 0,
     total_timeouts: 0,
     hit_rate: 0,
     fail_rate: 0,
     timeout_rate: 0,
-    last_run: null,
-  };
+    last_run: firstMatch
+      ? {
+          run_id: "",
+          symbol: firstMatch.symbol,
+          timeframe: firstMatch.timeframe,
+          status: "ready",
+        }
+      : null,
+  } as StageTestSummaryItem;
 }
 
-function findMatchingBackendStageTest(
-  backendItems: StageTestSummaryItem[],
-  definition: VisualStageStrategyDefinition
-): StageTestSummaryItem | null {
-  const aliasSet = new Set(
-    definition.aliases.map((alias) => normalizeText(alias))
-  );
-
-  for (const item of backendItems) {
-    const normalizedKey = normalizeText(item.strategy_key);
-    const normalizedName = normalizeText(item.strategy_name);
-
-    if (aliasSet.has(normalizedKey) || aliasSet.has(normalizedName)) {
-      return item;
-    }
-  }
-
-  return null;
-}
-
-function mergeVisualStrategiesWithBackendStageTests(
-  backendItems: StageTestSummaryItem[]
-): StageTestSummaryItem[] {
-  return VISUAL_STAGE_STRATEGIES.map((definition) => {
-    const backendMatch = findMatchingBackendStageTest(backendItems, definition);
-
-    if (!backendMatch) {
-      return createEmptyStageTestItem(definition);
-    }
-
-    return {
-      ...backendMatch,
-      strategy_key: definition.id,
-      strategy_name: definition.title,
-      strategy_description:
-        backendMatch.strategy_description || definition.description,
-      strategy_category:
-        backendMatch.strategy_category || definition.category,
-    };
-  });
-}
-
-function buildBatchStrategiesPayload() {
-  return VISUAL_STAGE_STRATEGIES.map((strategy) => ({
-    strategy_key: strategy.id,
-    parameters: {
-      rsi_period: 14,
-      bollinger_period: 20,
-      bollinger_stddev: 2,
-      atr_period: 14,
-      ema_short_period: 9,
-      ema_long_period: 21,
-      target_percent: 0.15,
-      stop_percent: 0.1,
-    },
-    timeout_bars: 12,
-  }));
-}
-
-function buildAutoExecutionKey(
+function buildStageTestSummaryItems(
+  strategies: StageTestStrategyOption[],
+  items: StageTestOptionItem[],
   selectedSymbol: string,
-  selectedTimeframe: string,
-  lastCandleTick: CandleTickState
-): string {
-  if (!selectedSymbol || !selectedTimeframe || !lastCandleTick?.open_time) {
-    return "";
-  }
-
-  return [
-    normalizeText(selectedSymbol),
-    normalizeText(selectedTimeframe),
-    normalizeText(lastCandleTick.open_time),
-  ].join("::");
+  selectedTimeframe: string
+): StageTestSummaryItem[] {
+  return strategies.map((strategy) =>
+    createSummaryItem(strategy, items, selectedSymbol, selectedTimeframe)
+  );
 }
 
 function useStageTests({
@@ -230,59 +137,55 @@ function useStageTests({
   const [runsError, setRunsError] = useState("");
   const [actionError, setActionError] = useState("");
   const [isClearingRuns, setIsClearingRuns] = useState(false);
-  const [isCreatingRuns, setIsCreatingRuns] = useState(false);
+  const [isCreatingRuns] = useState(false);
   const [lastExecutionLog, setLastExecutionLog] = useState(
-    ENABLE_AUTO_RUNS
-      ? "A aguardar seleção de símbolo e timeframe."
-      : "Execução automática desativada para depuração do gráfico."
+    "Stage Tests sincronizado com o catálogo oficial do backend."
   );
   const [lastExecutionStatus, setLastExecutionStatus] =
-    useState<ExecutionLogStatus>(ENABLE_AUTO_RUNS ? "idle" : "waiting");
-
-  const lastAutoExecutionKeyRef = useRef<string>("");
+    useState<ExecutionLogStatus>("waiting");
 
   const loadStageTests = useCallback(async () => {
     try {
       setLoadingRuns(true);
       setRunsError("");
 
-      const response = await fetch(`${API_HTTP_BASE_URL}/stage-tests`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      const data = await fetchStageTestOptions(1);
 
-      const data: StageTestSummaryItem[] = await response.json();
-      const mergedStageTests = mergeVisualStrategiesWithBackendStageTests(data);
+      const summaryItems = buildStageTestSummaryItems(
+        data.strategies,
+        data.items,
+        selectedSymbol,
+        selectedTimeframe
+      );
 
-      setStageTests(mergedStageTests);
+      setStageTests(summaryItems);
+      setSelectedRunId("");
 
-      setSelectedRunId((previousSelectedRunId) => {
-        const stillExists = mergedStageTests.some(
-          (item) => item.last_run?.run_id === previousSelectedRunId
-        );
-        if (stillExists) {
-          return previousSelectedRunId;
-        }
+      const candleLabel = lastCandleTick?.open_time
+        ? ` | Candle=${lastCandleTick.open_time}`
+        : "";
 
-        const firstWithRun = mergedStageTests.find((item) => item.last_run?.run_id);
-        return firstWithRun?.last_run?.run_id ?? "";
-      });
+      setLastExecutionStatus("success");
+      setLastExecutionLog(
+        `Stage Tests carregado em ${formatDateTime(new Date())} | Estratégias=${data.strategies.length} | Combinações=${data.items.length} | Símbolo=${selectedSymbol || "-"} | Timeframe=${selectedTimeframe || "-"}${candleLabel}`
+      );
     } catch (err) {
-      setRunsError(
+      const message =
         err instanceof Error
           ? err.message
-          : "Erro desconhecido ao carregar Stage Testes"
-      );
-      setStageTests(
-        VISUAL_STAGE_STRATEGIES.map((definition) =>
-          createEmptyStageTestItem(definition)
-        )
-      );
+          : "Erro desconhecido ao carregar Stage Testes";
+
+      setRunsError(message);
+      setStageTests([]);
       setSelectedRunId("");
+      setLastExecutionStatus("error");
+      setLastExecutionLog(
+        `Falha ao carregar Stage Tests em ${formatDateTime(new Date())}: ${message}`
+      );
     } finally {
       setLoadingRuns(false);
     }
-  }, []);
+  }, [selectedSymbol, selectedTimeframe, lastCandleTick]);
 
   useEffect(() => {
     void loadStageTests();
@@ -293,18 +196,9 @@ function useStageTests({
       setIsClearingRuns(true);
       setActionError("");
 
-      const response = await fetch(`${API_HTTP_BASE_URL}/run-history`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      await loadStageTests();
-      setLastExecutionStatus(ENABLE_AUTO_RUNS ? "idle" : "waiting");
+      setLastExecutionStatus("waiting");
       setLastExecutionLog(
-        `Runs limpos manualmente em ${formatDateTime(new Date())}.`
+        "A ação 'Limpar runs' deixou de atuar localmente nesta secção. O catálogo agora vem do backend."
       );
     } catch (err) {
       const message =
@@ -317,147 +211,7 @@ function useStageTests({
     } finally {
       setIsClearingRuns(false);
     }
-  }, [loadStageTests]);
-
-  const createRuns = useCallback(async () => {
-    try {
-      setIsCreatingRuns(true);
-      setActionError("");
-      setLastExecutionStatus("running");
-
-      if (!selectedSymbol || !selectedTimeframe) {
-        throw new Error("Selecione símbolo e timeframe antes de criar os runs.");
-      }
-
-      const executionStartedAt = new Date();
-
-      setLastExecutionLog(
-        `Execução automática iniciada em ${formatDateTime(
-          executionStartedAt
-        )} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Candle=${
-          lastCandleTick?.open_time ?? "-"
-        }`
-      );
-
-      const endAt = new Date();
-      const startAt = new Date(endAt.getTime() - 1000 * 60 * 60 * 24 * 2);
-
-      const payload = {
-        symbol: selectedSymbol,
-        timeframe: selectedTimeframe,
-        start_at: toIsoWithoutMilliseconds(startAt),
-        end_at: toIsoWithoutMilliseconds(endAt),
-        strategies: buildBatchStrategiesPayload(),
-      };
-
-      const response = await fetch(`${API_HTTP_BASE_URL}/batch-runs/historical`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const result = await response.json();
-      await loadStageTests();
-
-      const firstCreatedRunId =
-        Array.isArray(result?.results) && result.results.length > 0
-          ? result.results[0]?.run?.id ?? ""
-          : "";
-
-      const createdCount = Array.isArray(result?.results)
-        ? result.results.length
-        : 0;
-
-      if (firstCreatedRunId) {
-        setSelectedRunId(firstCreatedRunId);
-      }
-
-      setLastExecutionStatus("success");
-      setLastExecutionLog(
-        `Última execução automática concluída em ${formatDateTime(
-          new Date()
-        )} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Candle=${
-          lastCandleTick?.open_time ?? "-"
-        } | Estratégias enviadas=${createdCount}`
-      );
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Erro desconhecido ao criar runs";
-      setActionError(message);
-      setLastExecutionStatus("error");
-      setLastExecutionLog(
-        `Falha na execução automática em ${formatDateTime(
-          new Date()
-        )} | Símbolo=${selectedSymbol || "-"} | Timeframe=${
-          selectedTimeframe || "-"
-        } | Candle=${lastCandleTick?.open_time ?? "-"} | Erro=${message}`
-      );
-    } finally {
-      setIsCreatingRuns(false);
-    }
-  }, [selectedSymbol, selectedTimeframe, lastCandleTick, loadStageTests]);
-
-  useEffect(() => {
-    if (!ENABLE_AUTO_RUNS) {
-      setLastExecutionStatus("waiting");
-      setLastExecutionLog(
-        "Execução automática desativada para depuração do gráfico."
-      );
-      return;
-    }
-
-    if (!selectedSymbol || !selectedTimeframe) {
-      setLastExecutionStatus("idle");
-      setLastExecutionLog("A aguardar seleção de símbolo e timeframe.");
-      return;
-    }
-
-    if (!lastCandleTick?.open_time) {
-      setLastExecutionStatus("waiting");
-      setLastExecutionLog(
-        `A aguardar novo candle para ${selectedSymbol} em ${selectedTimeframe}.`
-      );
-      return;
-    }
-
-    const autoExecutionKey = buildAutoExecutionKey(
-      selectedSymbol,
-      selectedTimeframe,
-      lastCandleTick
-    );
-
-    if (!autoExecutionKey) {
-      return;
-    }
-
-    if (lastAutoExecutionKeyRef.current === autoExecutionKey) {
-      setLastExecutionStatus(isCreatingRuns ? "running" : "waiting");
-      setLastExecutionLog(
-        `Último candle já processado: ${lastCandleTick.open_time} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe}`
-      );
-      return;
-    }
-
-    if (isCreatingRuns || isClearingRuns) {
-      return;
-    }
-
-    lastAutoExecutionKeyRef.current = autoExecutionKey;
-    void createRuns();
-  }, [
-    selectedSymbol,
-    selectedTimeframe,
-    lastCandleTick,
-    isCreatingRuns,
-    isClearingRuns,
-    createRuns,
-  ]);
+  }, []);
 
   const filteredStageTests = useMemo(() => {
     const term = runSearch.trim().toLowerCase();

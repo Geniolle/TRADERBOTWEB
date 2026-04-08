@@ -1,4 +1,9 @@
-import { useState } from "react";
+// C:\TraderBotWeb\web\src\pages\StageTestsPage.tsx
+// Backend:
+// - GET  /api/v1/stage-tests/options
+// - POST /api/v1/stage-tests/run
+
+import { useState, type CSSProperties } from "react";
 import StageTestRunModal from "../components/stage-tests/StageTestRunModal";
 
 export default function StageTestsPage() {
@@ -10,7 +15,8 @@ export default function StageTestsPage() {
         <div>
           <h1 style={{ margin: 0 }}>Stage Testes</h1>
           <p style={{ marginTop: 8, color: "#94a3b8" }}>
-            Executa testes de estratégia usando os símbolos disponíveis no BD.
+            Executa testes de estratégia usando as estratégias, símbolos e
+            timeframes disponibilizados pelo backend.
           </p>
         </div>
 
@@ -22,6 +28,7 @@ export default function StageTestsPage() {
       <div style={cardStyle}>
         <h2 style={{ marginTop: 0 }}>Como funciona</h2>
         <div style={{ color: "#cbd5e1", lineHeight: 1.6 }}>
+          <div>• A lista de estratégias vem do backend.</div>
           <div>• A lista de símbolos e timeframes vem da tabela candles.</div>
           <div>• A lista atualiza automaticamente a cada 15 segundos.</div>
           <div>• Apenas combinações existentes no BD ficam disponíveis.</div>
@@ -34,12 +41,12 @@ export default function StageTestsPage() {
   );
 }
 
-const pageStyle: React.CSSProperties = {
+const pageStyle: CSSProperties = {
   padding: 24,
   color: "#e5e7eb",
 };
 
-const headerStyle: React.CSSProperties = {
+const headerStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
@@ -47,7 +54,7 @@ const headerStyle: React.CSSProperties = {
   marginBottom: 24,
 };
 
-const runButtonStyle: React.CSSProperties = {
+const runButtonStyle: CSSProperties = {
   height: 44,
   padding: "0 18px",
   borderRadius: 12,
@@ -58,7 +65,7 @@ const runButtonStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const cardStyle: React.CSSProperties = {
+const cardStyle: CSSProperties = {
   padding: 16,
   borderRadius: 16,
   background: "#0f172a",
