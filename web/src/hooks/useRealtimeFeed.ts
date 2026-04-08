@@ -158,6 +158,23 @@ function buildProviderUpdateLog(params: {
   return parts.join(" | ");
 }
 
+function candleTimestamp(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function candleKey(item: { open_time: string }): string {
+  return String(candleTimestamp(item.open_time));
+}
+
+function normalizeIncomingCandle(item: CandleItem): CandleItem {
+  return {
+    ...item,
+    symbol: normalizeSymbol(item.symbol),
+    timeframe: normalizeTimeframe(item.timeframe),
+  };
+}
+
 function mergeCandlesByOpenTime(
   previous: CandleItem[],
   incoming: CandleItem[]
@@ -169,15 +186,15 @@ function mergeCandlesByOpenTime(
   const map = new Map<string, CandleItem>();
 
   for (const item of previous) {
-    map.set(item.open_time, item);
+    map.set(candleKey(item), normalizeIncomingCandle(item));
   }
 
   for (const item of incoming) {
-    map.set(item.open_time, item);
+    map.set(candleKey(item), normalizeIncomingCandle(item));
   }
 
   return Array.from(map.values()).sort((a, b) => {
-    return new Date(a.open_time).getTime() - new Date(b.open_time).getTime();
+    return candleTimestamp(a.open_time) - candleTimestamp(b.open_time);
   });
 }
 
@@ -395,7 +412,11 @@ function useRealtimeFeed({
             }),
           }));
 
-          if (shouldReloadCandles(typeof reasonValue === "string" ? reasonValue : "")) {
+          if (
+            shouldReloadCandles(
+              typeof reasonValue === "string" ? reasonValue : ""
+            )
+          ) {
             try {
               await reloadCandles(false);
             } catch (error) {
@@ -440,15 +461,21 @@ function useRealtimeFeed({
 
           const normalizedItems = items
             .filter(isValidCandleItem)
-            .map((item) => ({
-              ...item,
-              symbol: normalizeSymbol(item.symbol),
-              timeframe: normalizeTimeframe(item.timeframe),
-            }));
+            .map((item) =>
+              normalizeIncomingCandle({
+                ...item,
+                symbol: normalizeSymbol(item.symbol),
+                timeframe: normalizeTimeframe(item.timeframe),
+              })
+            );
+
+          const sortedItems = normalizedItems.sort(
+            (a, b) => candleTimestamp(a.open_time) - candleTimestamp(b.open_time)
+          );
 
           const lastOpenTime =
-            normalizedItems.length > 0
-              ? normalizedItems[normalizedItems.length - 1]?.open_time ?? "-"
+            sortedItems.length > 0
+              ? sortedItems[sortedItems.length - 1]?.open_time ?? "-"
               : "-";
 
           const receivedAt = formatNowPt();
@@ -469,11 +496,11 @@ function useRealtimeFeed({
               timeframe: parsedTimeframe || currentTimeframe,
               candleTime: lastOpenTime,
               receivedAt,
-              count: normalizedItems.length,
+              count: sortedItems.length,
             }),
           }));
 
-          setCandles((prev) => mergeCandlesByOpenTime(prev, normalizedItems));
+          setCandles((prev) => mergeCandlesByOpenTime(prev, sortedItems));
           return;
         }
 

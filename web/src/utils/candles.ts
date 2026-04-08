@@ -14,12 +14,25 @@ export function buildRealtimeTestStartAt(): string {
   return date.toISOString();
 }
 
+function toCandleTimestamp(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getCandleKey(value: { open_time: string }): string {
+  return String(toCandleTimestamp(value.open_time));
+}
+
 export function normalizeCandles(items: CandleItem[]): CandleItem[] {
-  return items
-    .slice()
-    .sort(
-      (a, b) => new Date(a.open_time).getTime() - new Date(b.open_time).getTime()
-    );
+  const map = new Map<string, CandleItem>();
+
+  for (const item of items) {
+    map.set(getCandleKey(item), item);
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => toCandleTimestamp(a.open_time) - toCandleTimestamp(b.open_time)
+  );
 }
 
 export function upsertRealtimeCandle(
@@ -46,8 +59,10 @@ export function upsertRealtimeCandle(
     is_mock: tick.is_mock ?? null,
   };
 
+  const nextKey = getCandleKey(nextCandle);
+
   const existingIndex = previous.findIndex(
-    (item) => item.open_time === tick.open_time
+    (item) => getCandleKey(item) === nextKey
   );
 
   if (existingIndex >= 0) {

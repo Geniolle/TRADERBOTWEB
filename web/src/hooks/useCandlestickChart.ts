@@ -85,17 +85,54 @@ function formatLisbonDateTime(value: Time): string {
   return LISBON_DATE_TIME_FORMATTER.format(date);
 }
 
-function areCandlesEqual(
-  left: CandlestickData<UTCTimestamp>,
-  right: CandlestickData<UTCTimestamp>
-): boolean {
-  return (
-    left.time === right.time &&
-    left.open === right.open &&
-    left.high === right.high &&
-    left.low === right.low &&
-    left.close === right.close
+function buildChartData(candles: CandleItem[]): CandlestickData<UTCTimestamp>[] {
+  const rawItems = candles
+    .map((item) => ({
+      time: toUtcTimestamp(item.open_time),
+      open: Number(item.open),
+      high: Number(item.high),
+      low: Number(item.low),
+      close: Number(item.close),
+    }))
+    .filter(
+      (item) =>
+        Number.isFinite(item.time) &&
+        Number.isFinite(item.open) &&
+        Number.isFinite(item.high) &&
+        Number.isFinite(item.low) &&
+        Number.isFinite(item.close)
+    )
+    .sort((a, b) => Number(a.time) - Number(b.time));
+
+  const dedupedMap = new Map<number, CandlestickData<UTCTimestamp>>();
+  let duplicateCount = 0;
+
+  for (const item of rawItems) {
+    const key = Number(item.time);
+
+    if (dedupedMap.has(key)) {
+      duplicateCount += 1;
+    }
+
+    dedupedMap.set(key, item);
+  }
+
+  const dedupedItems = Array.from(dedupedMap.values()).sort(
+    (a, b) => Number(a.time) - Number(b.time)
   );
+
+  if (duplicateCount > 0) {
+    console.warn("[CHART] candles duplicados removidos antes do setData()", {
+      totalRaw: rawItems.length,
+      totalDeduped: dedupedItems.length,
+      duplicatesRemoved: duplicateCount,
+      duplicatedTimes: rawItems
+        .map((item) => Number(item.time))
+        .filter((time, index, array) => array.indexOf(time) !== index),
+    });
+  }
+
+  return dedupedItems;
 }
 
 function useCandlestickChart({
@@ -114,21 +151,7 @@ function useCandlestickChart({
   });
 
   const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
-    return candles
-      .map((item) => ({
-        time: toUtcTimestamp(item.open_time),
-        open: Number(item.open),
-        high: Number(item.high),
-        low: Number(item.low),
-        close: Number(item.close),
-      }))
-      .filter(
-        (item) =>
-          Number.isFinite(item.open) &&
-          Number.isFinite(item.high) &&
-          Number.isFinite(item.low) &&
-          Number.isFinite(item.close)
-      );
+    return buildChartData(candles);
   }, [candles]);
 
   useEffect(() => {
@@ -259,84 +282,13 @@ function useCandlestickChart({
         priceFormatter: (price: number) => price.toFixed(5),
         timeFormatter: formatLisbonDateTime,
       },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          visible: true,
-          labelVisible: true,
-          width: 1,
-          style: LineStyle.LargeDashed,
-          color: "rgba(100, 116, 139, 0.75)",
-          labelBackgroundColor: "#0f172a",
-        },
-        horzLine: {
-          visible: true,
-          labelVisible: true,
-          width: 1,
-          style: LineStyle.LargeDashed,
-          color: "rgba(100, 116, 139, 0.75)",
-          labelBackgroundColor: "#475569",
-        },
-      },
     });
 
     setChartSize({ width, height });
 
     if (candleSeriesRef.current) {
-      candleSeriesRef.current.applyOptions({
-        priceLineVisible: true,
-        priceLineWidth: 1,
-        priceLineStyle: LineStyle.LargeDashed,
-        priceLineColor: "#2563eb",
-        lastValueVisible: true,
-      });
-
-      const previousData = previousChartDataRef.current;
-      const nextData = chartData;
-
-      const canUseIncrementalUpdate =
-        previousData.length > 0 &&
-        nextData.length > 0 &&
-        (nextData.length === previousData.length ||
-          nextData.length === previousData.length + 1);
-
-      if (!canUseIncrementalUpdate) {
-        candleSeriesRef.current.setData(nextData);
-      } else {
-        const previousLast = previousData[previousData.length - 1];
-        const nextLast = nextData[nextData.length - 1];
-
-        const samePrefix =
-          previousData.length === 1 ||
-          previousData
-            .slice(0, Math.max(previousData.length - 1, 0))
-            .every((item, index) => {
-              const candidate = nextData[index];
-              return Boolean(candidate) && areCandlesEqual(item, candidate);
-            });
-
-        if (!samePrefix || !nextLast) {
-          candleSeriesRef.current.setData(nextData);
-        } else if (
-          previousLast &&
-          previousLast.time === nextLast.time &&
-          !areCandlesEqual(previousLast, nextLast)
-        ) {
-          candleSeriesRef.current.update(nextLast);
-        } else if (
-          previousLast &&
-          previousLast.time !== nextLast.time &&
-          nextData.length === previousData.length + 1
-        ) {
-          candleSeriesRef.current.update(nextLast);
-        } else if (!previousLast) {
-          candleSeriesRef.current.setData(nextData);
-        } else if (!areCandlesEqual(previousLast, nextLast)) {
-          candleSeriesRef.current.setData(nextData);
-        }
-      }
-
-      previousChartDataRef.current = nextData;
+      candleSeriesRef.current.setData(chartData);
+      previousChartDataRef.current = chartData;
     }
 
     const incomingIds = new Set(indicatorSeries.map((item) => item.id));
@@ -391,55 +343,6 @@ function useCandlestickChart({
       chartRef.current.applyOptions({
         width: nextWidth,
         height: CHART_HEIGHT,
-        rightPriceScale: {
-          visible: true,
-          autoScale: true,
-          borderVisible: true,
-          borderColor: "#dbe2ea",
-          scaleMargins: {
-            top: 0.08,
-            bottom: 0.08,
-          },
-          minimumWidth: 72,
-          entireTextOnly: true,
-          ticksVisible: true,
-        },
-        timeScale: {
-          borderColor: "#dbe2ea",
-          timeVisible: true,
-          secondsVisible: false,
-          rightOffset: CHART_RIGHT_OFFSET,
-          barSpacing: CHART_BAR_SPACING,
-          minBarSpacing: CHART_MIN_BAR_SPACING,
-          fixLeftEdge: false,
-          fixRightEdge: false,
-          lockVisibleTimeRangeOnResize: true,
-          tickMarkFormatter: formatLisbonTick,
-        },
-        localization: {
-          locale: "pt-PT",
-          priceFormatter: (price: number) => price.toFixed(5),
-          timeFormatter: formatLisbonDateTime,
-        },
-        crosshair: {
-          mode: CrosshairMode.Normal,
-          vertLine: {
-            visible: true,
-            labelVisible: true,
-            width: 1,
-            style: LineStyle.LargeDashed,
-            color: "rgba(100, 116, 139, 0.75)",
-            labelBackgroundColor: "#0f172a",
-          },
-          horzLine: {
-            visible: true,
-            labelVisible: true,
-            width: 1,
-            style: LineStyle.LargeDashed,
-            color: "rgba(100, 116, 139, 0.75)",
-            labelBackgroundColor: "#475569",
-          },
-        },
       });
 
       setChartSize({
