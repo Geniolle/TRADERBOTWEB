@@ -32,7 +32,6 @@ const API_BASE = getApiBase();
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
-
   const payload: unknown = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
