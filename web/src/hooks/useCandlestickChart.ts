@@ -9,6 +9,7 @@ import {
   type CandlestickData,
   type IChartApi,
   type ISeriesApi,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 
@@ -35,6 +36,54 @@ type UseCandlestickChartResult = {
   };
   chartData: CandlestickData<UTCTimestamp>[];
 };
+
+const LISBON_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const LISBON_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function toDateFromChartTime(value: Time): Date | null {
+  if (typeof value === "number") {
+    return new Date(value * 1000);
+  }
+
+  if (value && typeof value === "object" && "year" in value) {
+    const year = Number(value.year);
+    const month = Number(value.month);
+    const day = Number(value.day);
+
+    if (
+      Number.isFinite(year) &&
+      Number.isFinite(month) &&
+      Number.isFinite(day)
+    ) {
+      return new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    }
+  }
+
+  return null;
+}
+
+function formatLisbonTick(value: Time): string {
+  const date = toDateFromChartTime(value);
+  if (!date) return "";
+  return LISBON_TIME_FORMATTER.format(date);
+}
+
+function formatLisbonDateTime(value: Time): string {
+  const date = toDateFromChartTime(value);
+  if (!date) return "";
+  return LISBON_DATE_TIME_FORMATTER.format(date);
+}
 
 function areCandlesEqual(
   left: CandlestickData<UTCTimestamp>,
@@ -127,9 +176,12 @@ function useCandlestickChart({
           fixLeftEdge: false,
           fixRightEdge: false,
           lockVisibleTimeRangeOnResize: true,
+          tickMarkFormatter: formatLisbonTick,
         },
         localization: {
+          locale: "pt-PT",
           priceFormatter: (price: number) => price.toFixed(5),
+          timeFormatter: formatLisbonDateTime,
         },
         crosshair: {
           mode: CrosshairMode.Normal,
@@ -189,6 +241,23 @@ function useCandlestickChart({
         minimumWidth: 72,
         entireTextOnly: true,
         ticksVisible: true,
+      },
+      timeScale: {
+        borderColor: "#dbe2ea",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: CHART_RIGHT_OFFSET,
+        barSpacing: CHART_BAR_SPACING,
+        minBarSpacing: CHART_MIN_BAR_SPACING,
+        fixLeftEdge: false,
+        fixRightEdge: false,
+        lockVisibleTimeRangeOnResize: true,
+        tickMarkFormatter: formatLisbonTick,
+      },
+      localization: {
+        locale: "pt-PT",
+        priceFormatter: (price: number) => price.toFixed(5),
+        timeFormatter: formatLisbonDateTime,
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -334,6 +403,23 @@ function useCandlestickChart({
           minimumWidth: 72,
           entireTextOnly: true,
           ticksVisible: true,
+        },
+        timeScale: {
+          borderColor: "#dbe2ea",
+          timeVisible: true,
+          secondsVisible: false,
+          rightOffset: CHART_RIGHT_OFFSET,
+          barSpacing: CHART_BAR_SPACING,
+          minBarSpacing: CHART_MIN_BAR_SPACING,
+          fixLeftEdge: false,
+          fixRightEdge: false,
+          lockVisibleTimeRangeOnResize: true,
+          tickMarkFormatter: formatLisbonTick,
+        },
+        localization: {
+          locale: "pt-PT",
+          priceFormatter: (price: number) => price.toFixed(5),
+          timeFormatter: formatLisbonDateTime,
         },
         crosshair: {
           mode: CrosshairMode.Normal,
