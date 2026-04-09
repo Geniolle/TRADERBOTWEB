@@ -13,15 +13,16 @@ export default function StageTestsPage() {
     <div style={pageStyle}>
       <div style={headerStyle}>
         <div>
-          <h1 style={{ margin: 0 }}>Stage Testes</h1>
+          <h1 style={{ margin: 0 }}>Stage Tests</h1>
           <p style={{ marginTop: 8, color: "#94a3b8" }}>
-            Executa testes de estratégia usando as estratégias, símbolos e
-            timeframes disponibilizados pelo backend.
+            Esta página executa Stage Tests manualmente. O dashboard principal
+            mantém o catálogo sincronizado e agora pode disparar auto-run local
+            quando chega candle novo.
           </p>
         </div>
 
         <button style={runButtonStyle} onClick={() => setOpen(true)}>
-          Run Stage Testes
+          Run Stage Tests
         </button>
       </div>
 
@@ -33,6 +34,10 @@ export default function StageTestsPage() {
           <div>• A lista atualiza automaticamente a cada 15 segundos.</div>
           <div>• Apenas combinações existentes no BD ficam disponíveis.</div>
           <div>• O botão Run chama o backend e executa o processo real.</div>
+          <div>
+            • O auto-run do dashboard é local/em memória até existir histórico
+            persistido no backend.
+          </div>
         </div>
       </div>
 

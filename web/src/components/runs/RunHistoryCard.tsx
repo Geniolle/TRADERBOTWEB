@@ -1,4 +1,4 @@
-// web/src/components/runs/RunHistoryCard.tsx
+// C:\TraderBotWeb\web\src\components\runs\RunHistoryCard.tsx
 
 import { useMemo, useState } from "react";
 import type { StageTestSummaryItem } from "../../types/trading";
@@ -13,12 +13,15 @@ type RunHistoryCardProps = {
   actionError: string;
   filteredStageTests: StageTestSummaryItem[];
   selectedRunId: string;
-  setSelectedRunId: (value: string) => void;
   onClearRuns: () => Promise<void>;
   isClearingRuns: boolean;
   isCreatingRuns: boolean;
   lastExecutionLog: string;
   lastExecutionStatus: ExecutionLogStatus;
+  runningStrategyKey: string;
+  selectedSymbol: string;
+  selectedTimeframe: string;
+  onRunStageTest: (strategyKey: string) => Promise<void>;
 };
 
 function formatPercent(value: number): string {
@@ -161,12 +164,15 @@ function RunHistoryCard({
   actionError,
   filteredStageTests,
   selectedRunId,
-  setSelectedRunId,
   onClearRuns,
   isClearingRuns,
   isCreatingRuns,
   lastExecutionLog,
   lastExecutionStatus,
+  runningStrategyKey,
+  selectedSymbol,
+  selectedTimeframe,
+  onRunStageTest,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -174,13 +180,17 @@ function RunHistoryCard({
     return [...filteredStageTests].sort(compareStageTestsByHitRate);
   }, [filteredStageTests]);
 
-  const automationStatusLabel = isCreatingRuns
-    ? "A executar automaticamente..."
-    : "Execução automática ativa";
+  const hasManualContext = Boolean(selectedSymbol && selectedTimeframe);
 
-  const automationStatusDescription = isCreatingRuns
-    ? "Novo candle detetado. O sistema está a correr todas as estratégias da lista."
-    : "Sempre que entra um novo candle, o sistema executa automaticamente todas as estratégias visíveis nesta secção.";
+  const executionStatusLabel = isCreatingRuns
+    ? "Run manual em execução..."
+    : "Execução manual disponível";
+
+  const executionStatusDescription = isCreatingRuns
+    ? "Uma estratégia está a ser executada manualmente neste momento."
+    : hasManualContext
+      ? "Escolha uma estratégia da lista e clique em Run para executar manualmente no símbolo e timeframe selecionados."
+      : "Selecione símbolo e timeframe no painel do mercado para liberar a execução manual.";
 
   return (
     <div
@@ -234,7 +244,7 @@ function RunHistoryCard({
               lineHeight: 1.4,
             }}
           >
-            Estratégias com resumo acumulado dos testes executados
+            Catálogo do backend com execução manual
           </span>
         </div>
 
@@ -305,7 +315,7 @@ function RunHistoryCard({
                     color: "#0f172a",
                   }}
                 >
-                  {automationStatusLabel}
+                  {executionStatusLabel}
                 </strong>
               </div>
 
@@ -316,7 +326,7 @@ function RunHistoryCard({
                   lineHeight: 1.45,
                 }}
               >
-                {automationStatusDescription}
+                {executionStatusDescription}
               </span>
 
               <span
@@ -347,7 +357,7 @@ function RunHistoryCard({
                 whiteSpace: "nowrap",
               }}
             >
-              {isClearingRuns ? "A limpar..." : "Limpar runs"}
+              {isClearingRuns ? "A limpar..." : "Limpar runs locais"}
             </button>
           </div>
 
@@ -397,17 +407,11 @@ function RunHistoryCard({
                 const latestRunId = item.last_run?.run_id ?? "";
                 const isSelected =
                   latestRunId !== "" && selectedRunId === latestRunId;
-                const hasRun = Boolean(latestRunId);
+                const isRunning = runningStrategyKey === item.strategy_key;
 
                 return (
-                  <button
+                  <div
                     key={item.strategy_key}
-                    onClick={() => {
-                      if (latestRunId) {
-                        setSelectedRunId(latestRunId);
-                      }
-                    }}
-                    disabled={!hasRun}
                     style={{
                       textAlign: "left",
                       border: isSelected
@@ -416,11 +420,9 @@ function RunHistoryCard({
                       borderRadius: 12,
                       padding: 12,
                       background: isSelected ? "#f1f5f9" : "#fff",
-                      cursor: hasRun ? "pointer" : "default",
                       boxShadow: isSelected
                         ? "0 1px 3px rgba(15, 23, 42, 0.08)"
                         : "none",
-                      opacity: hasRun ? 1 : 0.82,
                     }}
                   >
                     <div
@@ -430,6 +432,7 @@ function RunHistoryCard({
                         alignItems: "flex-start",
                         gap: 8,
                         marginBottom: 8,
+                        flexWrap: "wrap",
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
@@ -485,19 +488,53 @@ function RunHistoryCard({
                         </div>
                       </div>
 
-                      <span
+                      <div
                         style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: hasRun ? "#dbeafe" : "#f1f5f9",
-                          color: hasRun ? "#1d4ed8" : "#64748b",
-                          whiteSpace: "nowrap",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          justifyContent: "flex-end",
                         }}
                       >
-                        {hasRun ? "COM RUN" : "SEM RUN"}
-                      </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: latestRunId ? "#dbeafe" : "#f1f5f9",
+                            color: latestRunId ? "#1d4ed8" : "#64748b",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {latestRunId ? "COM RUN" : "SEM RUN"}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => void onRunStageTest(item.strategy_key)}
+                          disabled={!hasManualContext || isCreatingRuns}
+                          style={{
+                            height: 32,
+                            padding: "0 12px",
+                            borderRadius: 8,
+                            border: "none",
+                            background:
+                              !hasManualContext || isCreatingRuns
+                                ? "#cbd5e1"
+                                : "#2563eb",
+                            color: "#ffffff",
+                            fontWeight: 700,
+                            cursor:
+                              !hasManualContext || isCreatingRuns
+                                ? "not-allowed"
+                                : "pointer",
+                          }}
+                        >
+                          {isRunning ? "A executar..." : "Run"}
+                        </button>
+                      </div>
                     </div>
 
                     {item.strategy_description && (
@@ -561,7 +598,7 @@ function RunHistoryCard({
                         formatDateTime(item.last_run?.started_at)
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

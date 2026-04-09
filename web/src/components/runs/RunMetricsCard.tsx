@@ -1,4 +1,4 @@
-// src/components/runs/RunMetricsCard.tsx
+// C:\TraderBotWeb\web\src\components\runs\RunMetricsCard.tsx
 
 import type { RunDetailsResponse } from "../../types/trading";
 
@@ -8,53 +8,92 @@ type RunMetricsCardProps = {
   runDetails: RunDetailsResponse | null;
 };
 
+type MetricsObject = {
+  total_cases?: number;
+  total_hits?: number;
+  total_fails?: number;
+  total_timeouts?: number;
+  hit_rate?: number;
+  fail_rate?: number;
+  timeout_rate?: number;
+  avg_bars_to_resolution?: number;
+  avg_time_to_resolution_seconds?: number;
+  avg_mfe?: number;
+  avg_mae?: number;
+};
+
+function isMetricsObject(value: unknown): value is MetricsObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string" && value.trim()) return value;
+  return "-";
+}
+
 function RunMetricsCard({
   mainCardStyle,
   sectionTitleStyle,
   runDetails,
 }: RunMetricsCardProps) {
+  const metrics = isMetricsObject(runDetails?.metrics) ? runDetails.metrics : null;
+
   return (
     <div style={mainCardStyle}>
-      <h2 style={sectionTitleStyle}>Métricas</h2>
+      <h2 style={sectionTitleStyle}>Run Metrics</h2>
 
-      {!runDetails?.metrics && <p>Sem métricas.</p>}
+      {!runDetails && <div>Nenhum run selecionado.</div>}
 
-      {runDetails?.metrics && (
-        <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
+      {runDetails && !metrics && (
+        <div>Métricas indisponíveis para este run.</div>
+      )}
+
+      {runDetails && metrics && (
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            color: "#334155",
+            fontSize: 14,
+            lineHeight: 1.55,
+          }}
+        >
           <div>
-            <strong>Total Cases:</strong> {runDetails.metrics.total_cases}
+            <strong>Total Cases:</strong> {formatValue(metrics.total_cases)}
           </div>
           <div>
-            <strong>Total Hits:</strong> {runDetails.metrics.total_hits}
+            <strong>Total Hits:</strong> {formatValue(metrics.total_hits)}
           </div>
           <div>
-            <strong>Total Fails:</strong> {runDetails.metrics.total_fails}
+            <strong>Total Fails:</strong> {formatValue(metrics.total_fails)}
           </div>
           <div>
-            <strong>Total Timeouts:</strong> {runDetails.metrics.total_timeouts}
+            <strong>Total Timeouts:</strong> {formatValue(metrics.total_timeouts)}
           </div>
           <div>
-            <strong>Hit Rate:</strong> {runDetails.metrics.hit_rate}
+            <strong>Hit Rate:</strong> {formatValue(metrics.hit_rate)}
           </div>
           <div>
-            <strong>Fail Rate:</strong> {runDetails.metrics.fail_rate}
+            <strong>Fail Rate:</strong> {formatValue(metrics.fail_rate)}
           </div>
           <div>
-            <strong>Timeout Rate:</strong> {runDetails.metrics.timeout_rate}
+            <strong>Timeout Rate:</strong> {formatValue(metrics.timeout_rate)}
           </div>
           <div>
-            <strong>Avg Bars To Resolution:</strong>{" "}
-            {runDetails.metrics.avg_bars_to_resolution}
+            <strong>Avg Bars to Resolution:</strong>{" "}
+            {formatValue(metrics.avg_bars_to_resolution)}
           </div>
           <div>
-            <strong>Avg Time To Resolution Seconds:</strong>{" "}
-            {runDetails.metrics.avg_time_to_resolution_seconds}
+            <strong>Avg Time to Resolution Seconds:</strong>{" "}
+            {formatValue(metrics.avg_time_to_resolution_seconds)}
           </div>
           <div>
-            <strong>Avg MFE:</strong> {runDetails.metrics.avg_mfe}
+            <strong>Avg MFE:</strong> {formatValue(metrics.avg_mfe)}
           </div>
           <div>
-            <strong>Avg MAE:</strong> {runDetails.metrics.avg_mae}
+            <strong>Avg MAE:</strong> {formatValue(metrics.avg_mae)}
           </div>
         </div>
       )}

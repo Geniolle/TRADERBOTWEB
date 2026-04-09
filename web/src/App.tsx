@@ -101,8 +101,6 @@ function NavLink({
   );
 }
 
-
-
 function DashboardPage() {
   const { health, loadingHealth, healthError } = useApiHealth();
 
@@ -270,7 +268,6 @@ function DashboardPage() {
 
   const {
     selectedRunId,
-    setSelectedRunId,
     runSearch,
     setRunSearch,
     filteredStageTests,
@@ -279,7 +276,9 @@ function DashboardPage() {
     actionError,
     isClearingRuns,
     isCreatingRuns,
+    runningStrategyKey,
     clearRuns,
+    runStageTestByStrategy,
     lastExecutionLog,
     lastExecutionStatus,
   } = useStageTests({
@@ -621,12 +620,15 @@ function DashboardPage() {
             actionError={actionError}
             filteredStageTests={filteredStageTests}
             selectedRunId={selectedRunId}
-            setSelectedRunId={setSelectedRunId}
             onClearRuns={clearRuns}
             isClearingRuns={isClearingRuns}
             isCreatingRuns={isCreatingRuns}
             lastExecutionLog={lastExecutionLog}
             lastExecutionStatus={lastExecutionStatus}
+            runningStrategyKey={runningStrategyKey}
+            selectedSymbol={effectiveChartSymbol}
+            selectedTimeframe={effectiveChartTimeframe}
+            onRunStageTest={runStageTestByStrategy}
           />
 
           {showSelectedStrategyNotice && selectedStrategyNotice && (
@@ -781,11 +783,7 @@ function StageTestsRoutePage() {
             }}
           >
             <NavLink href="/" label="Dashboard" active={false} />
-            <NavLink
-              href="/stage-tests"
-              label="Stage Tests"
-              active
-            />
+            <NavLink href="/stage-tests" label="Stage Tests" active />
           </div>
         </div>
       </aside>
