@@ -381,7 +381,7 @@ function getSimpleMacdContext(state: unknown): SimpleMacdContext {
   ) {
     return {
       direction: "Queda",
-      strength: "PressÃ£o vendedora",
+      strength: "Pressão vendedora",
     };
   }
 
@@ -392,20 +392,20 @@ function getSimpleMacdContext(state: unknown): SimpleMacdContext {
   ) {
     return {
       direction: "Alta",
-      strength: "PressÃ£o compradora",
+      strength: "Pressão compradora",
     };
   }
 
   if (raw.includes("neutral")) {
     return {
       direction: "Neutro",
-      strength: "Sem forÃ§a clara",
+      strength: "Sem força clara",
     };
   }
 
   return {
     direction: "Indefinida",
-    strength: "Sem forÃ§a clara",
+    strength: "Sem força clara",
   };
 }
 
@@ -451,7 +451,7 @@ function getSimpleAtrContext(value: unknown, regime: unknown): SimpleAtrContext 
 
   return {
     formattedValue,
-    volatility: "MÃ©dia",
+    volatility: "Média",
     situation: "Movimento normal",
   };
 }
@@ -472,7 +472,7 @@ function getSimpleStructureContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "Alta",
-      situation: "Estrutura favorÃ¡vel para subida",
+      situation: "Estrutura favorável para subida",
     };
   }
 
@@ -485,14 +485,14 @@ function getSimpleStructureContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "Queda",
-      situation: "Estrutura favorÃ¡vel para descida",
+      situation: "Estrutura favorável para descida",
     };
   }
 
   if (raw.includes("range") || raw.includes("lateral") || raw.includes("sideways")) {
     return {
       label: "Lateral",
-      situation: "Mercado sem direÃ§Ã£o clara",
+      situation: "Mercado sem direção clara",
     };
   }
 
@@ -517,7 +517,7 @@ function getSimpleEmaAlignmentContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "Alta",
-      situation: "MÃ©dias alinhadas para subida",
+      situation: "Médias alinhadas para subida",
     };
   }
 
@@ -529,14 +529,14 @@ function getSimpleEmaAlignmentContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "Queda",
-      situation: "MÃ©dias alinhadas para descida",
+      situation: "Médias alinhadas para descida",
     };
   }
 
   if (raw.includes("mixed") || raw.includes("neutral") || raw.includes("misto")) {
     return {
       label: "Misto",
-      situation: "MÃ©dias sem alinhamento limpo",
+      situation: "Médias sem alinhamento limpo",
     };
   }
 
@@ -562,7 +562,7 @@ function getSimpleSlopeContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "A subir",
-      situation: "TendÃªncia a ganhar forÃ§a",
+      situation: "Tendência a ganhar força",
     };
   }
 
@@ -574,14 +574,14 @@ function getSimpleSlopeContext(value: unknown): SimpleTextContext {
   ) {
     return {
       label: "A descer",
-      situation: "TendÃªncia a perder forÃ§a ou cair",
+      situation: "Tendência a perder força ou cair",
     };
   }
 
   if (raw.includes("flat") || raw.includes("neutral") || raw.includes("lateral")) {
     return {
       label: "Lateral",
-      situation: "Sem aceleraÃ§Ã£o clara",
+      situation: "Sem aceleração clara",
     };
   }
 
@@ -589,26 +589,26 @@ function getSimpleSlopeContext(value: unknown): SimpleTextContext {
     if (numericValue > 0) {
       return {
         label: "A subir",
-        situation: "TendÃªncia a ganhar forÃ§a",
+        situation: "Tendência a ganhar força",
       };
     }
 
     if (numericValue < 0) {
       return {
         label: "A descer",
-        situation: "TendÃªncia a perder forÃ§a ou cair",
+        situation: "Tendência a perder força ou cair",
       };
     }
 
     return {
       label: "Lateral",
-      situation: "Sem aceleraÃ§Ã£o clara",
+      situation: "Sem aceleração clara",
     };
   }
 
   return {
     label: "Indefinida",
-    situation: "InclinaÃ§Ã£o sem clareza",
+    situation: "Inclinação sem clareza",
   };
 }
 
@@ -622,20 +622,20 @@ function getSimplePriceVsEmaContext(value: unknown): SimpleTextContext {
   if (raw.includes("above") || raw.includes("acima") || raw.includes("over")) {
     return {
       label: "Acima",
-      situation: "PreÃ§o do lado comprador",
+      situation: "Preço do lado comprador",
     };
   }
 
   if (raw.includes("below") || raw.includes("abaixo") || raw.includes("under")) {
     return {
       label: "Abaixo",
-      situation: "PreÃ§o do lado vendedor",
+      situation: "Preço do lado vendedor",
     };
   }
 
   return {
     label: "Neutro",
-    situation: "PreÃ§o sem posiÃ§Ã£o clara",
+    situation: "Preço sem posição clara",
   };
 }
 
@@ -655,7 +655,7 @@ function getSimpleDistanceContext(
       situation:
         kind === "support"
           ? "Muito perto do suporte"
-          : "Muito perto da resistÃªncia",
+          : "Muito perto da resistência",
     };
   }
 
@@ -664,8 +664,8 @@ function getSimpleDistanceContext(
       label: "Muito perto",
       situation:
         kind === "support"
-          ? "Pouco espaÃ§o atÃ© ao suporte"
-          : "Pouco espaÃ§o atÃ© Ã  resistÃªncia",
+          ? "Pouco espaço até ao suporte"
+          : "Pouco espaço até à resistência",
     };
   }
 
@@ -674,17 +674,17 @@ function getSimpleDistanceContext(
       label: "Perto",
       situation:
         kind === "support"
-          ? "DistÃ¢ncia curta atÃ© ao suporte"
-          : "DistÃ¢ncia curta atÃ© Ã  resistÃªncia",
+          ? "Distância curta até ao suporte"
+          : "Distância curta até à resistência",
     };
   }
 
   return {
-    label: "Com espaÃ§o",
+    label: "Com espaço",
     situation:
       kind === "support"
-        ? "HÃ¡ espaÃ§o razoÃ¡vel atÃ© ao suporte"
-        : "HÃ¡ espaÃ§o razoÃ¡vel atÃ© Ã  resistÃªncia",
+        ? "Há espaço razoável até ao suporte"
+        : "Há espaço razoável até à resistência",
   };
 }
 
@@ -704,7 +704,7 @@ function getSimpleCandleVsAtrContext(value: unknown): SimpleTextContext {
 
   if (numericValue <= 1.4) {
     return {
-      label: "SaudÃ¡vel",
+      label: "Saudável",
       situation: "Candle com tamanho normal",
     };
   }
@@ -755,7 +755,7 @@ function getSimpleTriggerCandleContext(
   if (candleTypeRaw.includes("strong") || candleTypeRaw.includes("trend")) {
     return {
       label: "Bom",
-      situation: "Candle favorÃ¡vel ao movimento",
+      situation: "Candle favorável ao movimento",
     };
   }
 
@@ -777,14 +777,14 @@ function getSimpleBollingerContext(
   if (isLong) {
     return {
       label: "Confirma compra",
-      situation: "Reentrada favorÃ¡vel para alta",
+      situation: "Reentrada favorável para alta",
     };
   }
 
   if (isShort) {
     return {
       label: "Confirma venda",
-      situation: "Reentrada favorÃ¡vel para queda",
+      situation: "Reentrada favorável para queda",
     };
   }
 
@@ -792,20 +792,20 @@ function getSimpleBollingerContext(
     if (closePositionValue > 0.8) {
       return {
         label: "Esticado em cima",
-        situation: "PreÃ§o perto do topo da banda",
+        situation: "Preço perto do topo da banda",
       };
     }
 
     if (closePositionValue < 0.2) {
       return {
         label: "Esticado em baixo",
-        situation: "PreÃ§o perto da base da banda",
+        situation: "Preço perto da base da banda",
       };
     }
 
     return {
       label: "Neutro",
-      situation: "PreÃ§o numa zona equilibrada da banda",
+      situation: "Preço numa zona equilibrada da banda",
     };
   }
 
@@ -896,7 +896,7 @@ function buildBbReversalConfirmation(params: {
 
   if (candleVsAtrInfo.label === "Forte") {
     addFactor(1, 1);
-  } else if (candleVsAtrInfo.label === "SaudÃ¡vel") {
+  } else if (candleVsAtrInfo.label === "Saudável") {
     addFactor(1, 0.8);
   } else {
     addFactor(1, 0);
@@ -1035,13 +1035,13 @@ function buildDevelopmentPotential(params: {
 
   if (candleVsAtrInfo.label === "Forte") {
     addFactor(2, 2);
-  } else if (candleVsAtrInfo.label === "SaudÃ¡vel") {
+  } else if (candleVsAtrInfo.label === "Saudável") {
     addFactor(2, 1.5);
   } else {
     addFactor(2, 0.2, true);
   }
 
-  if (atrInfo.volatility === "MÃ©dia") {
+  if (atrInfo.volatility === "Média") {
     addFactor(2.5, 2.5);
   } else if (atrInfo.volatility === "Baixa") {
     addFactor(2.5, 1.4);
@@ -1171,16 +1171,16 @@ function getUsefulSpaceToTargetText(
 ): string {
   if (sideLabel === "Compra") {
     if (isNearZone(resistanceDistanceInfo.label)) {
-      return "Curto / ResistÃªncia muito perto";
+      return "Curto / Resistência muito perto";
     }
-    return "Bom / HÃ¡ espaÃ§o atÃ© Ã  resistÃªncia";
+    return "Bom / Há espaço até à resistência";
   }
 
   if (sideLabel === "Venda") {
     if (isNearZone(supportDistanceInfo.label)) {
       return "Curto / Suporte muito perto";
     }
-    return "Bom / HÃ¡ espaÃ§o atÃ© ao suporte";
+    return "Bom / Há espaço até ao suporte";
   }
 
   return "-";
@@ -1188,10 +1188,10 @@ function getUsefulSpaceToTargetText(
 
 function getAtrNotTooHighText(atrInfo: SimpleAtrContext): string {
   if (atrInfo.volatility === "Alta") {
-    return "NÃ£o / Mercado agitado";
+    return "Não / Mercado agitado";
   }
 
-  if (atrInfo.volatility === "MÃ©dia") {
+  if (atrInfo.volatility === "Média") {
     return "Sim / Volatilidade controlada";
   }
 
@@ -1212,14 +1212,14 @@ function getEma20NotTooAgainstText(
       ema20SlopeInfo.label === "A subir" ||
       priceVsEma20Info.label === "Acima"
     ) {
-      return "Sim / EMA 20 nÃ£o estÃ¡ muito contra";
+      return "Sim / EMA 20 não está muito contra";
     }
 
     if (ema20SlopeInfo.label === "Lateral") {
       return "Parcial / EMA 20 neutra";
     }
 
-    return "NÃ£o / EMA 20 ainda contra";
+    return "Não / EMA 20 ainda contra";
   }
 
   if (sideLabel === "Venda") {
@@ -1227,14 +1227,14 @@ function getEma20NotTooAgainstText(
       ema20SlopeInfo.label === "A descer" ||
       priceVsEma20Info.label === "Abaixo"
     ) {
-      return "Sim / EMA 20 nÃ£o estÃ¡ muito contra";
+      return "Sim / EMA 20 não está muito contra";
     }
 
     if (ema20SlopeInfo.label === "Lateral") {
       return "Parcial / EMA 20 neutra";
     }
 
-    return "NÃ£o / EMA 20 ainda contra";
+    return "Não / EMA 20 ainda contra";
   }
 
   return "-";
@@ -1255,12 +1255,12 @@ function getNextCandleConfirmationText(item: OutcomeLikeCase): string {
   const raw = String(rawValue ?? "").trim().toLowerCase();
 
   if (typeof rawValue === "boolean") {
-    return rawValue ? "Sim / Candle seguinte confirmou" : "NÃ£o / Candle seguinte falhou";
+    return rawValue ? "Sim / Candle seguinte confirmou" : "Não / Candle seguinte falhou";
   }
 
   if (numericValue !== null) {
     if (numericValue > 0) return "Sim / Candle seguinte confirmou";
-    return "NÃ£o / Candle seguinte falhou";
+    return "Não / Candle seguinte falhou";
   }
 
   if (!raw) {
@@ -1282,9 +1282,9 @@ function getNextCandleConfirmationText(item: OutcomeLikeCase): string {
     raw.includes("failed") ||
     raw.includes("no") ||
     raw.includes("nao") ||
-    raw.includes("nÃ£o")
+    raw.includes("não")
   ) {
-    return "NÃ£o / Candle seguinte falhou";
+    return "Não / Candle seguinte falhou";
   }
 
   return String(rawValue);
@@ -1325,7 +1325,7 @@ function getVolumeIndicatorText(item: OutcomeLikeCase): string {
     return "Baixo / Volume fraco";
   }
 
-  if (raw.includes("normal") || raw.includes("medium") || raw.includes("mÃ©dio")) {
+  if (raw.includes("normal") || raw.includes("medium") || raw.includes("médio")) {
     return "Normal / Volume equilibrado";
   }
 
@@ -1350,21 +1350,21 @@ function getVwapIndicatorText(
 
   if (sideLabel === "Compra") {
     if (raw.includes("above") || raw.includes("acima") || raw.includes("recovered")) {
-      return "FavorÃ¡vel / PreÃ§o recuperou VWAP";
+      return "Favorável / Preço recuperou VWAP";
     }
 
     if (raw.includes("below") || raw.includes("abaixo")) {
-      return "Contra / PreÃ§o abaixo da VWAP";
+      return "Contra / Preço abaixo da VWAP";
     }
   }
 
   if (sideLabel === "Venda") {
     if (raw.includes("below") || raw.includes("abaixo") || raw.includes("lost")) {
-      return "FavorÃ¡vel / PreÃ§o perdeu VWAP";
+      return "Favorável / Preço perdeu VWAP";
     }
 
     if (raw.includes("above") || raw.includes("acima")) {
-      return "Contra / PreÃ§o acima da VWAP";
+      return "Contra / Preço acima da VWAP";
     }
   }
 
@@ -1408,12 +1408,12 @@ function getAdxIndicatorText(item: OutcomeLikeCase): string {
   const numericValue = toNumber(rawValue);
   if (numericValue !== null) {
     if (numericValue >= 30) {
-      return `${formatDecimal(numericValue)} / TendÃªncia forte`;
+      return `${formatDecimal(numericValue)} / Tendência forte`;
     }
     if (numericValue >= 20) {
-      return `${formatDecimal(numericValue)} / TendÃªncia moderada`;
+      return `${formatDecimal(numericValue)} / Tendência moderada`;
     }
-    return `${formatDecimal(numericValue)} / TendÃªncia fraca`;
+    return `${formatDecimal(numericValue)} / Tendência fraca`;
   }
 
   const raw = String(rawValue ?? "").trim();
@@ -1760,7 +1760,7 @@ function outcomeListCard(
                 }}
               >
                 {metricBadge(
-                  "ConfirmaÃ§Ã£o",
+                  "Confirmação",
                   formatPercent(confirmation.confirmationPercent),
                 )}
                 {metricBadge(
@@ -1807,7 +1807,7 @@ function outcomeListCard(
                     borderBottom: `1px solid ${headerColors.borderBottom}`,
                   }}
                 >
-                  {sectionTitle("DecisÃ£o rÃ¡pida", rightMetrics)}
+                  {sectionTitle("Decisão rápida", rightMetrics)}
                 </div>
 
                 <div style={{ padding: 14 }}>
@@ -1822,7 +1822,7 @@ function outcomeListCard(
                     {pairedInfoRow(
                       "Entrada:",
                       formatPrice(item.entry_price),
-                      "SaÃ­da:",
+                      "Saída:",
                       formatPrice(item.close_price),
                     )}
                   </div>
@@ -1837,7 +1837,7 @@ function outcomeListCard(
                       true,
                     )}
                     {infoRow(
-                      "PreÃ§o vs EMA 20:",
+                      "Preço vs EMA 20:",
                       buildCombinedValue(
                         priceVsEma20Info.label,
                         priceVsEma20Info.situation,
@@ -1845,7 +1845,7 @@ function outcomeListCard(
                       true,
                     )}
                     {infoRow(
-                      "PreÃ§o vs EMA 40:",
+                      "Preço vs EMA 40:",
                       buildCombinedValue(
                         priceVsEma40Info.label,
                         priceVsEma40Info.situation,
@@ -1871,7 +1871,7 @@ function outcomeListCard(
 
                   {sectionSeparator()}
 
-                  {sectionTitle("LocalizaÃ§Ã£o do preÃ§o")}
+                  {sectionTitle("Localização do preço")}
                   <div style={{ display: "grid", gap: 6 }}>
                     {infoRow(
                       "Suporte:",
@@ -1882,7 +1882,7 @@ function outcomeListCard(
                       true,
                     )}
                     {infoRow(
-                      "ResistÃªncia:",
+                      "Resistência:",
                       buildCombinedValue(
                         resistanceDistanceInfo.label,
                         resistanceDistanceInfo.situation,
@@ -1927,9 +1927,9 @@ function outcomeListCard(
 
                   {sectionSeparator()}
 
-                  {sectionTitle("Filtros prioritÃ¡rios")}
+                  {sectionTitle("Filtros prioritários")}
                   <div style={{ display: "grid", gap: 6 }}>
-                    {infoRow("EspaÃ§o Ãºtil atÃ© ao alvo:", usefulSpaceText)}
+                    {infoRow("Espaço útil até ao alvo:", usefulSpaceText)}
                     {infoRow(
                       "Qualidade do candle do gatilho:",
                       buildCombinedValue(
@@ -1937,10 +1937,10 @@ function outcomeListCard(
                         triggerCandleInfo.situation,
                       ),
                     )}
-                    {infoRow("ATR nÃ£o muito alta:", atrNotTooHighText)}
-                    {infoRow("EMA 20 nÃ£o muito contra:", ema20NotAgainstText)}
+                    {infoRow("ATR não muito alta:", atrNotTooHighText)}
+                    {infoRow("EMA 20 não muito contra:", ema20NotAgainstText)}
                     {infoRow(
-                      "ConfirmaÃ§Ã£o no candle seguinte:",
+                      "Confirmação no candle seguinte:",
                       nextCandleConfirmationText,
                     )}
                   </div>
@@ -1951,7 +1951,7 @@ function outcomeListCard(
                   <div style={{ display: "grid", gap: 6 }}>
                     {infoRow("Volume:", volumeIndicatorText)}
                     {infoRow("VWAP:", vwapIndicatorText)}
-                    {infoRow("DistÃ¢ncia da banda / z-score:", bandDistanceText)}
+                    {infoRow("Distância da banda / z-score:", bandDistanceText)}
                     {infoRow("ADX:", adxText)}
                   </div>
 
@@ -1963,12 +1963,12 @@ function outcomeListCard(
                       "IFR:",
                       buildCombinedValue(ifrInfo.formattedValue, ifrInfo.strength),
                     )}
-                    {infoRow("SituaÃ§Ã£o IFR:", ifrInfo.situation)}
+                    {infoRow("Situação IFR:", ifrInfo.situation)}
                     {infoRow(
                       "ATR:",
                       buildCombinedValue(atrInfo.formattedValue, atrInfo.volatility),
                     )}
-                    {infoRow("SituaÃ§Ã£o ATR:", atrInfo.situation)}
+                    {infoRow("Situação ATR:", atrInfo.situation)}
                   </div>
                 </div>
               </div>
@@ -2035,8 +2035,8 @@ function RunSummaryCard({
         aria-expanded={expanded}
         aria-label={
           expanded
-            ? "Retrair AnÃ¡lise do run selecionado"
-            : "Expandir AnÃ¡lise do run selecionado"
+            ? "Retrair Análise do run selecionado"
+            : "Expandir Análise do run selecionado"
         }
       >
         <div
@@ -2056,7 +2056,7 @@ function RunSummaryCard({
             }}
           >
             <strong style={{ fontSize: 16, color: headerStyles.titleColor }}>
-              AnÃ¡lise do run selecionado
+              Análise do run selecionado
             </strong>
 
             {selectedRunId ? (
@@ -2098,7 +2098,7 @@ function RunSummaryCard({
                 : runDetailsError
                   ? "Erro ao carregar os detalhes do run."
                   : runDetails
-                    ? `${runDetails.run.strategy_key ?? "sem strategy_key"} â€¢ ${runDetails.run.symbol} â€¢ ${runDetails.run.timeframe}`
+                    ? `${runDetails.run.strategy_key ?? "sem strategy_key"} • ${runDetails.run.symbol} • ${runDetails.run.timeframe}`
                     : "Sem dados do run."}
           </span>
         </div>
@@ -2121,7 +2121,7 @@ function RunSummaryCard({
             flexShrink: 0,
           }}
         >
-          {expanded ? "âˆ’" : "+"}
+          {expanded ? "−" : "+"}
         </span>
       </button>
 
@@ -2158,17 +2158,17 @@ function RunSummaryCard({
                   }}
                 >
                   <div>
-                    <strong>Symbol:</strong> {runDetails.run.symbol}
-                  </div>
-                  <div>
-                    <strong>Timeframe:</strong> {runDetails.run.timeframe}
-                  </div>
-                  <div>
                     <strong>ID:</strong> {runDetails.run.id}
                   </div>
                   <div>
                     <strong>Strategy:</strong>{" "}
                     {runDetails.run.strategy_key ?? "(sem strategy_key)"}
+                  </div>
+                  <div>
+                    <strong>Symbol:</strong> {runDetails.run.symbol}
+                  </div>
+                  <div>
+                    <strong>Timeframe:</strong> {runDetails.run.timeframe}
                   </div>
                   <div>
                     <strong>Status:</strong> {runDetails.run.status}
@@ -2213,7 +2213,7 @@ function RunSummaryCard({
                   >
                     <div>
                       <strong>Intervalo:</strong>{" "}
-                      {formatDateTime(runDetails.run.start_at)} â†’{" "}
+                      {formatDateTime(runDetails.run.start_at)} →{" "}
                       {formatDateTime(runDetails.run.end_at)}
                     </div>
                     <div>
