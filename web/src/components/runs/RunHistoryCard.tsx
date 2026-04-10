@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type {
+  StageTestRunCaseItem,
   StageTestRunTechnicalAnalysis,
   StageTestSummaryItem,
 } from "../../types/trading";
@@ -25,6 +26,8 @@ type RunHistoryCardProps = {
   onRunStageTest: (strategyKey: string) => Promise<void>;
 };
 
+type CaseFilter = "all" | "hit" | "fail" | "timeout";
+
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0,00%";
   return `${value.toFixed(2).replace(".", ",")}%`;
@@ -43,6 +46,33 @@ function formatBooleanLabel(value: boolean | null | undefined): string {
   if (value === true) return "✅ Sim";
   if (value === false) return "❌ Não";
   return "-";
+}
+
+function formatValue(value: string | number | null | undefined): string {
+  if (value == null) return "-";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  const text = String(value).trim();
+  return text || "-";
+}
+
+function normalizeOutcome(value: string | null | undefined): string {
+  const raw = (value ?? "").trim().toLowerCase();
+
+  if (["hit", "win", "target", "target_hit", "tp", "profit"].includes(raw)) {
+    return "hit";
+  }
+
+  if (["fail", "loss", "stop", "stop_loss", "sl"].includes(raw)) {
+    return "fail";
+  }
+
+  if (["timeout", "expired", "time_out"].includes(raw)) {
+    return "timeout";
+  }
+
+  return raw || "other";
 }
 
 function metricPill(
@@ -200,6 +230,44 @@ function getAnalysisStatusBadge(status: string | null | undefined) {
   };
 }
 
+function getOutcomeBadge(outcome: string | null | undefined) {
+  const normalized = normalizeOutcome(outcome);
+
+  if (normalized === "hit") {
+    return {
+      label: "HIT",
+      background: "#dcfce7",
+      color: "#166534",
+      border: "#86efac",
+    };
+  }
+
+  if (normalized === "fail") {
+    return {
+      label: "FAIL",
+      background: "#fee2e2",
+      color: "#991b1b",
+      border: "#fca5a5",
+    };
+  }
+
+  if (normalized === "timeout") {
+    return {
+      label: "TIMEOUT",
+      background: "#fffbeb",
+      color: "#92400e",
+      border: "#fcd34d",
+    };
+  }
+
+  return {
+    label: outcome || "OUTRO",
+    background: "#f8fafc",
+    color: "#475569",
+    border: "#cbd5e1",
+  };
+}
+
 function AnalysisSection({
   title,
   children,
@@ -276,9 +344,13 @@ function AnalysisListRow({
 function RunTechnicalAnalysisBlock({
   analysis,
   runStatus,
+  title = "Análise técnica do último run",
+  subtitle = "Snapshot técnico capturado no momento da validação.",
 }: {
   analysis: StageTestRunTechnicalAnalysis | null;
   runStatus: string | null | undefined;
+  title?: string;
+  subtitle?: string;
 }) {
   if (!analysis) {
     return null;
@@ -316,7 +388,7 @@ function RunTechnicalAnalysisBlock({
               color: "#0f172a",
             }}
           >
-            Análise técnica do último run
+            {title}
           </strong>
 
           <span
@@ -326,7 +398,7 @@ function RunTechnicalAnalysisBlock({
               lineHeight: 1.45,
             }}
           >
-            Snapshot técnico capturado no momento da validação.
+            {subtitle}
           </span>
         </div>
 
@@ -460,6 +532,327 @@ function RunTechnicalAnalysisBlock({
   );
 }
 
+function CasesFilterButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        height: 32,
+        padding: "0 12px",
+        borderRadius: 999,
+        border: active ? "1px solid #2563eb" : "1px solid #cbd5e1",
+        background: active ? "#eff6ff" : "#ffffff",
+        color: active ? "#1d4ed8" : "#334155",
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function CasesSection({
+  strategyKey,
+  cases,
+  expandedCaseAnalysisById,
+  onToggleCaseAnalysis,
+}: {
+  strategyKey: string;
+  cases: StageTestRunCaseItem[];
+  expandedCaseAnalysisById: Record<string, boolean>;
+  onToggleCaseAnalysis: (caseKey: string) => void;
+}) {
+  const [filter, setFilter] = useState<CaseFilter>("all");
+
+  const filteredCases = useMemo(() => {
+    if (filter === "all") return cases;
+    return cases.filter((item) => normalizeOutcome(item.outcome) === filter);
+  }, [cases, filter]);
+
+  const totalHits = useMemo(
+    () => cases.filter((item) => normalizeOutcome(item.outcome) === "hit").length,
+    [cases]
+  );
+  const totalFails = useMemo(
+    () => cases.filter((item) => normalizeOutcome(item.outcome) === "fail").length,
+    [cases]
+  );
+  const totalTimeouts = useMemo(
+    () => cases.filter((item) => normalizeOutcome(item.outcome) === "timeout").length,
+    [cases]
+  );
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid #dbe2ea",
+        borderRadius: 12,
+        padding: 12,
+        background: "#f8fafc",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong style={{ fontSize: 14, color: "#0f172a" }}>
+              Casos do último run
+            </strong>
+
+            <span
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.45,
+              }}
+            >
+              Hits e fails detalhados para análise individual.
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#dcfce7",
+                color: "#166534",
+                border: "1px solid #86efac",
+              }}
+            >
+              Hits {totalHits}
+            </span>
+
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#fee2e2",
+                color: "#991b1b",
+                border: "1px solid #fca5a5",
+              }}
+            >
+              Fails {totalFails}
+            </span>
+
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#fffbeb",
+                color: "#92400e",
+                border: "1px solid #fcd34d",
+              }}
+            >
+              Timeouts {totalTimeouts}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <CasesFilterButton
+            active={filter === "all"}
+            label={`Todos (${cases.length})`}
+            onClick={() => setFilter("all")}
+          />
+          <CasesFilterButton
+            active={filter === "hit"}
+            label={`Hits (${totalHits})`}
+            onClick={() => setFilter("hit")}
+          />
+          <CasesFilterButton
+            active={filter === "fail"}
+            label={`Fails (${totalFails})`}
+            onClick={() => setFilter("fail")}
+          />
+          <CasesFilterButton
+            active={filter === "timeout"}
+            label={`Timeouts (${totalTimeouts})`}
+            onClick={() => setFilter("timeout")}
+          />
+        </div>
+      </div>
+
+      {filteredCases.length === 0 ? (
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: 12,
+            background: "#ffffff",
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          Nenhum caso encontrado para este filtro.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {filteredCases.map((item, index) => {
+            const caseKey = `${strategyKey}::${item.id ?? `case-${index}`}`;
+            const badge = getOutcomeBadge(item.outcome);
+            const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
+
+            return (
+              <div
+                key={caseKey}
+                style={{
+                  border: "1px solid #dbe2ea",
+                  borderRadius: 10,
+                  padding: 12,
+                  background: "#ffffff",
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <strong style={{ fontSize: 13, color: "#0f172a" }}>
+                      Caso #{item.case_number ?? index + 1}
+                    </strong>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>
+                      ID: {item.id ?? "-"}
+                    </span>
+                  </div>
+
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      background: badge.background,
+                      color: badge.color,
+                      border: `1px solid ${badge.border}`,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {detailRow("Direção", formatValue(item.side))}
+                  {detailRow("Status", formatValue(item.status))}
+                  {detailRow("Outcome", formatValue(item.outcome))}
+                  {detailRow("Trigger", formatDateTime(item.trigger_time))}
+                  {detailRow("Trigger candle", formatDateTime(item.trigger_candle_time))}
+                  {detailRow("Entrada", formatValue(item.entry_price))}
+                  {detailRow("Fecho", formatValue(item.close_price))}
+                  {detailRow("Trigger price", formatValue(item.trigger_price))}
+                  {detailRow("Target", formatValue(item.target_price))}
+                  {detailRow("Invalidação", formatValue(item.invalidation_price))}
+                  {detailRow("Entry time", formatDateTime(item.entry_time))}
+                  {detailRow("Close time", formatDateTime(item.close_time))}
+                  {detailRow("Bars resolução", formatValue(item.bars_to_resolution))}
+                  {detailRow("MFE", formatValue(item.max_favorable_excursion))}
+                  {detailRow("MAE", formatValue(item.max_adverse_excursion))}
+                  {detailRow("Close reason", formatValue(item.close_reason))}
+                </div>
+
+                {item.analysis && (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onToggleCaseAnalysis(caseKey)}
+                      style={{
+                        height: 34,
+                        padding: "0 12px",
+                        borderRadius: 8,
+                        border: "1px solid #cbd5e1",
+                        background: "#ffffff",
+                        color: "#0f172a",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {isExpanded
+                        ? "Ocultar análise do caso"
+                        : "Exibir análise do caso"}
+                    </button>
+                  </div>
+                )}
+
+                {item.analysis && isExpanded && (
+                  <RunTechnicalAnalysisBlock
+                    analysis={item.analysis}
+                    runStatus={item.outcome}
+                    title={`Análise do caso #${item.case_number ?? index + 1}`}
+                    subtitle="Snapshot técnico associado a este caso."
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RunHistoryCard({
   sidebarCardStyle,
   runSearch,
@@ -483,6 +876,12 @@ function RunHistoryCard({
   const [expandedAnalysisByStrategy, setExpandedAnalysisByStrategy] = useState<
     Record<string, boolean>
   >({});
+  const [expandedCasesByStrategy, setExpandedCasesByStrategy] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedCaseAnalysisById, setExpandedCaseAnalysisById] = useState<
+    Record<string, boolean>
+  >({});
 
   const orderedStageTests = useMemo(() => {
     return [...filteredStageTests].sort(compareStageTestsByHitRate);
@@ -504,6 +903,20 @@ function RunHistoryCard({
     setExpandedAnalysisByStrategy((previous) => ({
       ...previous,
       [strategyKey]: !previous[strategyKey],
+    }));
+  };
+
+  const toggleCases = (strategyKey: string) => {
+    setExpandedCasesByStrategy((previous) => ({
+      ...previous,
+      [strategyKey]: !previous[strategyKey],
+    }));
+  };
+
+  const toggleCaseAnalysis = (caseKey: string) => {
+    setExpandedCaseAnalysisById((previous) => ({
+      ...previous,
+      [caseKey]: !previous[caseKey],
     }));
   };
 
@@ -724,9 +1137,14 @@ function RunHistoryCard({
                   latestRunId !== "" && selectedRunId === latestRunId;
                 const isRunning = runningStrategyKey === item.strategy_key;
                 const analysis = item.last_run?.analysis ?? null;
+                const cases = item.last_run?.cases ?? [];
                 const hasAnalysis = Boolean(analysis);
+                const hasCases = cases.length > 0;
                 const isAnalysisExpanded = Boolean(
                   expandedAnalysisByStrategy[item.strategy_key]
+                );
+                const isCasesExpanded = Boolean(
+                  expandedCasesByStrategy[item.strategy_key]
                 );
 
                 return (
@@ -919,32 +1337,55 @@ function RunHistoryCard({
                       )}
                     </div>
 
-                    {hasAnalysis && (
+                    {(hasAnalysis || hasCases) && (
                       <div
                         style={{
                           marginTop: 12,
                           display: "flex",
                           justifyContent: "flex-end",
+                          gap: 8,
+                          flexWrap: "wrap",
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => toggleAnalysis(item.strategy_key)}
-                          style={{
-                            height: 34,
-                            padding: "0 12px",
-                            borderRadius: 8,
-                            border: "1px solid #cbd5e1",
-                            background: "#ffffff",
-                            color: "#0f172a",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                          }}
-                        >
-                          {isAnalysisExpanded
-                            ? "Ocultar análise"
-                            : "Exibir análise"}
-                        </button>
+                        {hasAnalysis && (
+                          <button
+                            type="button"
+                            onClick={() => toggleAnalysis(item.strategy_key)}
+                            style={{
+                              height: 34,
+                              padding: "0 12px",
+                              borderRadius: 8,
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              color: "#0f172a",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {isAnalysisExpanded
+                              ? "Ocultar análise"
+                              : "Exibir análise"}
+                          </button>
+                        )}
+
+                        {hasCases && (
+                          <button
+                            type="button"
+                            onClick={() => toggleCases(item.strategy_key)}
+                            style={{
+                              height: 34,
+                              padding: "0 12px",
+                              borderRadius: 8,
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              color: "#0f172a",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {isCasesExpanded ? "Ocultar casos" : "Exibir casos"}
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -952,6 +1393,15 @@ function RunHistoryCard({
                       <RunTechnicalAnalysisBlock
                         analysis={analysis}
                         runStatus={item.last_run?.status}
+                      />
+                    )}
+
+                    {hasCases && isCasesExpanded && (
+                      <CasesSection
+                        strategyKey={item.strategy_key}
+                        cases={cases}
+                        expandedCaseAnalysisById={expandedCaseAnalysisById}
+                        onToggleCaseAnalysis={toggleCaseAnalysis}
                       />
                     )}
                   </div>

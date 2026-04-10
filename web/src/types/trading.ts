@@ -347,6 +347,29 @@ export type StageTestRunTechnicalAnalysis = {
   snapshot?: AnalysisSnapshot | null;
 };
 
+export type StageTestRunCaseItem = {
+  id: string;
+  case_number?: number | null;
+  side?: string | null;
+  status?: string | null;
+  outcome?: string | null;
+  trigger_price?: number | string | null;
+  entry_price?: number | string | null;
+  close_price?: number | string | null;
+  target_price?: number | string | null;
+  invalidation_price?: number | string | null;
+  trigger_time?: string | null;
+  trigger_candle_time?: string | null;
+  entry_time?: string | null;
+  close_time?: string | null;
+  bars_to_resolution?: number | null;
+  max_favorable_excursion?: string | number | null;
+  max_adverse_excursion?: string | number | null;
+  close_reason?: string | null;
+  analysis?: StageTestRunTechnicalAnalysis | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type StageTestLatestRun = {
   run_id: string | null;
   status: string | null;
@@ -355,6 +378,7 @@ export type StageTestLatestRun = {
   started_at: string | null;
   finished_at: string | null;
   analysis?: StageTestRunTechnicalAnalysis | null;
+  cases?: StageTestRunCaseItem[] | null;
 };
 
 export type StageTestSummaryItem = {

@@ -4,6 +4,7 @@ import type { StageTestOptionItem } from "../types/stageTests";
 import type {
   AnalysisSnapshot,
   CandleTickState,
+  StageTestRunCaseItem,
   StageTestRunRuleItem,
   StageTestRunTechnicalAnalysis,
   StageTestSummaryItem,
@@ -71,6 +72,21 @@ function toText(value: unknown): string | null {
 
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
+  }
+
+  return null;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().replace(",", ".");
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;
@@ -438,6 +454,69 @@ function extractTechnicalAnalysis(
   return null;
 }
 
+function normalizeCaseItem(raw: unknown, index: number): StageTestRunCaseItem | null {
+  const record = toRecord(raw);
+  if (!record) return null;
+
+  const id =
+    toText(record.id) ??
+    toText(record.case_id) ??
+    toText(record.case_number) ??
+    `case-${index + 1}`;
+
+  const metadata = toRecord(record.metadata);
+  const directAnalysis = normalizeTechnicalAnalysis(record.analysis);
+  const snapshotAnalysis = normalizeTechnicalAnalysis({
+    analysis_snapshot: metadata?.analysis_snapshot,
+    trade_bias: metadata?.trade_bias,
+    trigger_label: metadata?.setup_type,
+    summary: metadata?.close_reason,
+  });
+
+  return {
+    id,
+    case_number: toNumber(record.case_number),
+    side: toText(record.side),
+    status: toText(record.status),
+    outcome: toText(record.outcome),
+    trigger_price: toNumber(record.trigger_price) ?? toText(record.trigger_price),
+    entry_price: toNumber(record.entry_price) ?? toText(record.entry_price),
+    close_price: toNumber(record.close_price) ?? toText(record.close_price),
+    target_price: toNumber(record.target_price) ?? toText(record.target_price),
+    invalidation_price:
+      toNumber(record.invalidation_price) ?? toText(record.invalidation_price),
+    trigger_time: toText(record.trigger_time),
+    trigger_candle_time: toText(record.trigger_candle_time),
+    entry_time: toText(record.entry_time),
+    close_time: toText(record.close_time),
+    bars_to_resolution: toNumber(record.bars_to_resolution),
+    max_favorable_excursion:
+      toNumber(record.max_favorable_excursion) ??
+      toText(record.max_favorable_excursion),
+    max_adverse_excursion:
+      toNumber(record.max_adverse_excursion) ??
+      toText(record.max_adverse_excursion),
+    close_reason: toText(record.close_reason),
+    analysis: directAnalysis ?? snapshotAnalysis,
+    metadata: metadata ?? null,
+  };
+}
+
+function extractCasesFromResult(result: unknown): StageTestRunCaseItem[] {
+  const root = toRecord(result);
+  if (!root) return [];
+
+  const metrics = toRecord(root.metrics);
+  const rawCases =
+    (Array.isArray(root.cases) ? root.cases : null) ??
+    (Array.isArray(metrics?.cases) ? metrics?.cases : null) ??
+    [];
+
+  return rawCases
+    .map((item, index) => normalizeCaseItem(item, index))
+    .filter((item): item is StageTestRunCaseItem => item !== null);
+}
+
 function findMatchingItems(
   items: StageTestOptionItem[],
   selectedSymbol: string,
@@ -497,6 +576,7 @@ function buildBaseSummaryItem(
           started_at: null,
           finished_at: null,
           analysis: null,
+          cases: null,
         }
       : null,
   } as StageTestSummaryItem;
@@ -685,6 +765,7 @@ function useStageTests({
                 started_at: null,
                 finished_at: null,
                 analysis: null,
+                cases: null,
               }
             : null,
         }))
@@ -758,6 +839,7 @@ function useStageTests({
         const finishedAtIso = new Date().toISOString();
         const metrics = result.metrics;
         const analysis = extractTechnicalAnalysis(result);
+        const cases = extractCasesFromResult(result);
         const nextStatus =
           result.ok && result.return_code === 0 ? "local_ok" : "local_error";
 
@@ -788,6 +870,7 @@ function useStageTests({
                 started_at: startedAtIso,
                 finished_at: finishedAtIso,
                 analysis,
+                cases,
               },
             } as StageTestSummaryItem;
           })
@@ -842,6 +925,7 @@ function useStageTests({
                     started_at: startedAtIso,
                     finished_at: finishedAtIso,
                     analysis: null,
+                    cases: null,
                   }
                 : {
                     run_id: "",
@@ -851,6 +935,7 @@ function useStageTests({
                     started_at: startedAtIso,
                     finished_at: finishedAtIso,
                     analysis: null,
+                    cases: null,
                   },
             } as StageTestSummaryItem;
           })
