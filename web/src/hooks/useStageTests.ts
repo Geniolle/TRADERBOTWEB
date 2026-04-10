@@ -1,22 +1,19 @@
-// C:\TraderBotWeb\web\src\hooks\useStageTests.ts
-// Backend:
-// - GET  /api/v1/stage-tests/options
-// - POST /api/v1/stage-tests/run
-//
-// Esta versão:
-// - remove completamente o auto-run
-// - mantém catálogo oficial do backend
-// - permite execução apenas manual
-// - preserva métricas locais em memória por estratégia
-// - não depende de histórico persistido no backend
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchStageTestOptions, runStageTest } from "../services/stageTestsApi";
+import type { StageTestOptionItem } from "../types/stageTests";
 import type {
-  StageTestOptionItem,
-  StageTestStrategyOption,
-} from "../types/stageTests";
-import type { CandleTickState, StageTestSummaryItem } from "../types/trading";
+  AnalysisSnapshot,
+  CandleTickState,
+  StageTestRunRuleItem,
+  StageTestRunTechnicalAnalysis,
+  StageTestSummaryItem,
+} from "../types/trading";
+
+type StageTestStrategyOption = {
+  key: string;
+  label: string;
+  description: string | null;
+};
 
 type UseStageTestsParams = {
   selectedSymbol: string;
@@ -57,6 +54,388 @@ function normalizeText(value: string | null | undefined): string {
 
 function formatDateTime(value: Date): string {
   return value.toLocaleString("pt-PT");
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function toText(value: unknown): string | null {
+  if (value == null) return null;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return null;
+}
+
+function toBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  return null;
+}
+
+function normalizeStrategyOptions(rawStrategies: unknown): StageTestStrategyOption[] {
+  if (!Array.isArray(rawStrategies)) {
+    return [];
+  }
+
+  return rawStrategies
+    .map((item) => {
+      if (typeof item === "string") {
+        const trimmed = item.trim();
+        if (!trimmed) return null;
+
+        return {
+          key: trimmed,
+          label: trimmed,
+          description: null,
+        } satisfies StageTestStrategyOption;
+      }
+
+      const record = toRecord(item);
+      if (!record) return null;
+
+      const key =
+        toText(record.key) ??
+        toText(record.strategy_key) ??
+        toText(record.name);
+
+      if (!key) return null;
+
+      const label =
+        toText(record.label) ??
+        toText(record.name) ??
+        toText(record.title) ??
+        key;
+
+      const description =
+        toText(record.description) ??
+        toText(record.strategy_description) ??
+        null;
+
+      return {
+        key,
+        label,
+        description,
+      } satisfies StageTestStrategyOption;
+    })
+    .filter((item): item is StageTestStrategyOption => item !== null);
+}
+
+function pushIndicator(
+  target: { label: string; value: string }[],
+  label: string,
+  value: unknown
+) {
+  const text = toText(value);
+  if (!text) return;
+  target.push({ label, value: text });
+}
+
+function pushRule(
+  target: StageTestRunRuleItem[],
+  label: string,
+  passed: unknown,
+  value?: unknown
+) {
+  const boolValue = toBoolean(passed);
+  const text = toText(value) ?? "";
+
+  if (boolValue == null && !text) {
+    return;
+  }
+
+  target.push({
+    label,
+    passed: boolValue,
+    value: text,
+  });
+}
+
+function buildAnalysisFromSnapshot(
+  snapshot: AnalysisSnapshot | null | undefined
+): StageTestRunTechnicalAnalysis | null {
+  if (!snapshot) return null;
+
+  const indicators: { label: string; value: string }[] = [];
+  const rules: StageTestRunRuleItem[] = [];
+
+  pushIndicator(
+    indicators,
+    "Preço de referência",
+    snapshot.trigger_context?.reference_price
+  );
+  pushIndicator(indicators, "Sessão", snapshot.trigger_context?.session);
+  pushIndicator(indicators, "EMA 5", snapshot.trend?.ema_5);
+  pushIndicator(indicators, "EMA 10", snapshot.trend?.ema_10);
+  pushIndicator(indicators, "EMA 20", snapshot.trend?.ema_20);
+  pushIndicator(indicators, "EMA 30", snapshot.trend?.ema_30);
+  pushIndicator(indicators, "EMA 40", snapshot.trend?.ema_40);
+  pushIndicator(indicators, "Alinhamento EMA", snapshot.trend?.ema_alignment);
+  pushIndicator(indicators, "Preço vs EMA 20", snapshot.trend?.price_vs_ema_20);
+  pushIndicator(indicators, "Preço vs EMA 40", snapshot.trend?.price_vs_ema_40);
+  pushIndicator(indicators, "RSI 14", snapshot.momentum?.rsi_14);
+  pushIndicator(indicators, "Zona RSI", snapshot.momentum?.rsi_zone);
+  pushIndicator(indicators, "Inclinação RSI", snapshot.momentum?.rsi_slope);
+  pushIndicator(indicators, "MACD", snapshot.momentum?.macd_line);
+  pushIndicator(indicators, "Signal", snapshot.momentum?.macd_signal);
+  pushIndicator(indicators, "Histograma", snapshot.momentum?.macd_histogram);
+  pushIndicator(indicators, "Estado MACD", snapshot.momentum?.macd_state);
+  pushIndicator(indicators, "ATR 14", snapshot.volatility?.atr_14);
+  pushIndicator(indicators, "Regime ATR", snapshot.volatility?.atr_regime);
+  pushIndicator(indicators, "Range candle", snapshot.volatility?.candle_range);
+  pushIndicator(
+    indicators,
+    "Range vs ATR",
+    snapshot.volatility?.candle_range_vs_atr
+  );
+  pushIndicator(indicators, "Bollinger superior", snapshot.bollinger?.upper);
+  pushIndicator(indicators, "Bollinger média", snapshot.bollinger?.middle);
+  pushIndicator(indicators, "Bollinger inferior", snapshot.bollinger?.lower);
+  pushIndicator(indicators, "Bandwidth", snapshot.bollinger?.bandwidth);
+  pushIndicator(
+    indicators,
+    "Posição do close na banda",
+    snapshot.bollinger?.close_position_in_band
+  );
+  pushIndicator(
+    indicators,
+    "Estrutura de mercado",
+    snapshot.structure?.market_structure
+  );
+  pushIndicator(indicators, "Local de entrada", snapshot.structure?.entry_location);
+  pushIndicator(
+    indicators,
+    "Distância ao suporte",
+    snapshot.structure?.distance_to_recent_support
+  );
+  pushIndicator(
+    indicators,
+    "Distância à resistência",
+    snapshot.structure?.distance_to_recent_resistance
+  );
+  pushIndicator(
+    indicators,
+    "Distância à EMA 20",
+    snapshot.structure?.distance_to_ema_20
+  );
+  pushIndicator(
+    indicators,
+    "Distância à EMA 40",
+    snapshot.structure?.distance_to_ema_40
+  );
+  pushIndicator(indicators, "Candle open", snapshot.trigger_candle?.open);
+  pushIndicator(indicators, "Candle high", snapshot.trigger_candle?.high);
+  pushIndicator(indicators, "Candle low", snapshot.trigger_candle?.low);
+  pushIndicator(indicators, "Candle close", snapshot.trigger_candle?.close);
+  pushIndicator(indicators, "Body size", snapshot.trigger_candle?.body_size);
+  pushIndicator(indicators, "Upper wick", snapshot.trigger_candle?.upper_wick);
+  pushIndicator(indicators, "Lower wick", snapshot.trigger_candle?.lower_wick);
+  pushIndicator(indicators, "Body ratio", snapshot.trigger_candle?.body_ratio);
+  pushIndicator(indicators, "Tipo de candle", snapshot.trigger_candle?.candle_type);
+
+  pushRule(
+    rules,
+    "Fecho abaixo da banda inferior",
+    snapshot.bollinger?.closed_below_lower_band
+  );
+  pushRule(
+    rules,
+    "Fecho acima da banda superior",
+    snapshot.bollinger?.closed_above_upper_band
+  );
+  pushRule(
+    rules,
+    "Reentrada na banda (long)",
+    snapshot.bollinger?.reentered_inside_band_long
+  );
+  pushRule(
+    rules,
+    "Reentrada na banda (short)",
+    snapshot.bollinger?.reentered_inside_band_short
+  );
+  pushRule(rules, "BB reentry long", snapshot.patterns?.bb_reentry_long);
+  pushRule(rules, "BB reentry short", snapshot.patterns?.bb_reentry_short);
+  pushRule(
+    rules,
+    "EMA trend confirmed long",
+    snapshot.patterns?.ema_trend_confirmed_long
+  );
+  pushRule(
+    rules,
+    "EMA trend confirmed short",
+    snapshot.patterns?.ema_trend_confirmed_short
+  );
+  pushRule(rules, "RSI recovery long", snapshot.patterns?.rsi_recovery_long);
+  pushRule(rules, "RSI recovery short", snapshot.patterns?.rsi_recovery_short);
+  pushRule(
+    rules,
+    "MACD confirmation long",
+    snapshot.patterns?.macd_confirmation_long
+  );
+  pushRule(
+    rules,
+    "MACD confirmation short",
+    snapshot.patterns?.macd_confirmation_short
+  );
+  pushRule(rules, "Countertrend long", snapshot.patterns?.countertrend_long);
+  pushRule(rules, "Countertrend short", snapshot.patterns?.countertrend_short);
+
+  return {
+    validated_at: snapshot.trigger_context?.reference_time ?? null,
+    trigger_label: snapshot.structure?.entry_location ?? null,
+    summary: snapshot.structure?.market_structure ?? null,
+    indicators,
+    rules,
+    snapshot,
+  };
+}
+
+function readRulesFromUnknown(value: unknown): StageTestRunRuleItem[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const rule = toRecord(item);
+      if (!rule) return null;
+
+      const label = toText(rule.label);
+      if (!label) return null;
+
+      return {
+        label,
+        value: toText(rule.value) ?? "",
+        passed: toBoolean(rule.passed),
+      } as StageTestRunRuleItem;
+    })
+    .filter((item): item is StageTestRunRuleItem => item !== null);
+}
+
+function readIndicatorsFromUnknown(
+  value: unknown
+): Array<{ label: string; value: string }> {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const indicator = toRecord(item);
+      if (!indicator) return null;
+
+      const label = toText(indicator.label);
+      const rawValue = toText(indicator.value);
+
+      if (!label || !rawValue) return null;
+
+      return {
+        label,
+        value: rawValue,
+      };
+    })
+    .filter(
+      (item): item is { label: string; value: string } => item !== null
+    );
+}
+
+function normalizeTechnicalAnalysis(
+  raw: unknown
+): StageTestRunTechnicalAnalysis | null {
+  const record = toRecord(raw);
+  if (!record) return null;
+
+  const rawSnapshot =
+    toRecord(record.snapshot) ??
+    toRecord(record.analysis_snapshot) ??
+    toRecord(record.snapshot_data);
+
+  const snapshot = rawSnapshot as AnalysisSnapshot | null;
+  const snapshotAnalysis = buildAnalysisFromSnapshot(snapshot);
+  const explicitIndicators = readIndicatorsFromUnknown(record.indicators);
+  const explicitRules = readRulesFromUnknown(record.rules);
+
+  const mergedIndicators =
+    explicitIndicators.length > 0
+      ? explicitIndicators
+      : snapshotAnalysis?.indicators ?? [];
+
+  const mergedRules =
+    explicitRules.length > 0 ? explicitRules : snapshotAnalysis?.rules ?? [];
+
+  const summary =
+    toText(record.summary) ??
+    toText(record.interpretation) ??
+    toText(record.rationale) ??
+    snapshotAnalysis?.summary ??
+    null;
+
+  const direction =
+    toText(record.direction) ??
+    toText(record.side) ??
+    toText(record.trade_bias) ??
+    null;
+
+  const validatedAt =
+    toText(record.validated_at) ??
+    toText(record.validation_time) ??
+    snapshotAnalysis?.validated_at ??
+    null;
+
+  const triggerLabel =
+    toText(record.trigger_label) ??
+    toText(record.trigger) ??
+    snapshotAnalysis?.trigger_label ??
+    null;
+
+  if (!summary && !direction && !validatedAt && !triggerLabel) {
+    if (mergedIndicators.length === 0 && mergedRules.length === 0 && !snapshot) {
+      return null;
+    }
+  }
+
+  return {
+    summary,
+    direction,
+    validated_at: validatedAt,
+    trigger_label: triggerLabel,
+    indicators: mergedIndicators,
+    rules: mergedRules,
+    snapshot,
+  };
+}
+
+function extractTechnicalAnalysis(
+  result: unknown
+): StageTestRunTechnicalAnalysis | null {
+  const root = toRecord(result);
+  if (!root) return null;
+
+  const metrics = toRecord(root.metrics);
+
+  const candidates: unknown[] = [
+    root.analysis,
+    root.technical_analysis,
+    root.validation_analysis,
+    root.analysis_snapshot,
+    metrics?.analysis,
+    metrics?.technical_analysis,
+    metrics?.validation_analysis,
+    metrics?.analysis_snapshot,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeTechnicalAnalysis(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
 }
 
 function findMatchingItems(
@@ -115,6 +494,9 @@ function buildBaseSummaryItem(
           symbol: firstMatch.symbol,
           timeframe: firstMatch.timeframe,
           status: "ready",
+          started_at: null,
+          finished_at: null,
+          analysis: null,
         }
       : null,
   } as StageTestSummaryItem;
@@ -208,11 +590,17 @@ function useStageTests({
       setRunsError("");
 
       const data = await fetchStageTestOptions(1);
+      const normalizedStrategies = normalizeStrategyOptions(
+        (data as { strategies?: unknown }).strategies
+      );
+      const items = Array.isArray((data as { items?: unknown }).items)
+        ? ((data as { items?: unknown }).items as StageTestOptionItem[])
+        : [];
 
       setStageTests((previousStageTests) =>
         buildStageTestSummaryItems(
-          data.strategies,
-          data.items,
+          normalizedStrategies,
+          items,
           selectedSymbol,
           selectedTimeframe,
           previousStageTests
@@ -227,7 +615,7 @@ function useStageTests({
       setLastExecutionLog(
         `Catálogo Stage Tests sincronizado em ${formatDateTime(
           new Date()
-        )} | Estratégias=${data.strategies.length} | Combinações=${data.items.length} | Símbolo=${
+        )} | Estratégias=${normalizedStrategies.length} | Combinações=${items.length} | Símbolo=${
           selectedSymbol || "-"
         } | Timeframe=${
           selectedTimeframe || "-"
@@ -294,6 +682,9 @@ function useStageTests({
                 ...item.last_run,
                 run_id: "",
                 status: "ready",
+                started_at: null,
+                finished_at: null,
+                analysis: null,
               }
             : null,
         }))
@@ -343,6 +734,8 @@ function useStageTests({
         return;
       }
 
+      const startedAtIso = new Date().toISOString();
+
       try {
         setIsCreatingRuns(true);
         setRunningStrategyKey(strategyKey);
@@ -362,7 +755,9 @@ function useStageTests({
           extra_args: [],
         });
 
+        const finishedAtIso = new Date().toISOString();
         const metrics = result.metrics;
+        const analysis = extractTechnicalAnalysis(result);
         const nextStatus =
           result.ok && result.return_code === 0 ? "local_ok" : "local_error";
 
@@ -390,6 +785,9 @@ function useStageTests({
                 symbol: selectedSymbol,
                 timeframe: selectedTimeframe,
                 status: nextStatus,
+                started_at: startedAtIso,
+                finished_at: finishedAtIso,
+                analysis,
               },
             } as StageTestSummaryItem;
           })
@@ -417,6 +815,8 @@ function useStageTests({
         const message =
           err instanceof Error ? err.message : "Erro desconhecido no run manual";
 
+        const finishedAtIso = new Date().toISOString();
+
         setActionError(`${strategyKey}: ${message}`);
         setLastExecutionStatus("error");
         setLastExecutionLog(
@@ -439,12 +839,18 @@ function useStageTests({
                     symbol: selectedSymbol,
                     timeframe: selectedTimeframe,
                     status: "local_error",
+                    started_at: startedAtIso,
+                    finished_at: finishedAtIso,
+                    analysis: null,
                   }
                 : {
                     run_id: "",
                     symbol: selectedSymbol,
                     timeframe: selectedTimeframe,
                     status: "local_error",
+                    started_at: startedAtIso,
+                    finished_at: finishedAtIso,
+                    analysis: null,
                   },
             } as StageTestSummaryItem;
           })

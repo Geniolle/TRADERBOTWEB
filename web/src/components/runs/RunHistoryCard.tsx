@@ -1,7 +1,8 @@
-// C:\TraderBotWeb\web\src\components\runs\RunHistoryCard.tsx
-
 import { useMemo, useState } from "react";
-import type { StageTestSummaryItem } from "../../types/trading";
+import type {
+  StageTestRunTechnicalAnalysis,
+  StageTestSummaryItem,
+} from "../../types/trading";
 import type { ExecutionLogStatus } from "../../hooks/useStageTests";
 
 type RunHistoryCardProps = {
@@ -36,6 +37,12 @@ function formatDateTime(value: string | null | undefined): string {
   if (Number.isNaN(parsed.getTime())) return value;
 
   return parsed.toLocaleString("pt-PT");
+}
+
+function formatBooleanLabel(value: boolean | null | undefined): string {
+  if (value === true) return "✅ Sim";
+  if (value === false) return "❌ Não";
+  return "-";
 }
 
 function metricPill(
@@ -155,6 +162,304 @@ function getStatusBorder(status: ExecutionLogStatus): string {
   return "#cbd5e1";
 }
 
+function getAnalysisStatusBadge(status: string | null | undefined) {
+  const normalized = (status ?? "").trim().toLowerCase();
+
+  if (normalized === "local_ok") {
+    return {
+      label: "Entrada validada",
+      background: "#dcfce7",
+      color: "#166534",
+      border: "#86efac",
+    };
+  }
+
+  if (normalized === "local_error") {
+    return {
+      label: "Run com erro",
+      background: "#fee2e2",
+      color: "#991b1b",
+      border: "#fca5a5",
+    };
+  }
+
+  if (normalized === "ready") {
+    return {
+      label: "Sem sinal",
+      background: "#f1f5f9",
+      color: "#475569",
+      border: "#cbd5e1",
+    };
+  }
+
+  return {
+    label: status || "Sem estado",
+    background: "#f8fafc",
+    color: "#334155",
+    border: "#cbd5e1",
+  };
+}
+
+function AnalysisSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 10,
+        padding: 12,
+        background: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          marginBottom: 10,
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#0f172a",
+        }}
+      >
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function AnalysisListRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
+        gap: 10,
+        alignItems: "start",
+        padding: "7px 0",
+        borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 12,
+          color: "#64748b",
+          lineHeight: 1.45,
+        }}
+      >
+        {label}
+      </span>
+
+      <strong
+        style={{
+          fontSize: 12,
+          color: "#0f172a",
+          lineHeight: 1.45,
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </strong>
+    </div>
+  );
+}
+
+function RunTechnicalAnalysisBlock({
+  analysis,
+  runStatus,
+}: {
+  analysis: StageTestRunTechnicalAnalysis | null;
+  runStatus: string | null | undefined;
+}) {
+  if (!analysis) {
+    return null;
+  }
+
+  const statusBadge = getAnalysisStatusBadge(runStatus);
+  const indicators = analysis.indicators ?? [];
+  const rules = analysis.rules ?? [];
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid #dbe2ea",
+        borderRadius: 12,
+        padding: 12,
+        background: "#f8fafc",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong
+            style={{
+              fontSize: 14,
+              color: "#0f172a",
+            }}
+          >
+            Análise técnica do último run
+          </strong>
+
+          <span
+            style={{
+              fontSize: 12,
+              color: "#475569",
+              lineHeight: 1.45,
+            }}
+          >
+            Snapshot técnico capturado no momento da validação.
+          </span>
+        </div>
+
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: statusBadge.background,
+            color: statusBadge.color,
+            border: `1px solid ${statusBadge.border}`,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {statusBadge.label}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 8,
+        }}
+      >
+        <AnalysisSection title="Contexto">
+          <div style={{ display: "grid" }}>
+            <AnalysisListRow label="Direção" value={analysis.direction || "-"} />
+            <AnalysisListRow
+              label="Validação"
+              value={formatDateTime(analysis.validated_at)}
+            />
+            <AnalysisListRow
+              label="Gatilho"
+              value={analysis.trigger_label || "-"}
+            />
+            <AnalysisListRow label="Resumo" value={analysis.summary || "-"} />
+          </div>
+        </AnalysisSection>
+
+        <AnalysisSection title="Regras da validação">
+          {rules.length === 0 ? (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#64748b",
+                lineHeight: 1.45,
+              }}
+            >
+              Nenhuma regra detalhada foi devolvida pelo backend.
+            </div>
+          ) : (
+            <div style={{ display: "grid" }}>
+              {rules.map((rule, index) => (
+                <AnalysisListRow
+                  key={`${rule.label}-${index}`}
+                  label={rule.label}
+                  value={
+                    rule.passed == null
+                      ? rule.value
+                      : `${formatBooleanLabel(rule.passed)}${
+                          rule.value ? ` • ${rule.value}` : ""
+                        }`
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </AnalysisSection>
+      </div>
+
+      <AnalysisSection title="Indicadores no momento da validação">
+        {indicators.length === 0 ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "#64748b",
+              lineHeight: 1.45,
+            }}
+          >
+            Os indicadores ainda não foram devolvidos pelo backend para este run.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 8,
+            }}
+          >
+            {indicators.map((indicator, index) => (
+              <div
+                key={`${indicator.label}-${index}`}
+                style={{
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  background: "#ffffff",
+                  display: "grid",
+                  gap: 4,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {indicator.label}
+                </span>
+
+                <strong
+                  style={{
+                    fontSize: 13,
+                    color: "#0f172a",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {indicator.value}
+                </strong>
+              </div>
+            ))}
+          </div>
+        )}
+      </AnalysisSection>
+    </div>
+  );
+}
+
 function RunHistoryCard({
   sidebarCardStyle,
   runSearch,
@@ -175,6 +480,9 @@ function RunHistoryCard({
   onRunStageTest,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
+  const [expandedAnalysisByStrategy, setExpandedAnalysisByStrategy] = useState<
+    Record<string, boolean>
+  >({});
 
   const orderedStageTests = useMemo(() => {
     return [...filteredStageTests].sort(compareStageTestsByHitRate);
@@ -191,6 +499,13 @@ function RunHistoryCard({
     : hasManualContext
       ? "Escolha uma estratégia da lista e clique em Run para executar manualmente no símbolo e timeframe selecionados."
       : "Selecione símbolo e timeframe no painel do mercado para liberar a execução manual.";
+
+  const toggleAnalysis = (strategyKey: string) => {
+    setExpandedAnalysisByStrategy((previous) => ({
+      ...previous,
+      [strategyKey]: !previous[strategyKey],
+    }));
+  };
 
   return (
     <div
@@ -408,6 +723,11 @@ function RunHistoryCard({
                 const isSelected =
                   latestRunId !== "" && selectedRunId === latestRunId;
                 const isRunning = runningStrategyKey === item.strategy_key;
+                const analysis = item.last_run?.analysis ?? null;
+                const hasAnalysis = Boolean(analysis);
+                const isAnalysisExpanded = Boolean(
+                  expandedAnalysisByStrategy[item.strategy_key]
+                );
 
                 return (
                   <div
@@ -598,6 +918,42 @@ function RunHistoryCard({
                         formatDateTime(item.last_run?.started_at)
                       )}
                     </div>
+
+                    {hasAnalysis && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleAnalysis(item.strategy_key)}
+                          style={{
+                            height: 34,
+                            padding: "0 12px",
+                            borderRadius: 8,
+                            border: "1px solid #cbd5e1",
+                            background: "#ffffff",
+                            color: "#0f172a",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {isAnalysisExpanded
+                            ? "Ocultar análise"
+                            : "Exibir análise"}
+                        </button>
+                      </div>
+                    )}
+
+                    {hasAnalysis && isAnalysisExpanded && (
+                      <RunTechnicalAnalysisBlock
+                        analysis={analysis}
+                        runStatus={item.last_run?.status}
+                      />
+                    )}
                   </div>
                 );
               })}

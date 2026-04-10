@@ -1,5 +1,3 @@
-// web/src/types/trading.ts
-
 export type CatalogProductSummary = {
   code: string;
   label: string;
@@ -244,36 +242,6 @@ export type RunSummary = {
   cases_count: number;
 };
 
-export type StageTestLatestRun = {
-  run_id: string | null;
-  status: string | null;
-  symbol: string | null;
-  timeframe: string | null;
-  started_at: string | null;
-  finished_at: string | null;
-};
-
-export type StageTestSummaryItem = {
-  strategy_key: string;
-  strategy_name: string;
-  strategy_description: string | null;
-  strategy_category: string | null;
-  total_runs: number;
-  total_cases: number;
-  total_hits: number;
-  total_fails: number;
-  total_timeouts: number;
-  hit_rate: number;
-  fail_rate: number;
-  timeout_rate: number;
-  last_run: StageTestLatestRun | null;
-};
-
-export type RunMetricItem = {
-  name: string;
-  value: number | string | null;
-};
-
 export type AnalysisSnapshot = {
   snapshot_version?: string;
   trigger_context?: {
@@ -358,6 +326,56 @@ export type AnalysisSnapshot = {
     countertrend_long?: boolean | null;
     countertrend_short?: boolean | null;
   };
+};
+
+export type StageTestRunRuleItem = {
+  label: string;
+  value: string;
+  passed?: boolean | null;
+};
+
+export type StageTestRunTechnicalAnalysis = {
+  summary?: string | null;
+  direction?: string | null;
+  validated_at?: string | null;
+  trigger_label?: string | null;
+  indicators?: Array<{
+    label: string;
+    value: string;
+  }>;
+  rules?: StageTestRunRuleItem[];
+  snapshot?: AnalysisSnapshot | null;
+};
+
+export type StageTestLatestRun = {
+  run_id: string | null;
+  status: string | null;
+  symbol: string | null;
+  timeframe: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  analysis?: StageTestRunTechnicalAnalysis | null;
+};
+
+export type StageTestSummaryItem = {
+  strategy_key: string;
+  strategy_name: string;
+  strategy_description: string | null;
+  strategy_category: string | null;
+  total_runs: number;
+  total_cases: number;
+  total_hits: number;
+  total_fails: number;
+  total_timeouts: number;
+  hit_rate: number;
+  fail_rate: number;
+  timeout_rate: number;
+  last_run: StageTestLatestRun | null;
+};
+
+export type RunMetricItem = {
+  name: string;
+  value: number | string | null;
 };
 
 export type RunCaseMetadata = {
