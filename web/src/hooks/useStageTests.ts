@@ -575,6 +575,9 @@ function buildBaseSummaryItem(
           status: "ready",
           started_at: null,
           finished_at: null,
+          total_candles: firstMatch.candles_count ?? totalCandles,
+          first_candle: firstMatch.first_candle ?? null,
+          last_candle: firstMatch.last_candle ?? null,
           analysis: null,
           cases: null,
         }
@@ -612,6 +615,12 @@ function mergeSummaryWithPrevious(
           symbol: previousLastRun.symbol || fallbackLastRun?.symbol || "",
           timeframe:
             previousLastRun.timeframe || fallbackLastRun?.timeframe || "",
+          total_candles:
+            previousLastRun.total_candles ?? fallbackLastRun?.total_candles ?? null,
+          first_candle:
+            previousLastRun.first_candle ?? fallbackLastRun?.first_candle ?? null,
+          last_candle:
+            previousLastRun.last_candle ?? fallbackLastRun?.last_candle ?? null,
         }
       : fallbackLastRun,
   } as StageTestSummaryItem;
@@ -869,6 +878,9 @@ function useStageTests({
                 status: nextStatus,
                 started_at: startedAtIso,
                 finished_at: finishedAtIso,
+                total_candles: metrics?.total_candles ?? null,
+                first_candle: metrics?.first_candle ?? null,
+                last_candle: metrics?.last_candle ?? null,
                 analysis,
                 cases,
               },
@@ -934,6 +946,9 @@ function useStageTests({
                     status: "local_error",
                     started_at: startedAtIso,
                     finished_at: finishedAtIso,
+                    total_candles: null,
+                    first_candle: null,
+                    last_candle: null,
                     analysis: null,
                     cases: null,
                   },

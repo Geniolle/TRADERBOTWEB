@@ -491,6 +491,68 @@ function getConflictLevel(conflicts: number): string {
   return "Alto";
 }
 
+function formatCoverageDuration(
+  firstCandle: string | null | undefined,
+  lastCandle: string | null | undefined,
+  totalCandles: number | null | undefined,
+  timeframe: string | null | undefined
+): string {
+  const first = firstCandle ? new Date(firstCandle) : null;
+  const last = lastCandle ? new Date(lastCandle) : null;
+
+  if (
+    first &&
+    last &&
+    !Number.isNaN(first.getTime()) &&
+    !Number.isNaN(last.getTime())
+  ) {
+    const diffMs = last.getTime() - first.getTime();
+    if (diffMs >= 0) {
+      const totalMinutes = Math.round(diffMs / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+
+      if (hours > 0) {
+        return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+      }
+
+      return `${minutes}m`;
+    }
+  }
+
+  const tf = (timeframe ?? "").trim().toLowerCase();
+  const candles = Number.isFinite(totalCandles ?? NaN) ? Number(totalCandles) : 0;
+
+  const tfMap: Record<string, number> = {
+    "1m": 1,
+    "3m": 3,
+    "5m": 5,
+    "10m": 10,
+    "15m": 15,
+    "30m": 30,
+    "45m": 45,
+    "1h": 60,
+    "2h": 120,
+    "4h": 240,
+    "1d": 1440,
+  };
+
+  const minutesPerCandle = tfMap[tf];
+  if (!minutesPerCandle || candles <= 0) {
+    return "-";
+  }
+
+  const totalMinutes = candles * minutesPerCandle;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+  }
+
+  return `${minutes}m`;
+}
+
 function scoreTechnicalAnalysis(
   analysis: StageTestRunTechnicalAnalysis
 ): {
@@ -2029,6 +2091,15 @@ function RunHistoryCard({
                 const isCasesExpanded = Boolean(
                   expandedCasesByStrategy[item.strategy_key]
                 );
+                const totalCandles = item.last_run?.total_candles ?? null;
+                const firstCandle = item.last_run?.first_candle ?? null;
+                const lastCandle = item.last_run?.last_candle ?? null;
+                const coverage = formatCoverageDuration(
+                  firstCandle,
+                  lastCandle,
+                  totalCandles,
+                  item.last_run?.timeframe
+                );
 
                 return (
                   <div
@@ -2174,13 +2245,24 @@ function RunHistoryCard({
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+                        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
                         gap: 8,
                         marginBottom: 12,
                       }}
                     >
                       {metricPill("Runs", item.total_runs, "#cbd5e1", "#f8fafc")}
-                      {metricPill("Cases", item.total_cases, "#cbd5e1", "#f8fafc")}
+                      {metricPill(
+                        "Candles",
+                        totalCandles ?? "-",
+                        "#cbd5e1",
+                        "#f8fafc"
+                      )}
+                      {metricPill(
+                        "Cases",
+                        item.total_cases,
+                        "#cbd5e1",
+                        "#f8fafc"
+                      )}
                       {metricPill("Hits", item.total_hits, "#16a34a", "#f0fdf4")}
                       {metricPill("Fails", item.total_fails, "#dc2626", "#fef2f2")}
                       {metricPill(
@@ -2208,11 +2290,18 @@ function RunHistoryCard({
                       }}
                     >
                       {detailRow("Categoria", item.strategy_category ?? "-")}
+                      {detailRow("Último símbolo", item.last_run?.symbol ?? "-")}
+                      {detailRow("Último timeframe", item.last_run?.timeframe ?? "-")}
+                      {detailRow(
+                        "Candles analisados",
+                        totalCandles != null ? String(totalCandles) : "-"
+                      )}
+                      {detailRow("Início da análise", formatDateTime(firstCandle))}
+                      {detailRow("Fim da análise", formatDateTime(lastCandle))}
+                      {detailRow("Cobertura", coverage)}
                       {detailRow("Fail Rate", formatPercent(item.fail_rate))}
                       {detailRow("Timeout Rate", formatPercent(item.timeout_rate))}
                       {detailRow("Último run", latestRunId || "-")}
-                      {detailRow("Último símbolo", item.last_run?.symbol ?? "-")}
-                      {detailRow("Último timeframe", item.last_run?.timeframe ?? "-")}
                       {detailRow("Último status", item.last_run?.status ?? "-")}
                       {detailRow(
                         "Último início",

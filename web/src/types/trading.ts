@@ -377,6 +377,9 @@ export type StageTestLatestRun = {
   timeframe: string | null;
   started_at: string | null;
   finished_at: string | null;
+  total_candles?: number | null;
+  first_candle?: string | null;
+  last_candle?: string | null;
   analysis?: StageTestRunTechnicalAnalysis | null;
   cases?: StageTestRunCaseItem[] | null;
 };
