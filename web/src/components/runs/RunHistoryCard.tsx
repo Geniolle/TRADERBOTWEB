@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type {
   StageTestRunCaseItem,
+  StageTestRunRuleItem,
   StageTestRunTechnicalAnalysis,
   StageTestSummaryItem,
 } from "../../types/trading";
@@ -27,6 +28,7 @@ type RunHistoryCardProps = {
 };
 
 type CaseFilter = "all" | "hit" | "fail" | "timeout";
+type RuleVisualState = "confirmed" | "contrary" | "inactive" | "contextual";
 
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0,00%";
@@ -42,12 +44,6 @@ function formatDateTime(value: string | null | undefined): string {
   return parsed.toLocaleString("pt-PT");
 }
 
-function formatBooleanLabel(value: boolean | null | undefined): string {
-  if (value === true) return "✅ Sim";
-  if (value === false) return "❌ Não";
-  return "-";
-}
-
 function formatValue(value: string | number | null | undefined): string {
   if (value == null) return "-";
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -55,6 +51,87 @@ function formatValue(value: string | number | null | undefined): string {
   }
   const text = String(value).trim();
   return text || "-";
+}
+
+function formatAnalysisNumber(
+  value: string | number | null | undefined,
+  digits = 5
+): string {
+  if (value == null) return "-";
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "-";
+    return value.toFixed(digits);
+  }
+
+  const text = String(value).trim();
+  if (!text) return "-";
+
+  const normalized = text.replace(",", ".");
+  const parsed = Number(normalized);
+
+  if (!Number.isFinite(parsed)) {
+    return text;
+  }
+
+  return parsed.toFixed(digits);
+}
+
+function formatIndicatorValueByLabel(label: string, value: string): string {
+  const normalizedLabel = label.trim().toLowerCase();
+
+  if (
+    [
+      "rsi 14",
+      "posição do close na banda",
+      "body ratio",
+      "hit rate",
+      "fail rate",
+      "timeout rate",
+    ].includes(normalizedLabel)
+  ) {
+    return formatAnalysisNumber(value, 2);
+  }
+
+  if (["macd", "signal", "histograma", "atr 14"].includes(normalizedLabel)) {
+    return formatAnalysisNumber(value, 6);
+  }
+
+  if (
+    [
+      "preço de referência",
+      "ema 5",
+      "ema 10",
+      "ema 20",
+      "ema 30",
+      "ema 40",
+      "bollinger superior",
+      "bollinger média",
+      "bollinger inferior",
+      "range candle",
+      "range vs atr",
+      "distância ao suporte",
+      "distância à resistência",
+      "distância à ema 20",
+      "distância à ema 40",
+      "candle open",
+      "candle high",
+      "candle low",
+      "candle close",
+      "body size",
+      "upper wick",
+      "lower wick",
+      "bandwidth",
+      "entrada",
+      "fecho",
+      "target",
+      "invalidação",
+    ].includes(normalizedLabel)
+  ) {
+    return formatAnalysisNumber(value, 5);
+  }
+
+  return value;
 }
 
 function normalizeOutcome(value: string | null | undefined): string {
@@ -73,6 +150,71 @@ function normalizeOutcome(value: string | null | undefined): string {
   }
 
   return raw || "other";
+}
+
+function normalizeDisplayText(value: string | null | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "-";
+
+  const normalized = raw.toLowerCase();
+
+  const map: Record<string, string> = {
+    buy: "Compra",
+    sell: "Venda",
+    long: "Compra",
+    short: "Venda",
+    bullish: "Altista",
+    bearish: "Baixista",
+    mixed: "Misto",
+    neutral: "Neutra",
+    oversold: "Sobrevendida",
+    overbought: "Sobrecomprada",
+    above: "Acima",
+    below: "Abaixo",
+    touching: "Encostado",
+    asia: "Ásia",
+    london: "Londres",
+    "new york": "Nova Iorque",
+    new_york: "Nova Iorque",
+    range: "Lateral",
+    trending: "Tendencial",
+    bullish_cross: "Bullish cross",
+    bearish_cross: "Bearish cross",
+    up: "Ascendente",
+    down: "Descendente",
+    flat: "Lateral",
+    mid_range: "Meio do range",
+    balanced: "Equilibrado",
+    normal: "Normal",
+    high: "Alto",
+    low: "Baixo",
+    ready: "Sem sinal",
+    local_ok: "Entrada validada",
+    local_error: "Run com erro",
+  };
+
+  return map[normalized] ?? raw;
+}
+
+function normalizeRuleLabel(label: string): string {
+  const map: Record<string, string> = {
+    "BB reentry long": "Reentrada Bollinger (long)",
+    "BB reentry short": "Reentrada Bollinger (short)",
+    "EMA trend confirmed long": "Tendência EMA confirmada (long)",
+    "EMA trend confirmed short": "Tendência EMA confirmada (short)",
+    "RSI recovery long": "Recuperação RSI (long)",
+    "RSI recovery short": "Recuperação RSI (short)",
+    "MACD confirmation long": "Confirmação MACD (long)",
+    "MACD confirmation short": "Confirmação MACD (short)",
+    "Countertrend long": "Sinal contrário comprador",
+    "Countertrend short": "Sinal contrário vendedor",
+    "Reentrada na banda (long)": "Reentrada na banda (long)",
+    "Reentrada na banda (short)": "Reentrada na banda (short)",
+    "Fecho abaixo da banda inferior": "Fecho abaixo da banda inferior",
+    "Fecho acima da banda superior": "Fecho acima da banda superior",
+  };
+
+  return map[label] ?? label;
 }
 
 function metricPill(
@@ -268,6 +410,447 @@ function getOutcomeBadge(outcome: string | null | undefined) {
   };
 }
 
+function getRuleVisualState(
+  rule: StageTestRunRuleItem,
+  direction: string | null | undefined
+): RuleVisualState {
+  const normalizedDirection = (direction ?? "").trim().toLowerCase();
+  const normalizedLabel = (rule?.label ?? "").trim().toLowerCase();
+  const passed = rule?.passed;
+
+  if (passed === false) {
+    return "inactive";
+  }
+
+  if (passed == null) {
+    return "contextual";
+  }
+
+  const isLongRule =
+    normalizedLabel.includes("long") ||
+    normalizedLabel.includes("comprador") ||
+    normalizedLabel.includes("abaixo da banda inferior");
+
+  const isShortRule =
+    normalizedLabel.includes("short") ||
+    normalizedLabel.includes("vendedor") ||
+    normalizedLabel.includes("acima da banda superior");
+
+  if (normalizedDirection === "buy" || normalizedDirection === "long") {
+    if (isLongRule) return "confirmed";
+    if (isShortRule) return "contrary";
+  }
+
+  if (normalizedDirection === "sell" || normalizedDirection === "short") {
+    if (isShortRule) return "confirmed";
+    if (isLongRule) return "contrary";
+  }
+
+  return "contextual";
+}
+
+function getRuleStateStyles(state: RuleVisualState) {
+  if (state === "confirmed") {
+    return {
+      background: "#ecfdf5",
+      border: "#86efac",
+      color: "#166534",
+      label: "Confirmado",
+    };
+  }
+
+  if (state === "contrary") {
+    return {
+      background: "#fff7ed",
+      border: "#fdba74",
+      color: "#9a3412",
+      label: "Contrário",
+    };
+  }
+
+  if (state === "inactive") {
+    return {
+      background: "#f8fafc",
+      border: "#cbd5e1",
+      color: "#64748b",
+      label: "Inativo",
+    };
+  }
+
+  return {
+    background: "#eff6ff",
+    border: "#93c5fd",
+    color: "#1d4ed8",
+    label: "Contextual",
+  };
+}
+
+function getConflictLevel(conflicts: number): string {
+  if (conflicts <= 0) return "Baixo";
+  if (conflicts === 1) return "Moderado";
+  return "Alto";
+}
+
+function scoreTechnicalAnalysis(
+  analysis: StageTestRunTechnicalAnalysis
+): {
+  overall: number;
+  trend: number;
+  momentum: number;
+  structure: number;
+  entry: number;
+  risk: number;
+} {
+  const snapshot = analysis.snapshot;
+
+  if (!snapshot) {
+    return {
+      overall: 5,
+      trend: 5,
+      momentum: 5,
+      structure: 5,
+      entry: 5,
+      risk: 5,
+    };
+  }
+
+  let trend = 5;
+  let momentum = 5;
+  let structure = 5;
+  let entry = 5;
+  let risk = 7;
+
+  const direction = (analysis.direction ?? "").trim().toLowerCase();
+  const alignment = (snapshot.trend?.ema_alignment ?? "").trim().toLowerCase();
+  const priceVsEma20 = (snapshot.trend?.price_vs_ema_20 ?? "")
+    .trim()
+    .toLowerCase();
+  const priceVsEma40 = (snapshot.trend?.price_vs_ema_40 ?? "")
+    .trim()
+    .toLowerCase();
+  const marketStructure = (snapshot.structure?.market_structure ?? "")
+    .trim()
+    .toLowerCase();
+  const entryLocation = (snapshot.structure?.entry_location ?? "")
+    .trim()
+    .toLowerCase();
+  const rsiZone = (snapshot.momentum?.rsi_zone ?? "").trim().toLowerCase();
+  const macdState = (snapshot.momentum?.macd_state ?? "").trim().toLowerCase();
+
+  if ((direction === "buy" || direction === "long") && alignment === "bullish") {
+    trend += 2;
+  }
+
+  if ((direction === "sell" || direction === "short") && alignment === "bearish") {
+    trend += 2;
+  }
+
+  if ((direction === "buy" || direction === "long") && priceVsEma20 === "above") {
+    trend += 1.5;
+  }
+
+  if ((direction === "buy" || direction === "long") && priceVsEma40 === "above") {
+    trend += 1.5;
+  }
+
+  if ((direction === "sell" || direction === "short") && priceVsEma20 === "below") {
+    trend += 1.5;
+  }
+
+  if ((direction === "sell" || direction === "short") && priceVsEma40 === "below") {
+    trend += 1.5;
+  }
+
+  if ((direction === "buy" || direction === "long") && macdState === "bullish_cross") {
+    momentum += 2;
+  }
+
+  if ((direction === "sell" || direction === "short") && macdState === "bearish_cross") {
+    momentum += 2;
+  }
+
+  if (rsiZone === "neutral") {
+    momentum -= 1;
+  } else if (rsiZone === "oversold" || rsiZone === "overbought") {
+    momentum += 0.5;
+  }
+
+  if (marketStructure === "range") {
+    structure = 4;
+    risk -= 1.5;
+  } else if (marketStructure === "trending") {
+    structure = 8;
+  }
+
+  if (entryLocation === "mid_range") {
+    entry = 5;
+    risk -= 1;
+  } else {
+    entry = 7;
+  }
+
+  const contraryRules =
+    analysis.rules?.filter(
+      (rule) =>
+        rule.passed === true &&
+        getRuleVisualState(rule, analysis.direction) === "contrary"
+    ).length ?? 0;
+
+  risk -= contraryRules * 1.5;
+
+  trend = Math.max(0, Math.min(10, trend));
+  momentum = Math.max(0, Math.min(10, momentum));
+  structure = Math.max(0, Math.min(10, structure));
+  entry = Math.max(0, Math.min(10, entry));
+  risk = Math.max(0, Math.min(10, risk));
+
+  const overall = Number(
+    ((trend + momentum + structure + entry + risk) / 5).toFixed(1)
+  );
+
+  return {
+    overall,
+    trend: Number(trend.toFixed(1)),
+    momentum: Number(momentum.toFixed(1)),
+    structure: Number(structure.toFixed(1)),
+    entry: Number(entry.toFixed(1)),
+    risk: Number(risk.toFixed(1)),
+  };
+}
+
+function buildAnalysisNarrative(
+  analysis: StageTestRunTechnicalAnalysis
+): {
+  executiveSummary: string;
+  positives: string[];
+  negatives: string[];
+  conflicts: string[];
+} {
+  const snapshot = analysis.snapshot;
+  const rules = analysis.rules ?? [];
+  const positives: string[] = [];
+  const negatives: string[] = [];
+  const conflicts: string[] = [];
+
+  if (!snapshot) {
+    return {
+      executiveSummary:
+        "O backend devolveu a análise técnica, mas sem snapshot completo para interpretação avançada.",
+      positives,
+      negatives,
+      conflicts,
+    };
+  }
+
+  const direction = (analysis.direction ?? "").trim().toLowerCase();
+  const marketStructure = snapshot.structure?.market_structure ?? "";
+  const entryLocation = snapshot.structure?.entry_location ?? "";
+  const rsiZone = snapshot.momentum?.rsi_zone ?? "";
+  const emaAlignment = snapshot.trend?.ema_alignment ?? "";
+  const macdState = snapshot.momentum?.macd_state ?? "";
+  const priceVsEma20 = snapshot.trend?.price_vs_ema_20 ?? "";
+  const priceVsEma40 = snapshot.trend?.price_vs_ema_40 ?? "";
+
+  const isBuy = direction === "buy" || direction === "long";
+  const isSell = direction === "sell" || direction === "short";
+
+  if (isBuy && priceVsEma20.toLowerCase() === "above") {
+    positives.push("O preço estava acima da EMA 20.");
+  }
+
+  if (isBuy && priceVsEma40.toLowerCase() === "above") {
+    positives.push("O preço estava acima da EMA 40.");
+  }
+
+  if (isSell && priceVsEma20.toLowerCase() === "below") {
+    positives.push("O preço estava abaixo da EMA 20.");
+  }
+
+  if (isSell && priceVsEma40.toLowerCase() === "below") {
+    positives.push("O preço estava abaixo da EMA 40.");
+  }
+
+  if (emaAlignment) {
+    positives.push(
+      `As médias estavam alinhadas em viés ${normalizeDisplayText(emaAlignment)}.`
+    );
+  }
+
+  if (macdState) {
+    positives.push(
+      `O MACD apresentava estado ${normalizeDisplayText(macdState)}.`
+    );
+  }
+
+  if (marketStructure) {
+    negatives.push(
+      `A estrutura geral do mercado permanecia em ${normalizeDisplayText(marketStructure)}.`
+    );
+  }
+
+  if (entryLocation) {
+    negatives.push(
+      `A entrada ocorreu em ${normalizeDisplayText(entryLocation)}.`
+    );
+  }
+
+  if (rsiZone) {
+    negatives.push(`O RSI estava em zona ${normalizeDisplayText(rsiZone)}.`);
+  }
+
+  rules.forEach((rule) => {
+    if (
+      rule.passed === true &&
+      getRuleVisualState(rule, analysis.direction) === "contrary"
+    ) {
+      conflicts.push(`${normalizeRuleLabel(rule.label)} estava ativo.`);
+    }
+  });
+
+  const executiveSummary = isBuy
+    ? "Entrada compradora validada por tendência e momentum, mas com contexto estrutural misto."
+    : isSell
+      ? "Entrada vendedora validada por tendência e momentum, mas com contexto estrutural misto."
+      : "A análise técnica indica um contexto operacional misto no momento da validação.";
+
+  return {
+    executiveSummary,
+    positives,
+    negatives,
+    conflicts,
+  };
+}
+
+function groupIndicators(
+  analysis: StageTestRunTechnicalAnalysis
+): {
+  context: Array<{ label: string; value: string }>;
+  trend: Array<{ label: string; value: string }>;
+  momentum: Array<{ label: string; value: string }>;
+  volatility: Array<{ label: string; value: string }>;
+  structure: Array<{ label: string; value: string }>;
+  candle: Array<{ label: string; value: string }>;
+  other: Array<{ label: string; value: string }>;
+} {
+  const indicators = [...(analysis.indicators ?? [])];
+  const contextBase = [
+    {
+      label: "Direção",
+      value: normalizeDisplayText(analysis.direction),
+    },
+    {
+      label: "Validação",
+      value: formatDateTime(analysis.validated_at),
+    },
+    {
+      label: "Gatilho",
+      value: normalizeDisplayText(analysis.trigger_label),
+    },
+    {
+      label: "Resumo",
+      value: normalizeDisplayText(analysis.summary),
+    },
+  ].filter((item) => item.value !== "-");
+
+  const groups = {
+    context: contextBase,
+    trend: [] as Array<{ label: string; value: string }>,
+    momentum: [] as Array<{ label: string; value: string }>,
+    volatility: [] as Array<{ label: string; value: string }>,
+    structure: [] as Array<{ label: string; value: string }>,
+    candle: [] as Array<{ label: string; value: string }>,
+    other: [] as Array<{ label: string; value: string }>,
+  };
+
+  indicators.forEach((item) => {
+    const label = item.label.trim().toLowerCase();
+
+    if (["sessão", "preço de referência"].includes(label)) {
+      groups.context.push(item);
+      return;
+    }
+
+    if (
+      [
+        "ema 5",
+        "ema 10",
+        "ema 20",
+        "ema 30",
+        "ema 40",
+        "alinhamento ema",
+        "preço vs ema 20",
+        "preço vs ema 40",
+      ].includes(label)
+    ) {
+      groups.trend.push(item);
+      return;
+    }
+
+    if (
+      [
+        "rsi 14",
+        "zona rsi",
+        "inclinação rsi",
+        "macd",
+        "signal",
+        "histograma",
+        "estado macd",
+      ].includes(label)
+    ) {
+      groups.momentum.push(item);
+      return;
+    }
+
+    if (
+      ["atr 14", "regime atr", "range candle", "range vs atr", "bandwidth"].includes(
+        label
+      )
+    ) {
+      groups.volatility.push(item);
+      return;
+    }
+
+    if (
+      [
+        "bollinger superior",
+        "bollinger média",
+        "bollinger inferior",
+        "posição do close na banda",
+        "estrutura de mercado",
+        "local de entrada",
+        "distância ao suporte",
+        "distância à resistência",
+        "distância à ema 20",
+        "distância à ema 40",
+      ].includes(label)
+    ) {
+      groups.structure.push(item);
+      return;
+    }
+
+    if (
+      [
+        "candle open",
+        "candle high",
+        "candle low",
+        "candle close",
+        "body size",
+        "upper wick",
+        "lower wick",
+        "body ratio",
+        "tipo de candle",
+      ].includes(label)
+    ) {
+      groups.candle.push(item);
+      return;
+    }
+
+    groups.other.push(item);
+  });
+
+  return groups;
+}
+
 function AnalysisSection({
   title,
   children,
@@ -279,14 +862,15 @@ function AnalysisSection({
     <div
       style={{
         border: "1px solid #e2e8f0",
-        borderRadius: 10,
+        borderRadius: 12,
         padding: 12,
         background: "#ffffff",
+        display: "grid",
+        gap: 10,
       }}
     >
       <div
         style={{
-          marginBottom: 10,
           fontSize: 12,
           fontWeight: 700,
           color: "#0f172a",
@@ -299,7 +883,7 @@ function AnalysisSection({
   );
 }
 
-function AnalysisListRow({
+function AnalysisMetricCard({
   label,
   value,
 }: {
@@ -309,19 +893,22 @@ function AnalysisListRow({
   return (
     <div
       style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 10,
+        padding: "10px 12px",
+        background: "#ffffff",
         display: "grid",
-        gridTemplateColumns: "minmax(120px, 180px) minmax(0, 1fr)",
-        gap: 10,
-        alignItems: "start",
-        padding: "7px 0",
-        borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
+        gap: 4,
       }}
     >
       <span
         style={{
-          fontSize: 12,
+          fontSize: 11,
+          fontWeight: 700,
           color: "#64748b",
-          lineHeight: 1.45,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+          lineHeight: 1.2,
         }}
       >
         {label}
@@ -329,14 +916,127 @@ function AnalysisListRow({
 
       <strong
         style={{
-          fontSize: 12,
+          fontSize: 13,
           color: "#0f172a",
-          lineHeight: 1.45,
+          lineHeight: 1.3,
           wordBreak: "break-word",
         }}
       >
         {value}
       </strong>
+    </div>
+  );
+}
+
+function ScoreBox({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 10,
+        padding: 12,
+        background: "#ffffff",
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <span style={{ fontSize: 12, color: "#475569", fontWeight: 600 }}>
+          {label}
+        </span>
+        <strong style={{ fontSize: 13, color: "#0f172a" }}>
+          {value.toFixed(1)}/10
+        </strong>
+      </div>
+
+      <div
+        style={{
+          height: 8,
+          borderRadius: 999,
+          background: "#e2e8f0",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, value * 10))}%`,
+            height: "100%",
+            background: "#0f172a",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RulePill({
+  label,
+  state,
+  value,
+}: {
+  label: string;
+  state: RuleVisualState;
+  value?: string;
+}) {
+  const styles = getRuleStateStyles(state);
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${styles.border}`,
+        borderRadius: 10,
+        padding: "10px 12px",
+        background: styles.background,
+        display: "grid",
+        gap: 4,
+      }}
+    >
+      <strong
+        style={{
+          fontSize: 12,
+          color: styles.color,
+          lineHeight: 1.35,
+          wordBreak: "break-word",
+        }}
+      >
+        {label}
+      </strong>
+
+      <span
+        style={{
+          fontSize: 11,
+          color: styles.color,
+          fontWeight: 700,
+        }}
+      >
+        {styles.label}
+      </span>
+
+      {value ? (
+        <span
+          style={{
+            fontSize: 11,
+            color: styles.color,
+            opacity: 0.9,
+            wordBreak: "break-word",
+          }}
+        >
+          {value}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -357,8 +1057,62 @@ function RunTechnicalAnalysisBlock({
   }
 
   const statusBadge = getAnalysisStatusBadge(runStatus);
-  const indicators = analysis.indicators ?? [];
   const rules = analysis.rules ?? [];
+  const grouped = groupIndicators(analysis);
+  const scores = scoreTechnicalAnalysis(analysis);
+  const narrative = buildAnalysisNarrative(analysis);
+
+  const conflictsCount = narrative.conflicts.length;
+
+  const confirmedRules = rules.filter(
+    (rule) =>
+      rule.passed === true &&
+      getRuleVisualState(rule, analysis.direction) === "confirmed"
+  );
+
+  const contraryRules = rules.filter(
+    (rule) =>
+      rule.passed === true &&
+      getRuleVisualState(rule, analysis.direction) === "contrary"
+  );
+
+  const contextualRules = rules.filter(
+    (rule) =>
+      rule.passed == null ||
+      getRuleVisualState(rule, analysis.direction) === "contextual"
+  );
+
+  const inactiveRules = rules.filter((rule) => rule.passed === false);
+
+  const qualityLabel =
+    scores.overall >= 8 ? "Alta" : scores.overall >= 6 ? "Média" : "Baixa";
+
+  const renderIndicatorGroup = (
+    groupTitle: string,
+    items: Array<{ label: string; value: string }>
+  ) => {
+    if (items.length === 0) return null;
+
+    return (
+      <AnalysisSection title={groupTitle}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 8,
+          }}
+        >
+          {items.map((indicator, index) => (
+            <AnalysisMetricCard
+              key={`${groupTitle}-${indicator.label}-${index}`}
+              label={indicator.label}
+              value={formatIndicatorValueByLabel(indicator.label, indicator.value)}
+            />
+          ))}
+        </div>
+      </AnalysisSection>
+    );
+  };
 
   return (
     <div
@@ -418,61 +1172,190 @@ function RunTechnicalAnalysisBlock({
         </span>
       </div>
 
+      <AnalysisSection title="Resumo executivo">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 8,
+          }}
+        >
+          <AnalysisMetricCard
+            label="Direção"
+            value={normalizeDisplayText(analysis.direction)}
+          />
+          <AnalysisMetricCard
+            label="Validação"
+            value={formatDateTime(analysis.validated_at)}
+          />
+          <AnalysisMetricCard
+            label="Gatilho"
+            value={normalizeDisplayText(analysis.trigger_label)}
+          />
+          <AnalysisMetricCard
+            label="Estrutura"
+            value={normalizeDisplayText(analysis.summary)}
+          />
+          <AnalysisMetricCard
+            label="Qualidade do setup"
+            value={qualityLabel}
+          />
+          <AnalysisMetricCard
+            label="Nível de conflito"
+            value={getConflictLevel(conflictsCount)}
+          />
+        </div>
+      </AnalysisSection>
+
+      <AnalysisSection title="Diagnóstico final">
+        <div style={{ display: "grid", gap: 12 }}>
+          <div
+            style={{
+              fontSize: 13,
+              color: "#334155",
+              lineHeight: 1.6,
+            }}
+          >
+            {narrative.executiveSummary}
+          </div>
+
+          <div
+            style={{
+              border: "1px solid #e2e8f0",
+              borderRadius: 10,
+              padding: 12,
+              background: "#ffffff",
+              fontSize: 12,
+              lineHeight: 1.65,
+              color: "#334155",
+            }}
+          >
+            {analysis.direction?.toLowerCase() === "buy" ||
+            analysis.direction?.toLowerCase() === "long"
+              ? "A validação ocorreu no lado comprador, com suporte de tendência e momentum. Ainda assim, o contexto estrutural não era totalmente limpo, o que reduz a qualidade estatística para movimentos mais expansivos."
+              : analysis.direction?.toLowerCase() === "sell" ||
+                  analysis.direction?.toLowerCase() === "short"
+                ? "A validação ocorreu no lado vendedor, com suporte de tendência e momentum. Ainda assim, o contexto estrutural não era totalmente limpo, o que reduz a qualidade estatística para movimentos mais expansivos."
+                : "O run apresentou um contexto técnico misto, com informação suficiente para análise, mas sem uma leitura completamente limpa de continuidade."}
+          </div>
+        </div>
+      </AnalysisSection>
+
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
           gap: 8,
         }}
       >
-        <AnalysisSection title="Contexto">
-          <div style={{ display: "grid" }}>
-            <AnalysisListRow label="Direção" value={analysis.direction || "-"} />
-            <AnalysisListRow
-              label="Validação"
-              value={formatDateTime(analysis.validated_at)}
-            />
-            <AnalysisListRow
-              label="Gatilho"
-              value={analysis.trigger_label || "-"}
-            />
-            <AnalysisListRow label="Resumo" value={analysis.summary || "-"} />
-          </div>
-        </AnalysisSection>
-
-        <AnalysisSection title="Regras da validação">
-          {rules.length === 0 ? (
-            <div
-              style={{
-                fontSize: 12,
-                color: "#64748b",
-                lineHeight: 1.45,
-              }}
-            >
-              Nenhuma regra detalhada foi devolvida pelo backend.
+        <AnalysisSection title="Fatores a favor">
+          {narrative.positives.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+              Nenhum fator positivo detalhado foi identificado a partir do snapshot.
             </div>
           ) : (
-            <div style={{ display: "grid" }}>
-              {rules.map((rule, index) => (
-                <AnalysisListRow
-                  key={`${rule.label}-${index}`}
-                  label={rule.label}
-                  value={
-                    rule.passed == null
-                      ? rule.value
-                      : `${formatBooleanLabel(rule.passed)}${
-                          rule.value ? ` • ${rule.value}` : ""
-                        }`
-                  }
-                />
+            <div style={{ display: "grid", gap: 8 }}>
+              {narrative.positives.map((item, index) => (
+                <div
+                  key={`positive-${index}`}
+                  style={{
+                    border: "1px solid #86efac",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    background: "#ecfdf5",
+                    color: "#166534",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {item}
+                </div>
+              ))}
+            </div>
+          )}
+        </AnalysisSection>
+
+        <AnalysisSection title="Fatores contra">
+          {narrative.negatives.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+              Nenhum fator negativo detalhado foi identificado a partir do snapshot.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {narrative.negatives.map((item, index) => (
+                <div
+                  key={`negative-${index}`}
+                  style={{
+                    border: "1px solid #fca5a5",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    background: "#fef2f2",
+                    color: "#991b1b",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {item}
+                </div>
               ))}
             </div>
           )}
         </AnalysisSection>
       </div>
 
-      <AnalysisSection title="Indicadores no momento da validação">
-        {indicators.length === 0 ? (
+      {narrative.conflicts.length > 0 && (
+        <AnalysisSection title="Conflitos detectados">
+          <div style={{ display: "grid", gap: 8 }}>
+            {narrative.conflicts.map((item, index) => (
+              <div
+                key={`conflict-${index}`}
+                style={{
+                  border: "1px solid #fdba74",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  background: "#fff7ed",
+                  color: "#9a3412",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  fontWeight: 600,
+                }}
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </AnalysisSection>
+      )}
+
+      <AnalysisSection title="Score do setup">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 8,
+          }}
+        >
+          <ScoreBox label="Geral" value={scores.overall} />
+          <ScoreBox label="Tendência" value={scores.trend} />
+          <ScoreBox label="Momentum" value={scores.momentum} />
+          <ScoreBox label="Estrutura" value={scores.structure} />
+          <ScoreBox label="Entrada" value={scores.entry} />
+          <ScoreBox label="Risco contextual" value={scores.risk} />
+        </div>
+      </AnalysisSection>
+
+      {renderIndicatorGroup("Contexto", grouped.context)}
+      {renderIndicatorGroup("Tendência", grouped.trend)}
+      {renderIndicatorGroup("Momentum", grouped.momentum)}
+      {renderIndicatorGroup("Volatilidade", grouped.volatility)}
+      {renderIndicatorGroup("Estrutura e localização", grouped.structure)}
+      {renderIndicatorGroup("Candle", grouped.candle)}
+      {renderIndicatorGroup("Outros indicadores", grouped.other)}
+
+      <AnalysisSection title="Regras de validação">
+        {rules.length === 0 ? (
           <div
             style={{
               fontSize: 12,
@@ -480,7 +1363,7 @@ function RunTechnicalAnalysisBlock({
               lineHeight: 1.45,
             }}
           >
-            Os indicadores ainda não foram devolvidos pelo backend para este run.
+            Nenhuma regra detalhada foi devolvida pelo backend.
           </div>
         ) : (
           <div
@@ -490,40 +1373,40 @@ function RunTechnicalAnalysisBlock({
               gap: 8,
             }}
           >
-            {indicators.map((indicator, index) => (
-              <div
-                key={`${indicator.label}-${index}`}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                  background: "#ffffff",
-                  display: "grid",
-                  gap: 4,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#64748b",
-                    textTransform: "uppercase",
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  {indicator.label}
-                </span>
+            {confirmedRules.map((rule, index) => (
+              <RulePill
+                key={`confirmed-${rule.label}-${index}`}
+                label={normalizeRuleLabel(rule.label)}
+                state="confirmed"
+                value={rule.value}
+              />
+            ))}
 
-                <strong
-                  style={{
-                    fontSize: 13,
-                    color: "#0f172a",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {indicator.value}
-                </strong>
-              </div>
+            {contraryRules.map((rule, index) => (
+              <RulePill
+                key={`contrary-${rule.label}-${index}`}
+                label={normalizeRuleLabel(rule.label)}
+                state="contrary"
+                value={rule.value}
+              />
+            ))}
+
+            {contextualRules.map((rule, index) => (
+              <RulePill
+                key={`contextual-${rule.label}-${index}`}
+                label={normalizeRuleLabel(rule.label)}
+                state="contextual"
+                value={rule.value}
+              />
+            ))}
+
+            {inactiveRules.map((rule, index) => (
+              <RulePill
+                key={`inactive-${rule.label}-${index}`}
+                label={normalizeRuleLabel(rule.label)}
+                state="inactive"
+                value={rule.value}
+              />
             ))}
           </div>
         )}
