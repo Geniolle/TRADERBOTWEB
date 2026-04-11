@@ -195,6 +195,7 @@ function normalizeDisplayText(value: string | null | undefined): string {
     hit: "Hit",
     fail: "Fail",
     timeout: "Timeout",
+    closed: "Fechado",
   };
 
   return map[normalized] ?? raw;
@@ -365,6 +366,33 @@ function getAnalysisStatusBadge(status: string | null | undefined) {
       background: "#f1f5f9",
       color: "#475569",
       border: "#cbd5e1",
+    };
+  }
+
+  if (normalized === "hit") {
+    return {
+      label: "Hit",
+      background: "#dcfce7",
+      color: "#166534",
+      border: "#86efac",
+    };
+  }
+
+  if (normalized === "fail") {
+    return {
+      label: "Fail",
+      background: "#fee2e2",
+      color: "#991b1b",
+      border: "#fca5a5",
+    };
+  }
+
+  if (normalized === "timeout") {
+    return {
+      label: "Timeout",
+      background: "#fffbeb",
+      color: "#92400e",
+      border: "#fcd34d",
     };
   }
 
@@ -1118,11 +1146,95 @@ function CaseAnalysisBlock({
   caseId: string;
   caseNumber: number | string;
 }) {
+  const statusBadge = getAnalysisStatusBadge(runStatus);
+
   if (!analysis) {
-    return null;
+    return (
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #dbe2ea",
+          borderRadius: 12,
+          padding: 12,
+          background: "#f8fafc",
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "grid", gap: 6 }}>
+            <strong
+              style={{
+                fontSize: 14,
+                color: "#0f172a",
+              }}
+            >
+              Análise técnica do case #{caseNumber}
+            </strong>
+
+            <span
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.45,
+              }}
+            >
+              Snapshot técnico do momento exato do gatilho de confirmação.
+            </span>
+
+            <span
+              style={{
+                fontSize: 12,
+                color: "#334155",
+                lineHeight: 1.45,
+                wordBreak: "break-word",
+              }}
+            >
+              <strong>Case ID:</strong> {caseId}
+            </span>
+          </div>
+
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "4px 8px",
+              borderRadius: 999,
+              background: statusBadge.background,
+              color: statusBadge.color,
+              border: `1px solid ${statusBadge.border}`,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {statusBadge.label}
+          </span>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: 12,
+            background: "#ffffff",
+            fontSize: 12,
+            color: "#64748b",
+            lineHeight: 1.5,
+          }}
+        >
+          Este case não devolveu análise técnica individual no backend.
+        </div>
+      </div>
+    );
   }
 
-  const statusBadge = getAnalysisStatusBadge(runStatus);
   const rules = analysis.rules ?? [];
   const grouped = groupIndicators(analysis);
   const scores = scoreTechnicalAnalysis(analysis);
@@ -1257,18 +1369,6 @@ function CaseAnalysisBlock({
             gap: 8,
           }}
         >
-          <AnalysisMetricCard
-            label="Case ID"
-            value={caseId}
-          />
-          <AnalysisMetricCard
-            label="Direção"
-            value={normalizeDisplayText(analysis.direction)}
-          />
-          <AnalysisMetricCard
-            label="Validação"
-            value={formatDateTime(analysis.validated_at)}
-          />
           <AnalysisMetricCard
             label="Gatilho"
             value={normalizeDisplayText(analysis.trigger_label)}
@@ -1762,7 +1862,7 @@ function CasesSection({
                 >
                   {detailRow("Case ID", caseId)}
                   {detailRow("Direção", normalizeDisplayText(formatValue(item.side)))}
-                  {detailRow("Status", formatValue(item.status))}
+                  {detailRow("Status", normalizeDisplayText(formatValue(item.status)))}
                   {detailRow("Outcome", normalizeDisplayText(formatValue(item.outcome)))}
                   {detailRow("Trigger", formatDateTime(item.trigger_time))}
                   {detailRow("Trigger candle", formatDateTime(item.trigger_candle_time))}
