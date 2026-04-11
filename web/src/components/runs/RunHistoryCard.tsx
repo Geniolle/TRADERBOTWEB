@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type {
+  AnalysisSnapshot,
   StageTestRunCaseItem,
   StageTestRunRuleItem,
   StageTestRunTechnicalAnalysis,
@@ -30,23 +31,44 @@ type RunHistoryCardProps = {
 type CaseFilter = "all" | "hit" | "fail" | "timeout";
 type RuleVisualState = "confirmed" | "contrary" | "inactive" | "contextual";
 
+type TrendStrengthResult = {
+  pct: number;
+  direction: string;
+  label: string;
+  summary: string;
+};
+
 type StrategicCaseFilters = {
   session: string;
   marketStructure: string;
   emaAlignment: string;
   priceVsEma20: string;
   priceVsEma40: string;
+  ema20Slope: string;
+  ema40Slope: string;
   entryLocation: string;
   rsiZone: string;
   rsiSlope: string;
   macdState: string;
   trendBias: string;
   signalQuality: string;
+  trendStrengthPct: string;
+  trendDirection: string;
+  trendLabel: string;
 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0,00%";
   return `${value.toFixed(2).replace(".", ",")}%`;
+}
+
+function formatCompactPercent(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return `${value.toFixed(0)}%`;
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -103,13 +125,23 @@ function formatIndicatorValueByLabel(label: string, value: string): string {
       "hit rate",
       "fail rate",
       "timeout rate",
+      "força da tendência",
     ].includes(normalizedLabel)
   ) {
     return formatAnalysisNumber(value, 2);
   }
 
   if (
-    ["macd", "signal", "histograma", "atr 14"].includes(normalizedLabel)
+    [
+      "macd",
+      "signal",
+      "histograma",
+      "atr 14",
+      "inclinação ema 20",
+      "inclinação ema 40",
+      "inclinação rsi",
+      "inclinação histograma macd",
+    ].includes(normalizedLabel)
   ) {
     return formatAnalysisNumber(value, 6);
   }
@@ -541,6 +573,101 @@ function getConflictLevel(conflicts: number): string {
   return "Alto";
 }
 
+function toNumeric(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  const normalized = String(value).trim().replace(",", ".");
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function calculateTrendStrength(
+  analysis: StageTestRunTechnicalAnalysis | null
+): TrendStrengthResult {
+  const snapshot = analysis?.snapshot;
+  if (!snapshot) {
+    return {
+      pct: 0,
+      direction: "-",
+      label: "-",
+      summary: "Sem snapshot técnico",
+    };
+  }
+
+  const direction = (analysis?.direction ?? "").trim().toLowerCase();
+  const isBuy = direction === "buy" || direction === "long";
+  const isSell = direction === "sell" || direction === "short";
+
+  const alignment = (snapshot.trend?.ema_alignment ?? "").trim().toLowerCase();
+  const priceVs20 = (snapshot.trend?.price_vs_ema_20 ?? "").trim().toLowerCase();
+  const priceVs40 = (snapshot.trend?.price_vs_ema_40 ?? "").trim().toLowerCase();
+  const marketStructure = (snapshot.structure?.market_structure ?? "")
+    .trim()
+    .toLowerCase();
+  const rsiSlope = (snapshot.momentum?.rsi_slope ?? "").trim().toLowerCase();
+  const macdState = (snapshot.momentum?.macd_state ?? "").trim().toLowerCase();
+
+  const ema20Slope = toNumeric(snapshot.trend?.ema_20_slope);
+  const ema40Slope = toNumeric(snapshot.trend?.ema_40_slope);
+
+  let score = 0;
+
+  if (isBuy) {
+    if (alignment === "bullish") score += 25;
+    if (priceVs20 === "above") score += 15;
+    if (priceVs40 === "above") score += 20;
+    if (ema20Slope != null && ema20Slope > 0) score += 15;
+    if (ema40Slope != null && ema40Slope > 0) score += 15;
+    if (marketStructure === "trending") score += 10;
+    if (rsiSlope === "up") score += 5;
+    if (macdState === "bullish_cross") score += 5;
+
+    if (marketStructure === "range") score -= 20;
+    if (priceVs40 === "below") score -= 15;
+    if (alignment === "bearish") score -= 20;
+  } else if (isSell) {
+    if (alignment === "bearish") score += 25;
+    if (priceVs20 === "below") score += 15;
+    if (priceVs40 === "below") score += 20;
+    if (ema20Slope != null && ema20Slope < 0) score += 15;
+    if (ema40Slope != null && ema40Slope < 0) score += 15;
+    if (marketStructure === "trending") score += 10;
+    if (rsiSlope === "down") score += 5;
+    if (macdState === "bearish_cross") score += 5;
+
+    if (marketStructure === "range") score -= 20;
+    if (priceVs40 === "above") score -= 15;
+    if (alignment === "bullish") score -= 20;
+  } else {
+    if (marketStructure === "trending") score += 20;
+    if (alignment === "bullish" || alignment === "bearish") score += 20;
+  }
+
+  const pct = clamp(score, 0, 100);
+
+  let label = "Fraca";
+  if (pct >= 80) label = "Forte";
+  else if (pct >= 60) label = "Favorável";
+  else if (pct >= 40) label = "Neutra";
+
+  let dominantDirection = "Indefinida";
+  if (alignment === "bullish") dominantDirection = "Alta";
+  if (alignment === "bearish") dominantDirection = "Baixa";
+  if (marketStructure === "range") dominantDirection = "Lateral";
+
+  const summary = `${dominantDirection} ${label.toLowerCase()}`;
+
+  return {
+    pct,
+    direction: dominantDirection,
+    label,
+    summary,
+  };
+}
+
 function getTrendBiasLabel(
   analysis: StageTestRunTechnicalAnalysis | null
 ): string {
@@ -616,12 +743,7 @@ function getSignalQualityLabel(
   if (alignment === "bullish" || alignment === "bearish") score += 2;
   if (entryLocation && entryLocation !== "mid_range") score += 1;
   if (rsiZone && rsiZone !== "neutral") score += 1;
-  if (
-    macdState === "bullish_cross" ||
-    macdState === "bearish_cross"
-  ) {
-    score += 1;
-  }
+  if (macdState === "bullish_cross" || macdState === "bearish_cross") score += 1;
 
   if (structure === "range") score -= 2;
   if (entryLocation === "mid_range") score -= 1;
@@ -636,6 +758,7 @@ function buildStrategicCaseFilters(
   analysis: StageTestRunTechnicalAnalysis | null
 ): StrategicCaseFilters {
   const snapshot = analysis?.snapshot;
+  const trendStrength = calculateTrendStrength(analysis);
 
   if (!snapshot) {
     return {
@@ -644,29 +767,37 @@ function buildStrategicCaseFilters(
       emaAlignment: "-",
       priceVsEma20: "-",
       priceVsEma40: "-",
+      ema20Slope: "-",
+      ema40Slope: "-",
       entryLocation: "-",
       rsiZone: "-",
       rsiSlope: "-",
       macdState: "-",
       trendBias: "-",
       signalQuality: "-",
+      trendStrengthPct: "-",
+      trendDirection: "-",
+      trendLabel: "-",
     };
   }
 
   return {
     session: normalizeDisplayText(snapshot.trigger_context?.session),
-    marketStructure: normalizeDisplayText(
-      snapshot.structure?.market_structure
-    ),
+    marketStructure: normalizeDisplayText(snapshot.structure?.market_structure),
     emaAlignment: normalizeDisplayText(snapshot.trend?.ema_alignment),
     priceVsEma20: normalizeDisplayText(snapshot.trend?.price_vs_ema_20),
     priceVsEma40: normalizeDisplayText(snapshot.trend?.price_vs_ema_40),
+    ema20Slope: formatAnalysisNumber(snapshot.trend?.ema_20_slope, 6),
+    ema40Slope: formatAnalysisNumber(snapshot.trend?.ema_40_slope, 6),
     entryLocation: normalizeDisplayText(snapshot.structure?.entry_location),
     rsiZone: normalizeDisplayText(snapshot.momentum?.rsi_zone),
     rsiSlope: normalizeDisplayText(snapshot.momentum?.rsi_slope),
     macdState: normalizeDisplayText(snapshot.momentum?.macd_state),
     trendBias: getTrendBiasLabel(analysis),
     signalQuality: getSignalQualityLabel(analysis),
+    trendStrengthPct: formatCompactPercent(trendStrength.pct),
+    trendDirection: trendStrength.direction,
+    trendLabel: trendStrength.label,
   };
 }
 
@@ -829,9 +960,16 @@ function buildAnalysisNarrative(
   const macdState = snapshot.momentum?.macd_state ?? "";
   const priceVsEma20 = snapshot.trend?.price_vs_ema_20 ?? "";
   const priceVsEma40 = snapshot.trend?.price_vs_ema_40 ?? "";
+  const trendStrength = calculateTrendStrength(analysis);
 
   const isBuy = direction === "buy" || direction === "long";
   const isSell = direction === "sell" || direction === "short";
+
+  positives.push(
+    `Força da tendência no gatilho: ${formatCompactPercent(
+      trendStrength.pct
+    )} (${trendStrength.summary}).`
+  );
 
   if (isBuy && priceVsEma20.toLowerCase() === "above") {
     positives.push("O preço estava acima da EMA 20.");
@@ -863,7 +1001,9 @@ function buildAnalysisNarrative(
 
   if (marketStructure) {
     negatives.push(
-      `A estrutura geral do mercado permanecia em ${normalizeDisplayText(marketStructure)}.`
+      `A estrutura geral do mercado permanecia em ${normalizeDisplayText(
+        marketStructure
+      )}.`
     );
   }
 
@@ -877,6 +1017,14 @@ function buildAnalysisNarrative(
     negatives.push(`O RSI estava em zona ${normalizeDisplayText(rsiZone)}.`);
   }
 
+  if (trendStrength.pct < 60) {
+    negatives.push(
+      `A percentagem de tendência no gatilho foi baixa para um EMA Cross (${formatCompactPercent(
+        trendStrength.pct
+      )}).`
+    );
+  }
+
   rules.forEach((rule) => {
     if (
       rule.passed === true &&
@@ -886,11 +1034,14 @@ function buildAnalysisNarrative(
     }
   });
 
-  const executiveSummary = isBuy
-    ? "Este gatilho confirmou compra com contexto técnico específico do caso."
-    : isSell
-      ? "Este gatilho confirmou venda com contexto técnico específico do caso."
-      : "Este caso apresentou um contexto técnico próprio no momento do gatilho.";
+  const executiveSummary =
+    trendStrength.pct >= 60
+      ? `O gatilho ocorreu com ${formatCompactPercent(
+          trendStrength.pct
+        )} de força de tendência, o que sugere um cruzamento com contexto mais limpo.`
+      : `O gatilho ocorreu com apenas ${formatCompactPercent(
+          trendStrength.pct
+        )} de força de tendência, o que sugere um cruzamento potencialmente fraco ou filtrável.`;
 
   return {
     executiveSummary,
@@ -912,6 +1063,8 @@ function groupIndicators(
   other: Array<{ label: string; value: string }>;
 } {
   const indicators = [...(analysis.indicators ?? [])];
+  const trendStrength = calculateTrendStrength(analysis);
+
   const contextBase = [
     {
       label: "Direção",
@@ -928,6 +1081,10 @@ function groupIndicators(
     {
       label: "Resumo",
       value: normalizeDisplayText(analysis.summary),
+    },
+    {
+      label: "Força da tendência",
+      value: String(trendStrength.pct),
     },
   ].filter((item) => item.value !== "-");
 
@@ -959,6 +1116,8 @@ function groupIndicators(
         "alinhamento ema",
         "preço vs ema 20",
         "preço vs ema 40",
+        "inclinação ema 20",
+        "inclinação ema 40",
       ].includes(label)
     ) {
       groups.trend.push(item);
@@ -974,6 +1133,7 @@ function groupIndicators(
         "signal",
         "histograma",
         "estado macd",
+        "inclinação histograma macd",
       ].includes(label)
     ) {
       groups.momentum.push(item);
@@ -1026,6 +1186,26 @@ function groupIndicators(
 
     groups.other.push(item);
   });
+
+  const snapshot: AnalysisSnapshot | null | undefined = analysis.snapshot;
+  if (snapshot?.trend?.ema_20_slope != null) {
+    groups.trend.push({
+      label: "Inclinação EMA 20",
+      value: String(snapshot.trend.ema_20_slope),
+    });
+  }
+  if (snapshot?.trend?.ema_40_slope != null) {
+    groups.trend.push({
+      label: "Inclinação EMA 40",
+      value: String(snapshot.trend.ema_40_slope),
+    });
+  }
+  if (snapshot?.momentum?.macd_histogram_slope != null) {
+    groups.momentum.push({
+      label: "Inclinação histograma MACD",
+      value: String(snapshot.momentum.macd_histogram_slope),
+    });
+  }
 
   return groups;
 }
@@ -1437,7 +1617,7 @@ function CaseAnalysisBlock({
         </span>
       </div>
 
-      <AnalysisSection title="Filtros estratégicos do case">
+      <AnalysisSection title="Tendência no momento do gatilho">
         <div
           style={{
             display: "grid",
@@ -1445,10 +1625,17 @@ function CaseAnalysisBlock({
             gap: 8,
           }}
         >
-          <AnalysisMetricCard label="Sessão" value={filters.session} />
           <AnalysisMetricCard
-            label="Estrutura do mercado"
-            value={filters.marketStructure}
+            label="Força da tendência"
+            value={filters.trendStrengthPct}
+          />
+          <AnalysisMetricCard
+            label="Direção dominante"
+            value={filters.trendDirection}
+          />
+          <AnalysisMetricCard
+            label="Leitura"
+            value={filters.trendLabel}
           />
           <AnalysisMetricCard
             label="Alinhamento EMA"
@@ -1463,6 +1650,34 @@ function CaseAnalysisBlock({
             value={filters.priceVsEma40}
           />
           <AnalysisMetricCard
+            label="Inclinação EMA 20"
+            value={filters.ema20Slope}
+          />
+          <AnalysisMetricCard
+            label="Inclinação EMA 40"
+            value={filters.ema40Slope}
+          />
+          <AnalysisMetricCard
+            label="Estrutura do mercado"
+            value={filters.marketStructure}
+          />
+          <AnalysisMetricCard
+            label="Viés"
+            value={filters.trendBias}
+          />
+        </div>
+      </AnalysisSection>
+
+      <AnalysisSection title="Filtros estratégicos do case">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 8,
+          }}
+        >
+          <AnalysisMetricCard label="Sessão" value={filters.session} />
+          <AnalysisMetricCard
             label="Local da entrada"
             value={filters.entryLocation}
           />
@@ -1472,10 +1687,6 @@ function CaseAnalysisBlock({
             value={filters.rsiSlope}
           />
           <AnalysisMetricCard label="Estado MACD" value={filters.macdState} />
-          <AnalysisMetricCard
-            label="Viés de tendência"
-            value={filters.trendBias}
-          />
           <AnalysisMetricCard
             label="Qualidade do sinal"
             value={filters.signalQuality}
@@ -1533,7 +1744,7 @@ function CaseAnalysisBlock({
               color: "#334155",
             }}
           >
-            O objetivo deste bloco é permitir encontrar padrões repetidos nos fails e nos hits. Os filtros estratégicos acima são os candidatos naturais para virar regra de abortar ou confirmar gatilho.
+            O objetivo deste bloco é facilitar a comparação entre fails e hits. A percentagem da tendência deve ajudar a descobrir filtros como “abortar gatilho quando a força da tendência estiver abaixo de 60%”.
           </div>
         </div>
       </AnalysisSection>
@@ -2016,6 +2227,18 @@ function CasesSection({
                       value={filters.marketStructure}
                     />
                     <AnalysisMetricCard
+                      label="Força tendência"
+                      value={filters.trendStrengthPct}
+                    />
+                    <AnalysisMetricCard
+                      label="Direção dominante"
+                      value={filters.trendDirection}
+                    />
+                    <AnalysisMetricCard
+                      label="Leitura"
+                      value={filters.trendLabel}
+                    />
+                    <AnalysisMetricCard
                       label="Alinhamento EMA"
                       value={filters.emaAlignment}
                     />
@@ -2028,17 +2251,21 @@ function CasesSection({
                       value={filters.priceVsEma40}
                     />
                     <AnalysisMetricCard
-                      label="Local da entrada"
+                      label="EMA 20 slope"
+                      value={filters.ema20Slope}
+                    />
+                    <AnalysisMetricCard
+                      label="EMA 40 slope"
+                      value={filters.ema40Slope}
+                    />
+                    <AnalysisMetricCard
+                      label="Local entrada"
                       value={filters.entryLocation}
                     />
                     <AnalysisMetricCard label="Zona RSI" value={filters.rsiZone} />
                     <AnalysisMetricCard
                       label="Estado MACD"
                       value={filters.macdState}
-                    />
-                    <AnalysisMetricCard
-                      label="Viés"
-                      value={filters.trendBias}
                     />
                     <AnalysisMetricCard
                       label="Qualidade do sinal"

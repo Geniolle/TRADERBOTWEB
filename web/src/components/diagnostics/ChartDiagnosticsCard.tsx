@@ -1,12 +1,13 @@
 // src/components/diagnostics/ChartDiagnosticsCard.tsx
 
+import type { CSSProperties } from "react";
 import type { FeedDiagnostics } from "../../types/trading";
 
 type ChartDiagnosticsCardProps = {
-  mainCardStyle: React.CSSProperties;
-  sectionTitleStyle: React.CSSProperties;
-  debugGridStyle: React.CSSProperties;
-  debugItemStyle: React.CSSProperties;
+  mainCardStyle: CSSProperties;
+  sectionTitleStyle: CSSProperties;
+  debugGridStyle: CSSProperties;
+  debugItemStyle: CSSProperties;
   feedDiagnostics: FeedDiagnostics;
 };
 
@@ -14,6 +15,7 @@ type CoverageStatus = {
   level: "good" | "warning" | "danger";
   title: string;
   message: string;
+  expectedChartBehavior: string;
   background: string;
   border: string;
   color: string;
@@ -32,13 +34,18 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
   const endMs = parseDateValue(feedDiagnostics.coverageEndUtc);
   const count = Number(feedDiagnostics.coverageCount || 0);
   const mode = feedDiagnostics.coverageMode;
+  const totalCandles = Number(feedDiagnostics.totalCandles || 0);
+  const hasVisibleSnapshot = totalCandles > 0;
 
   if (!count || !lastCloseMs || !startMs || !endMs) {
     return {
       level: "danger",
       title: "Cobertura insuficiente",
       message:
-        "A base local não devolveu candles suficientes para validar a janela pedida. O gráfico pode ficar vazio ou incompleto.",
+        "A base local não devolveu candles suficientes para validar a janela pedida com confiança.",
+      expectedChartBehavior: hasVisibleSnapshot
+        ? "O gráfico deve continuar visível com o último snapshot válido já carregado, acompanhado de aviso técnico."
+        : "Ainda não existe snapshot válido suficiente para mostrar com confiança.",
       background: "#fef2f2",
       border: "#fca5a5",
       color: "#991b1b",
@@ -59,7 +66,10 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
       level: "danger",
       title: "Cobertura crítica",
       message:
-        "A cobertura local está curta ou antiga demais para esta seleção. O gráfico pode não refletir a ponta mais recente com confiança.",
+        "A cobertura local está curta ou antiga demais para esta seleção. A ponta mais recente pode não refletir o estado atual com confiança.",
+      expectedChartBehavior: hasVisibleSnapshot
+        ? "O gráfico deve manter o último snapshot válido e sinalizar que a cobertura atual não é suficiente para substituir o que já estava visível."
+        : "Sem snapshot válido anterior, o sistema depende de nova carga consistente para preencher o gráfico.",
       background: "#fef2f2",
       border: "#fca5a5",
       color: "#991b1b",
@@ -72,6 +82,8 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
       title: "Cobertura aceitável com atenção",
       message:
         "A base local ainda está utilizável, mas a ponta parece um pouco antiga. Convém observar se o sync incremental está a atualizar normalmente.",
+      expectedChartBehavior:
+        "O gráfico pode continuar a usar o snapshot atual enquanto o sistema tenta recuperar atualização mais recente.",
       background: "#fffbeb",
       border: "#fcd34d",
       color: "#92400e",
@@ -83,6 +95,8 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
     title: "Cobertura saudável",
     message:
       "A cobertura local parece consistente com a janela pedida e a ponta recente não indica atraso relevante.",
+    expectedChartBehavior:
+      "O gráfico pode atualizar normalmente com os candles mais recentes disponíveis.",
     background: "#ecfdf5",
     border: "#86efac",
     color: "#166534",
@@ -128,7 +142,20 @@ function ChartDiagnosticsCard({
         }}
       >
         <strong>{coverageStatus.title}</strong>
-        <div>{coverageStatus.message}</div>
+        <div style={{ marginTop: 4 }}>{coverageStatus.message}</div>
+
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.45)",
+            border: `1px solid ${coverageStatus.border}`,
+          }}
+        >
+          <strong>Comportamento esperado do gráfico:</strong>
+          <div>{coverageStatus.expectedChartBehavior}</div>
+        </div>
       </div>
 
       <div style={debugGridStyle}>
@@ -271,6 +298,8 @@ function ChartDiagnosticsCard({
         Se <strong>coverage count</strong> estiver baixo ou <strong>last close UTC</strong>{" "}
         ficar muito atrás do tempo atual, então o problema já não é só de feed:
         pode ser cobertura insuficiente da base local ou falha no sync incremental.
+        Nesses cenários, o comportamento esperado é preservar o último snapshot
+        válido do gráfico, em vez de o substituir por vazio.
       </div>
     </div>
   );
