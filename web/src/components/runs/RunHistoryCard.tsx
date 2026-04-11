@@ -30,6 +30,20 @@ type RunHistoryCardProps = {
 type CaseFilter = "all" | "hit" | "fail" | "timeout";
 type RuleVisualState = "confirmed" | "contrary" | "inactive" | "contextual";
 
+type StrategicCaseFilters = {
+  session: string;
+  marketStructure: string;
+  emaAlignment: string;
+  priceVsEma20: string;
+  priceVsEma40: string;
+  entryLocation: string;
+  rsiZone: string;
+  rsiSlope: string;
+  macdState: string;
+  trendBias: string;
+  signalQuality: string;
+};
+
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0,00%";
   return `${value.toFixed(2).replace(".", ",")}%`;
@@ -49,6 +63,7 @@ function formatValue(value: string | number | null | undefined): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
   }
+
   const text = String(value).trim();
   return text || "-";
 }
@@ -93,7 +108,9 @@ function formatIndicatorValueByLabel(label: string, value: string): string {
     return formatAnalysisNumber(value, 2);
   }
 
-  if (["macd", "signal", "histograma", "atr 14"].includes(normalizedLabel)) {
+  if (
+    ["macd", "signal", "histograma", "atr 14"].includes(normalizedLabel)
+  ) {
     return formatAnalysisNumber(value, 6);
   }
 
@@ -196,6 +213,7 @@ function normalizeDisplayText(value: string | null | undefined): string {
     fail: "Fail",
     timeout: "Timeout",
     closed: "Fechado",
+    pullback: "Pullback",
   };
 
   return map[normalized] ?? raw;
@@ -523,66 +541,133 @@ function getConflictLevel(conflicts: number): string {
   return "Alto";
 }
 
-function formatCoverageDuration(
-  firstCandle: string | null | undefined,
-  lastCandle: string | null | undefined,
-  totalCandles: number | null | undefined,
-  timeframe: string | null | undefined
+function getTrendBiasLabel(
+  analysis: StageTestRunTechnicalAnalysis | null
 ): string {
-  const first = firstCandle ? new Date(firstCandle) : null;
-  const last = lastCandle ? new Date(lastCandle) : null;
+  const snapshot = analysis?.snapshot;
+  if (!snapshot) return "-";
+
+  const direction = (analysis?.direction ?? "").trim().toLowerCase();
+  const structure = (snapshot.structure?.market_structure ?? "")
+    .trim()
+    .toLowerCase();
+  const alignment = (snapshot.trend?.ema_alignment ?? "").trim().toLowerCase();
+  const priceVs20 = (snapshot.trend?.price_vs_ema_20 ?? "").trim().toLowerCase();
+  const priceVs40 = (snapshot.trend?.price_vs_ema_40 ?? "").trim().toLowerCase();
+
+  if (structure === "range") {
+    return "Mercado lateral";
+  }
 
   if (
-    first &&
-    last &&
-    !Number.isNaN(first.getTime()) &&
-    !Number.isNaN(last.getTime())
+    (direction === "buy" || direction === "long") &&
+    alignment === "bullish" &&
+    priceVs20 === "above" &&
+    priceVs40 === "above"
   ) {
-    const diffMs = last.getTime() - first.getTime();
-    if (diffMs >= 0) {
-      const totalMinutes = Math.round(diffMs / 60000);
-      const hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-
-      if (hours > 0) {
-        return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-      }
-
-      return `${totalMinutes}m`;
-    }
+    return "Compra a favor da tendência";
   }
 
-  const tf = (timeframe ?? "").trim().toLowerCase();
-  const candles = Number.isFinite(totalCandles ?? NaN) ? Number(totalCandles) : 0;
+  if (
+    (direction === "sell" || direction === "short") &&
+    alignment === "bearish" &&
+    priceVs20 === "below" &&
+    priceVs40 === "below"
+  ) {
+    return "Venda a favor da tendência";
+  }
 
-  const tfMap: Record<string, number> = {
-    "1m": 1,
-    "3m": 3,
-    "5m": 5,
-    "10m": 10,
-    "15m": 15,
-    "30m": 30,
-    "45m": 45,
-    "1h": 60,
-    "2h": 120,
-    "4h": 240,
-    "1d": 1440,
+  if (
+    (direction === "buy" || direction === "long") &&
+    alignment === "bearish"
+  ) {
+    return "Compra contra tendência";
+  }
+
+  if (
+    (direction === "sell" || direction === "short") &&
+    alignment === "bullish"
+  ) {
+    return "Venda contra tendência";
+  }
+
+  return "Tendência indefinida";
+}
+
+function getSignalQualityLabel(
+  analysis: StageTestRunTechnicalAnalysis | null
+): string {
+  const snapshot = analysis?.snapshot;
+  if (!snapshot) return "-";
+
+  const structure = (snapshot.structure?.market_structure ?? "")
+    .trim()
+    .toLowerCase();
+  const alignment = (snapshot.trend?.ema_alignment ?? "").trim().toLowerCase();
+  const entryLocation = (snapshot.structure?.entry_location ?? "")
+    .trim()
+    .toLowerCase();
+  const rsiZone = (snapshot.momentum?.rsi_zone ?? "").trim().toLowerCase();
+  const macdState = (snapshot.momentum?.macd_state ?? "").trim().toLowerCase();
+
+  let score = 0;
+
+  if (structure === "trending") score += 2;
+  if (alignment === "bullish" || alignment === "bearish") score += 2;
+  if (entryLocation && entryLocation !== "mid_range") score += 1;
+  if (rsiZone && rsiZone !== "neutral") score += 1;
+  if (
+    macdState === "bullish_cross" ||
+    macdState === "bearish_cross"
+  ) {
+    score += 1;
+  }
+
+  if (structure === "range") score -= 2;
+  if (entryLocation === "mid_range") score -= 1;
+  if (rsiZone === "neutral") score -= 1;
+
+  if (score >= 4) return "Forte";
+  if (score >= 2) return "Médio";
+  return "Fraco";
+}
+
+function buildStrategicCaseFilters(
+  analysis: StageTestRunTechnicalAnalysis | null
+): StrategicCaseFilters {
+  const snapshot = analysis?.snapshot;
+
+  if (!snapshot) {
+    return {
+      session: "-",
+      marketStructure: "-",
+      emaAlignment: "-",
+      priceVsEma20: "-",
+      priceVsEma40: "-",
+      entryLocation: "-",
+      rsiZone: "-",
+      rsiSlope: "-",
+      macdState: "-",
+      trendBias: "-",
+      signalQuality: "-",
+    };
+  }
+
+  return {
+    session: normalizeDisplayText(snapshot.trigger_context?.session),
+    marketStructure: normalizeDisplayText(
+      snapshot.structure?.market_structure
+    ),
+    emaAlignment: normalizeDisplayText(snapshot.trend?.ema_alignment),
+    priceVsEma20: normalizeDisplayText(snapshot.trend?.price_vs_ema_20),
+    priceVsEma40: normalizeDisplayText(snapshot.trend?.price_vs_ema_40),
+    entryLocation: normalizeDisplayText(snapshot.structure?.entry_location),
+    rsiZone: normalizeDisplayText(snapshot.momentum?.rsi_zone),
+    rsiSlope: normalizeDisplayText(snapshot.momentum?.rsi_slope),
+    macdState: normalizeDisplayText(snapshot.momentum?.macd_state),
+    trendBias: getTrendBiasLabel(analysis),
+    signalQuality: getSignalQualityLabel(analysis),
   };
-
-  const minutesPerCandle = tfMap[tf];
-  if (!minutesPerCandle || candles <= 0) {
-    return "-";
-  }
-
-  const totalMinutes = candles * minutesPerCandle;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-  }
-
-  return `${totalMinutes}m`;
 }
 
 function scoreTechnicalAnalysis(
@@ -1171,12 +1256,7 @@ function CaseAnalysisBlock({
           }}
         >
           <div style={{ display: "grid", gap: 6 }}>
-            <strong
-              style={{
-                fontSize: 14,
-                color: "#0f172a",
-              }}
-            >
+            <strong style={{ fontSize: 14, color: "#0f172a" }}>
               Análise técnica do case #{caseNumber}
             </strong>
 
@@ -1239,6 +1319,7 @@ function CaseAnalysisBlock({
   const grouped = groupIndicators(analysis);
   const scores = scoreTechnicalAnalysis(analysis);
   const narrative = buildAnalysisNarrative(analysis);
+  const filters = buildStrategicCaseFilters(analysis);
 
   const conflictsCount = narrative.conflicts.length;
 
@@ -1314,12 +1395,7 @@ function CaseAnalysisBlock({
         }}
       >
         <div style={{ display: "grid", gap: 6 }}>
-          <strong
-            style={{
-              fontSize: 14,
-              color: "#0f172a",
-            }}
-          >
+          <strong style={{ fontSize: 14, color: "#0f172a" }}>
             Análise técnica do case #{caseNumber}
           </strong>
 
@@ -1360,6 +1436,52 @@ function CaseAnalysisBlock({
           {statusBadge.label}
         </span>
       </div>
+
+      <AnalysisSection title="Filtros estratégicos do case">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 8,
+          }}
+        >
+          <AnalysisMetricCard label="Sessão" value={filters.session} />
+          <AnalysisMetricCard
+            label="Estrutura do mercado"
+            value={filters.marketStructure}
+          />
+          <AnalysisMetricCard
+            label="Alinhamento EMA"
+            value={filters.emaAlignment}
+          />
+          <AnalysisMetricCard
+            label="Preço vs EMA 20"
+            value={filters.priceVsEma20}
+          />
+          <AnalysisMetricCard
+            label="Preço vs EMA 40"
+            value={filters.priceVsEma40}
+          />
+          <AnalysisMetricCard
+            label="Local da entrada"
+            value={filters.entryLocation}
+          />
+          <AnalysisMetricCard label="Zona RSI" value={filters.rsiZone} />
+          <AnalysisMetricCard
+            label="Inclinação RSI"
+            value={filters.rsiSlope}
+          />
+          <AnalysisMetricCard label="Estado MACD" value={filters.macdState} />
+          <AnalysisMetricCard
+            label="Viés de tendência"
+            value={filters.trendBias}
+          />
+          <AnalysisMetricCard
+            label="Qualidade do sinal"
+            value={filters.signalQuality}
+          />
+        </div>
+      </AnalysisSection>
 
       <AnalysisSection title="Resumo executivo do case">
         <div
@@ -1411,7 +1533,7 @@ function CaseAnalysisBlock({
               color: "#334155",
             }}
           >
-            Este bloco representa o contexto técnico específico deste gatilho individual. A leitura deve ser feita por case, e não como resumo do run inteiro.
+            O objetivo deste bloco é permitir encontrar padrões repetidos nos fails e nos hits. Os filtros estratégicos acima são os candidatos naturais para virar regra de abortar ou confirmar gatilho.
           </div>
         </div>
       </AnalysisSection>
@@ -1689,7 +1811,7 @@ function CasesSection({
                 lineHeight: 1.45,
               }}
             >
-              A análise técnica detalhada deve ser feita por case, usando o ID e o snapshot do gatilho.
+              O foco aqui é encontrar padrões recorrentes nos fails para afinar a regra da estratégia.
             </span>
           </div>
 
@@ -1796,6 +1918,7 @@ function CasesSection({
             const caseKey = `${strategyKey}::${caseId}`;
             const badge = getOutcomeBadge(item.outcome);
             const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
+            const filters = buildStrategicCaseFilters(item.analysis ?? null);
 
             return (
               <div
@@ -1878,6 +2001,51 @@ function CasesSection({
                   {detailRow("MAE", formatValue(item.max_adverse_excursion))}
                   {detailRow("Close reason", formatValue(item.close_reason))}
                 </div>
+
+                <AnalysisSection title="Leitura rápida para comparação entre cases">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: 8,
+                    }}
+                  >
+                    <AnalysisMetricCard label="Sessão" value={filters.session} />
+                    <AnalysisMetricCard
+                      label="Estrutura"
+                      value={filters.marketStructure}
+                    />
+                    <AnalysisMetricCard
+                      label="Alinhamento EMA"
+                      value={filters.emaAlignment}
+                    />
+                    <AnalysisMetricCard
+                      label="Preço vs EMA 20"
+                      value={filters.priceVsEma20}
+                    />
+                    <AnalysisMetricCard
+                      label="Preço vs EMA 40"
+                      value={filters.priceVsEma40}
+                    />
+                    <AnalysisMetricCard
+                      label="Local da entrada"
+                      value={filters.entryLocation}
+                    />
+                    <AnalysisMetricCard label="Zona RSI" value={filters.rsiZone} />
+                    <AnalysisMetricCard
+                      label="Estado MACD"
+                      value={filters.macdState}
+                    />
+                    <AnalysisMetricCard
+                      label="Viés"
+                      value={filters.trendBias}
+                    />
+                    <AnalysisMetricCard
+                      label="Qualidade do sinal"
+                      value={filters.signalQuality}
+                    />
+                  </div>
+                </AnalysisSection>
 
                 <div
                   style={{
@@ -2202,15 +2370,6 @@ function RunHistoryCard({
                 const isCasesExpanded = Boolean(
                   expandedCasesByStrategy[item.strategy_key]
                 );
-                const totalCandles = item.last_run?.total_candles ?? null;
-                const firstCandle = item.last_run?.first_candle ?? null;
-                const lastCandle = item.last_run?.last_candle ?? null;
-                const coverage = formatCoverageDuration(
-                  firstCandle,
-                  lastCandle,
-                  totalCandles,
-                  item.last_run?.timeframe
-                );
 
                 return (
                   <div
@@ -2356,24 +2515,13 @@ function RunHistoryCard({
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                        gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
                         gap: 8,
                         marginBottom: 12,
                       }}
                     >
                       {metricPill("Runs", item.total_runs, "#cbd5e1", "#f8fafc")}
-                      {metricPill(
-                        "Candles",
-                        totalCandles ?? "-",
-                        "#cbd5e1",
-                        "#f8fafc"
-                      )}
-                      {metricPill(
-                        "Cases",
-                        item.total_cases,
-                        "#cbd5e1",
-                        "#f8fafc"
-                      )}
+                      {metricPill("Cases", item.total_cases, "#cbd5e1", "#f8fafc")}
                       {metricPill("Hits", item.total_hits, "#16a34a", "#f0fdf4")}
                       {metricPill("Fails", item.total_fails, "#dc2626", "#fef2f2")}
                       {metricPill(
@@ -2401,19 +2549,11 @@ function RunHistoryCard({
                       }}
                     >
                       {detailRow("Categoria", item.strategy_category ?? "-")}
-                      {detailRow("Último símbolo", item.last_run?.symbol ?? "-")}
-                      {detailRow("Último timeframe", item.last_run?.timeframe ?? "-")}
-                      {detailRow(
-                        "Candles analisados",
-                        totalCandles != null ? String(totalCandles) : "-"
-                      )}
-                      {detailRow("Início da análise", formatDateTime(firstCandle))}
-                      {detailRow("Fim da análise", formatDateTime(lastCandle))}
-                      {detailRow("Cobertura", coverage)}
-                      {detailRow("Cases encontrados", String(item.total_cases))}
                       {detailRow("Fail Rate", formatPercent(item.fail_rate))}
                       {detailRow("Timeout Rate", formatPercent(item.timeout_rate))}
                       {detailRow("Último run", latestRunId || "-")}
+                      {detailRow("Último símbolo", item.last_run?.symbol ?? "-")}
+                      {detailRow("Último timeframe", item.last_run?.timeframe ?? "-")}
                       {detailRow("Último status", item.last_run?.status ?? "-")}
                       {detailRow(
                         "Último início",
