@@ -126,6 +126,7 @@ function formatIndicatorValueByLabel(label: string, value: string): string {
       "fecho",
       "target",
       "invalidação",
+      "trigger price",
     ].includes(normalizedLabel)
   ) {
     return formatAnalysisNumber(value, 5);
@@ -191,6 +192,9 @@ function normalizeDisplayText(value: string | null | undefined): string {
     ready: "Sem sinal",
     local_ok: "Entrada validada",
     local_error: "Run com erro",
+    hit: "Hit",
+    fail: "Fail",
+    timeout: "Timeout",
   };
 
   return map[normalized] ?? raw;
@@ -516,7 +520,7 @@ function formatCoverageDuration(
         return `${hours}h ${String(minutes).padStart(2, "0")}m`;
       }
 
-      return `${minutes}m`;
+      return `${totalMinutes}m`;
     }
   }
 
@@ -550,7 +554,7 @@ function formatCoverageDuration(
     return `${hours}h ${String(minutes).padStart(2, "0")}m`;
   }
 
-  return `${minutes}m`;
+  return `${totalMinutes}m`;
 }
 
 function scoreTechnicalAnalysis(
@@ -770,10 +774,10 @@ function buildAnalysisNarrative(
   });
 
   const executiveSummary = isBuy
-    ? "Entrada compradora validada por tendência e momentum, mas com contexto estrutural misto."
+    ? "Este gatilho confirmou compra com contexto técnico específico do caso."
     : isSell
-      ? "Entrada vendedora validada por tendência e momentum, mas com contexto estrutural misto."
-      : "A análise técnica indica um contexto operacional misto no momento da validação.";
+      ? "Este gatilho confirmou venda com contexto técnico específico do caso."
+      : "Este caso apresentou um contexto técnico próprio no momento do gatilho.";
 
   return {
     executiveSummary,
@@ -1103,16 +1107,16 @@ function RulePill({
   );
 }
 
-function RunTechnicalAnalysisBlock({
+function CaseAnalysisBlock({
   analysis,
   runStatus,
-  title = "Análise técnica do último run",
-  subtitle = "Snapshot técnico capturado no momento da validação.",
+  caseId,
+  caseNumber,
 }: {
   analysis: StageTestRunTechnicalAnalysis | null;
   runStatus: string | null | undefined;
-  title?: string;
-  subtitle?: string;
+  caseId: string;
+  caseNumber: number | string;
 }) {
   if (!analysis) {
     return null;
@@ -1166,7 +1170,7 @@ function RunTechnicalAnalysisBlock({
         >
           {items.map((indicator, index) => (
             <AnalysisMetricCard
-              key={`${groupTitle}-${indicator.label}-${index}`}
+              key={`${caseId}-${groupTitle}-${indicator.label}-${index}`}
               label={indicator.label}
               value={formatIndicatorValueByLabel(indicator.label, indicator.value)}
             />
@@ -1204,7 +1208,7 @@ function RunTechnicalAnalysisBlock({
               color: "#0f172a",
             }}
           >
-            {title}
+            Análise técnica do case #{caseNumber}
           </strong>
 
           <span
@@ -1214,7 +1218,18 @@ function RunTechnicalAnalysisBlock({
               lineHeight: 1.45,
             }}
           >
-            {subtitle}
+            Snapshot técnico do momento exato do gatilho de confirmação.
+          </span>
+
+          <span
+            style={{
+              fontSize: 12,
+              color: "#334155",
+              lineHeight: 1.45,
+              wordBreak: "break-word",
+            }}
+          >
+            <strong>Case ID:</strong> {caseId}
           </span>
         </div>
 
@@ -1234,7 +1249,7 @@ function RunTechnicalAnalysisBlock({
         </span>
       </div>
 
-      <AnalysisSection title="Resumo executivo">
+      <AnalysisSection title="Resumo executivo do case">
         <div
           style={{
             display: "grid",
@@ -1242,6 +1257,10 @@ function RunTechnicalAnalysisBlock({
             gap: 8,
           }}
         >
+          <AnalysisMetricCard
+            label="Case ID"
+            value={caseId}
+          />
           <AnalysisMetricCard
             label="Direção"
             value={normalizeDisplayText(analysis.direction)}
@@ -1269,7 +1288,7 @@ function RunTechnicalAnalysisBlock({
         </div>
       </AnalysisSection>
 
-      <AnalysisSection title="Diagnóstico final">
+      <AnalysisSection title="Diagnóstico do case">
         <div style={{ display: "grid", gap: 12 }}>
           <div
             style={{
@@ -1292,13 +1311,7 @@ function RunTechnicalAnalysisBlock({
               color: "#334155",
             }}
           >
-            {analysis.direction?.toLowerCase() === "buy" ||
-            analysis.direction?.toLowerCase() === "long"
-              ? "A validação ocorreu no lado comprador, com suporte de tendência e momentum. Ainda assim, o contexto estrutural não era totalmente limpo, o que reduz a qualidade estatística para movimentos mais expansivos."
-              : analysis.direction?.toLowerCase() === "sell" ||
-                  analysis.direction?.toLowerCase() === "short"
-                ? "A validação ocorreu no lado vendedor, com suporte de tendência e momentum. Ainda assim, o contexto estrutural não era totalmente limpo, o que reduz a qualidade estatística para movimentos mais expansivos."
-                : "O run apresentou um contexto técnico misto, com informação suficiente para análise, mas sem uma leitura completamente limpa de continuidade."}
+            Este bloco representa o contexto técnico específico deste gatilho individual. A leitura deve ser feita por case, e não como resumo do run inteiro.
           </div>
         </div>
       </AnalysisSection>
@@ -1319,7 +1332,7 @@ function RunTechnicalAnalysisBlock({
             <div style={{ display: "grid", gap: 8 }}>
               {narrative.positives.map((item, index) => (
                 <div
-                  key={`positive-${index}`}
+                  key={`positive-${caseId}-${index}`}
                   style={{
                     border: "1px solid #86efac",
                     borderRadius: 10,
@@ -1347,7 +1360,7 @@ function RunTechnicalAnalysisBlock({
             <div style={{ display: "grid", gap: 8 }}>
               {narrative.negatives.map((item, index) => (
                 <div
-                  key={`negative-${index}`}
+                  key={`negative-${caseId}-${index}`}
                   style={{
                     border: "1px solid #fca5a5",
                     borderRadius: 10,
@@ -1372,7 +1385,7 @@ function RunTechnicalAnalysisBlock({
           <div style={{ display: "grid", gap: 8 }}>
             {narrative.conflicts.map((item, index) => (
               <div
-                key={`conflict-${index}`}
+                key={`conflict-${caseId}-${index}`}
                 style={{
                   border: "1px solid #fdba74",
                   borderRadius: 10,
@@ -1391,7 +1404,7 @@ function RunTechnicalAnalysisBlock({
         </AnalysisSection>
       )}
 
-      <AnalysisSection title="Score do setup">
+      <AnalysisSection title="Score do case">
         <div
           style={{
             display: "grid",
@@ -1416,7 +1429,7 @@ function RunTechnicalAnalysisBlock({
       {renderIndicatorGroup("Candle", grouped.candle)}
       {renderIndicatorGroup("Outros indicadores", grouped.other)}
 
-      <AnalysisSection title="Regras de validação">
+      <AnalysisSection title="Regras de validação do case">
         {rules.length === 0 ? (
           <div
             style={{
@@ -1425,7 +1438,7 @@ function RunTechnicalAnalysisBlock({
               lineHeight: 1.45,
             }}
           >
-            Nenhuma regra detalhada foi devolvida pelo backend.
+            Nenhuma regra detalhada foi devolvida pelo backend para este case.
           </div>
         ) : (
           <div
@@ -1437,7 +1450,7 @@ function RunTechnicalAnalysisBlock({
           >
             {confirmedRules.map((rule, index) => (
               <RulePill
-                key={`confirmed-${rule.label}-${index}`}
+                key={`confirmed-${caseId}-${rule.label}-${index}`}
                 label={normalizeRuleLabel(rule.label)}
                 state="confirmed"
                 value={rule.value}
@@ -1446,7 +1459,7 @@ function RunTechnicalAnalysisBlock({
 
             {contraryRules.map((rule, index) => (
               <RulePill
-                key={`contrary-${rule.label}-${index}`}
+                key={`contrary-${caseId}-${rule.label}-${index}`}
                 label={normalizeRuleLabel(rule.label)}
                 state="contrary"
                 value={rule.value}
@@ -1455,7 +1468,7 @@ function RunTechnicalAnalysisBlock({
 
             {contextualRules.map((rule, index) => (
               <RulePill
-                key={`contextual-${rule.label}-${index}`}
+                key={`contextual-${caseId}-${rule.label}-${index}`}
                 label={normalizeRuleLabel(rule.label)}
                 state="contextual"
                 value={rule.value}
@@ -1464,7 +1477,7 @@ function RunTechnicalAnalysisBlock({
 
             {inactiveRules.map((rule, index) => (
               <RulePill
-                key={`inactive-${rule.label}-${index}`}
+                key={`inactive-${caseId}-${rule.label}-${index}`}
                 label={normalizeRuleLabel(rule.label)}
                 state="inactive"
                 value={rule.value}
@@ -1576,7 +1589,7 @@ function CasesSection({
                 lineHeight: 1.45,
               }}
             >
-              Hits e fails detalhados para análise individual.
+              A análise técnica detalhada deve ser feita por case, usando o ID e o snapshot do gatilho.
             </span>
           </div>
 
@@ -1678,7 +1691,9 @@ function CasesSection({
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           {filteredCases.map((item, index) => {
-            const caseKey = `${strategyKey}::${item.id ?? `case-${index}`}`;
+            const caseId = item.id ?? `case-${index + 1}`;
+            const caseNumber = item.case_number ?? index + 1;
+            const caseKey = `${strategyKey}::${caseId}`;
             const badge = getOutcomeBadge(item.outcome);
             const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
 
@@ -1705,10 +1720,20 @@ function CasesSection({
                 >
                   <div style={{ display: "grid", gap: 4 }}>
                     <strong style={{ fontSize: 13, color: "#0f172a" }}>
-                      Caso #{item.case_number ?? index + 1}
+                      Case #{caseNumber}
                     </strong>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "#0f172a",
+                        fontWeight: 700,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      ID: {caseId}
+                    </span>
                     <span style={{ fontSize: 12, color: "#64748b" }}>
-                      ID: {item.id ?? "-"}
+                      Trigger: {formatDateTime(item.trigger_time)}
                     </span>
                   </div>
 
@@ -1735,9 +1760,10 @@ function CasesSection({
                     gap: 8,
                   }}
                 >
-                  {detailRow("Direção", formatValue(item.side))}
+                  {detailRow("Case ID", caseId)}
+                  {detailRow("Direção", normalizeDisplayText(formatValue(item.side)))}
                   {detailRow("Status", formatValue(item.status))}
-                  {detailRow("Outcome", formatValue(item.outcome))}
+                  {detailRow("Outcome", normalizeDisplayText(formatValue(item.outcome)))}
                   {detailRow("Trigger", formatDateTime(item.trigger_time))}
                   {detailRow("Trigger candle", formatDateTime(item.trigger_candle_time))}
                   {detailRow("Entrada", formatValue(item.entry_price))}
@@ -1753,40 +1779,40 @@ function CasesSection({
                   {detailRow("Close reason", formatValue(item.close_reason))}
                 </div>
 
-                {item.analysis && (
-                  <div
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onToggleCaseAnalysis(caseKey)}
                     style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
+                      height: 34,
+                      padding: "0 12px",
+                      borderRadius: 8,
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                      color: "#0f172a",
+                      fontWeight: 700,
+                      cursor: "pointer",
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => onToggleCaseAnalysis(caseKey)}
-                      style={{
-                        height: 34,
-                        padding: "0 12px",
-                        borderRadius: 8,
-                        border: "1px solid #cbd5e1",
-                        background: "#ffffff",
-                        color: "#0f172a",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {isExpanded
-                        ? "Ocultar análise do caso"
-                        : "Exibir análise do caso"}
-                    </button>
-                  </div>
-                )}
+                    {isExpanded
+                      ? "Ocultar análise do case"
+                      : "Exibir análise do case"}
+                  </button>
+                </div>
 
-                {item.analysis && isExpanded && (
-                  <RunTechnicalAnalysisBlock
-                    analysis={item.analysis}
+                {isExpanded && (
+                  <CaseAnalysisBlock
+                    analysis={item.analysis ?? null}
                     runStatus={item.outcome}
-                    title={`Análise do caso #${item.case_number ?? index + 1}`}
-                    subtitle="Snapshot técnico associado a este caso."
+                    caseId={caseId}
+                    caseNumber={caseNumber}
                   />
                 )}
               </div>
@@ -1818,9 +1844,6 @@ function RunHistoryCard({
   onRunStageTest,
 }: RunHistoryCardProps) {
   const [expanded, setExpanded] = useState(true);
-  const [expandedAnalysisByStrategy, setExpandedAnalysisByStrategy] = useState<
-    Record<string, boolean>
-  >({});
   const [expandedCasesByStrategy, setExpandedCasesByStrategy] = useState<
     Record<string, boolean>
   >({});
@@ -1843,13 +1866,6 @@ function RunHistoryCard({
     : hasManualContext
       ? "Escolha uma estratégia da lista e clique em Run para executar manualmente no símbolo e timeframe selecionados."
       : "Selecione símbolo e timeframe no painel do mercado para liberar a execução manual.";
-
-  const toggleAnalysis = (strategyKey: string) => {
-    setExpandedAnalysisByStrategy((previous) => ({
-      ...previous,
-      [strategyKey]: !previous[strategyKey],
-    }));
-  };
 
   const toggleCases = (strategyKey: string) => {
     setExpandedCasesByStrategy((previous) => ({
@@ -2081,13 +2097,8 @@ function RunHistoryCard({
                 const isSelected =
                   latestRunId !== "" && selectedRunId === latestRunId;
                 const isRunning = runningStrategyKey === item.strategy_key;
-                const analysis = item.last_run?.analysis ?? null;
                 const cases = item.last_run?.cases ?? [];
-                const hasAnalysis = Boolean(analysis);
                 const hasCases = cases.length > 0;
-                const isAnalysisExpanded = Boolean(
-                  expandedAnalysisByStrategy[item.strategy_key]
-                );
                 const isCasesExpanded = Boolean(
                   expandedCasesByStrategy[item.strategy_key]
                 );
@@ -2299,6 +2310,7 @@ function RunHistoryCard({
                       {detailRow("Início da análise", formatDateTime(firstCandle))}
                       {detailRow("Fim da análise", formatDateTime(lastCandle))}
                       {detailRow("Cobertura", coverage)}
+                      {detailRow("Cases encontrados", String(item.total_cases))}
                       {detailRow("Fail Rate", formatPercent(item.fail_rate))}
                       {detailRow("Timeout Rate", formatPercent(item.timeout_rate))}
                       {detailRow("Último run", latestRunId || "-")}
@@ -2309,7 +2321,7 @@ function RunHistoryCard({
                       )}
                     </div>
 
-                    {(hasAnalysis || hasCases) && (
+                    {hasCases && (
                       <div
                         style={{
                           marginTop: 12,
@@ -2319,53 +2331,23 @@ function RunHistoryCard({
                           flexWrap: "wrap",
                         }}
                       >
-                        {hasAnalysis && (
-                          <button
-                            type="button"
-                            onClick={() => toggleAnalysis(item.strategy_key)}
-                            style={{
-                              height: 34,
-                              padding: "0 12px",
-                              borderRadius: 8,
-                              border: "1px solid #cbd5e1",
-                              background: "#ffffff",
-                              color: "#0f172a",
-                              fontWeight: 700,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {isAnalysisExpanded
-                              ? "Ocultar análise"
-                              : "Exibir análise"}
-                          </button>
-                        )}
-
-                        {hasCases && (
-                          <button
-                            type="button"
-                            onClick={() => toggleCases(item.strategy_key)}
-                            style={{
-                              height: 34,
-                              padding: "0 12px",
-                              borderRadius: 8,
-                              border: "1px solid #cbd5e1",
-                              background: "#ffffff",
-                              color: "#0f172a",
-                              fontWeight: 700,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {isCasesExpanded ? "Ocultar casos" : "Exibir casos"}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleCases(item.strategy_key)}
+                          style={{
+                            height: 34,
+                            padding: "0 12px",
+                            borderRadius: 8,
+                            border: "1px solid #cbd5e1",
+                            background: "#ffffff",
+                            color: "#0f172a",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {isCasesExpanded ? "Ocultar cases" : "Exibir cases"}
+                        </button>
                       </div>
-                    )}
-
-                    {hasAnalysis && isAnalysisExpanded && (
-                      <RunTechnicalAnalysisBlock
-                        analysis={analysis}
-                        runStatus={item.last_run?.status}
-                      />
                     )}
 
                     {hasCases && isCasesExpanded && (
