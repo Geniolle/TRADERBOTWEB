@@ -1,3 +1,5 @@
+// web/src/hooks/useCandles.ts
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_HTTP_BASE_URL } from "../constants/config";
@@ -370,6 +372,29 @@ function isQuotaExceededError(status: number, message: string): boolean {
   );
 }
 
+function getMinimumCandlesForStableSnapshot(timeframe: string): number {
+  const normalized = normalizeTimeframe(timeframe);
+
+  if (normalized === "1m") return 30;
+  if (normalized === "3m") return 30;
+  if (normalized === "5m") return 30;
+  if (normalized === "15m") return 20;
+  if (normalized === "30m") return 20;
+  if (normalized === "1h") return 12;
+  if (normalized === "4h") return 8;
+  if (normalized === "1d") return 5;
+
+  return 10;
+}
+
+function isInsufficientSnapshot(
+  items: CandleItem[],
+  timeframe: string
+): boolean {
+  if (items.length === 0) return true;
+  return items.length < getMinimumCandlesForStableSnapshot(timeframe);
+}
+
 function useCandles({
   effectiveChartSymbol,
   effectiveChartTimeframe,
@@ -502,7 +527,7 @@ function useCandles({
         return {
           items: [],
           coverageMeta: coverageMetaRef.current,
-          preserveExisting: isQuotaExceededError(429, message),
+          preserveExisting: candlesRef.current.length > 0,
         };
       } finally {
         if (activeRequestKeyRef.current === `${symbol}::${timeframe}`) {
@@ -528,24 +553,47 @@ function useCandles({
         return;
       }
 
-      if (parsed.items.length > 0) {
-        setCandles((prev) => mergeCandles(prev, parsed.items, "incremental"));
+      const mergedItems = mergeCandles(
+        candlesRef.current,
+        parsed.items,
+        "incremental"
+      );
+
+      const incomingIsInsufficient = isInsufficientSnapshot(parsed.items, timeframe);
+      const mergedIsInsufficient = isInsufficientSnapshot(mergedItems, timeframe);
+      const hasPreviousSnapshot = candlesRef.current.length > 0;
+
+      if (
+        parsed.items.length > 0 &&
+        !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
+      ) {
+        setCandles(mergedItems);
+      } else if (hasPreviousSnapshot && parsed.items.length > 0) {
+        console.warn(
+          "[HTTP] snapshot incremental insuficiente; último snapshot válido foi preservado",
+          {
+            symbol,
+            timeframe,
+            incomingCount: parsed.items.length,
+            mergedCount: mergedItems.length,
+            preservedCount: candlesRef.current.length,
+          }
+        );
       }
 
       if (parsed.coverageMeta) {
-        const mergedItems = mergeCandles(
-          candlesRef.current,
-          parsed.items,
-          "incremental"
-        );
+        const coverageItems =
+          mergedItems.length > 0 && !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
+            ? mergedItems
+            : candlesRef.current;
 
         setCoverageMeta(
           buildCoverageMeta(
             {
               ...parsed.coverageMeta,
-              count: mergedItems.length,
+              count: coverageItems.length,
             },
-            mergedItems,
+            coverageItems,
             symbol,
             timeframe,
             "incremental",
@@ -578,15 +626,69 @@ function useCandles({
         return;
       }
 
+      const nextCandles = mergeCandles([], parsed.items, "full");
+      const incomingIsInsufficient = isInsufficientSnapshot(nextCandles, timeframe);
+      const hasPreviousSnapshot = candlesRef.current.length > 0;
+
+      if (nextCandles.length > 0 && !(incomingIsInsufficient && hasPreviousSnapshot)) {
+        setCandles(nextCandles);
+
+        if (parsed.coverageMeta) {
+          setCoverageMeta(
+            buildCoverageMeta(
+              {
+                ...parsed.coverageMeta,
+                count: nextCandles.length,
+              },
+              nextCandles,
+              symbol,
+              timeframe,
+              "full",
+              parsed.coverageMeta.start_at,
+              parsed.coverageMeta.end_at
+            )
+          );
+        }
+
+        return;
+      }
+
+      if (hasPreviousSnapshot) {
+        console.warn(
+          "[HTTP] snapshot insuficiente recebido; último snapshot válido foi preservado",
+          {
+            symbol,
+            timeframe,
+            incomingCount: nextCandles.length,
+            preservedCount: candlesRef.current.length,
+          }
+        );
+
+        if (parsed.coverageMeta) {
+          setCoverageMeta(
+            buildCoverageMeta(
+              {
+                ...parsed.coverageMeta,
+                count: candlesRef.current.length,
+              },
+              candlesRef.current,
+              symbol,
+              timeframe,
+              "full",
+              parsed.coverageMeta.start_at,
+              parsed.coverageMeta.end_at
+            )
+          );
+        }
+
+        return;
+      }
+
       if (parsed.coverageMeta) {
         setCoverageMeta(parsed.coverageMeta);
       }
 
-      if (parsed.items.length > 0) {
-        setCandles(mergeCandles([], parsed.items, "full"));
-      } else {
-        setCandles([]);
-      }
+      setCandles(nextCandles);
     })();
   }, [requestKey, fetchCandles, effectiveChartSymbol, effectiveChartTimeframe]);
 

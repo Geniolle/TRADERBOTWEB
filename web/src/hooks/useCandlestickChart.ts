@@ -1,3 +1,5 @@
+// web/src/hooks/useCandlestickChart.ts
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -143,7 +145,7 @@ function useCandlestickChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
-  const previousChartDataRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
+  const lastRenderedChartDataRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
 
   const [chartSize, setChartSize] = useState({
     width: 0,
@@ -287,8 +289,21 @@ function useCandlestickChart({
     setChartSize({ width, height });
 
     if (candleSeriesRef.current) {
-      candleSeriesRef.current.setData(chartData);
-      previousChartDataRef.current = chartData;
+      if (chartData.length > 0) {
+        candleSeriesRef.current.setData(chartData);
+        lastRenderedChartDataRef.current = chartData;
+      } else if (lastRenderedChartDataRef.current.length > 0) {
+        candleSeriesRef.current.setData(lastRenderedChartDataRef.current);
+
+        console.warn(
+          "[CHART] dataset vazio recebido; último snapshot válido foi preservado",
+          {
+            preservedCount: lastRenderedChartDataRef.current.length,
+          }
+        );
+      } else {
+        candleSeriesRef.current.setData([]);
+      }
     }
 
     const incomingIds = new Set(indicatorSeries.map((item) => item.id));
@@ -331,6 +346,9 @@ function useCandlestickChart({
     if (chartData.length > 0) {
       applyStableVisibleRange(chart, chartData.length);
       chart.timeScale().scrollToRealTime();
+    } else if (lastRenderedChartDataRef.current.length > 0) {
+      applyStableVisibleRange(chart, lastRenderedChartDataRef.current.length);
+      chart.timeScale().scrollToRealTime();
     } else {
       chart.timeScale().fitContent();
     }
@@ -350,8 +368,11 @@ function useCandlestickChart({
         height: CHART_HEIGHT,
       });
 
-      if (previousChartDataRef.current.length > 0) {
-        applyStableVisibleRange(chartRef.current, previousChartDataRef.current.length);
+      if (lastRenderedChartDataRef.current.length > 0) {
+        applyStableVisibleRange(
+          chartRef.current,
+          lastRenderedChartDataRef.current.length
+        );
         chartRef.current.timeScale().scrollToRealTime();
       } else {
         chartRef.current.timeScale().fitContent();
@@ -370,7 +391,7 @@ function useCandlestickChart({
 
     return () => {
       indicatorMap.clear();
-      previousChartDataRef.current = [];
+      lastRenderedChartDataRef.current = [];
 
       if (chartRef.current) {
         chartRef.current.remove();

@@ -1,6 +1,7 @@
 // web/src/components/chart/CandlesChartCard.tsx
 
 import { useMemo, useState } from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { CandlestickData, UTCTimestamp } from "lightweight-charts";
 import type {
   CandleItem,
@@ -28,8 +29,8 @@ import { useChartCountdown } from "./hooks/useChartCountdown";
 import { getCurrentPrice } from "./hooks/useCurrentPrice";
 
 type CandlesChartCardProps = {
-  mainCardStyle: React.CSSProperties;
-  chartContainerRef: React.RefObject<HTMLDivElement | null>;
+  mainCardStyle: CSSProperties;
+  chartContainerRef: RefObject<HTMLDivElement | null>;
   loadingCandles: boolean;
   candlesError: string;
   chartData: CandlestickData<UTCTimestamp>[];
@@ -129,8 +130,14 @@ function buildCoverageStatus(params: {
   const lastTickOpenMs = parseDateValue(lastCandleTick?.open_time);
   const effectiveLastDataMs = lastTickOpenMs ?? lastCandleOpenMs;
 
-  const staleThresholdWarningMs = Math.max(timeframeMinutes * 3 * 60 * 1000, 45 * 60 * 1000);
-  const staleThresholdDangerMs = Math.max(timeframeMinutes * 10 * 60 * 1000, 3 * 60 * 60 * 1000);
+  const staleThresholdWarningMs = Math.max(
+    timeframeMinutes * 3 * 60 * 1000,
+    45 * 60 * 1000
+  );
+  const staleThresholdDangerMs = Math.max(
+    timeframeMinutes * 10 * 60 * 1000,
+    3 * 60 * 60 * 1000
+  );
 
   const dataAgeMs =
     effectiveLastDataMs !== null ? Math.max(now - effectiveLastDataMs, 0) : null;
@@ -144,7 +151,8 @@ function buildCoverageStatus(params: {
     return {
       level: "danger",
       title: "Cobertura insuficiente",
-      message: "A base local não devolveu candles suficientes para esta seleção.",
+      message:
+        "A base local não devolveu candles suficientes para esta seleção.",
       background: "#fef2f2",
       border: "#fca5a5",
       color: "#991b1b",
@@ -334,27 +342,29 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   const hasOverlayContent =
     overlays.lines.length > 0 || overlays.markers.length > 0;
 
+  const hasChartSnapshot = chartData.length > 0;
+
   const showMarketInfo = !loadingCandles && !candlesError;
   const showPriceScale =
     !loadingCandles && !candlesError && priceScaleData.levels.length > 0;
   const showCurrentPriceLine =
     !loadingCandles &&
     !candlesError &&
-    chartData.length > 0 &&
+    hasChartSnapshot &&
     currentPrice !== null &&
     priceScaleData.currentPriceTop !== null;
   const showCountdown =
     !loadingCandles && !candlesError && Boolean(effectiveChartTimeframe);
   const showEmptyState =
-    !loadingCandles && !candlesError && chartData.length === 0;
+    !loadingCandles && !candlesError && !hasChartSnapshot;
   const showOverlays =
     !loadingCandles &&
     !candlesError &&
-    chartData.length > 0 &&
+    hasChartSnapshot &&
     showStrategyOverlays &&
     hasOverlayContent;
   const showFooter =
-    !loadingCandles && !candlesError && chartData.length > 0;
+    !loadingCandles && !candlesError && hasChartSnapshot;
 
   return (
     <section style={mainCardStyle}>
