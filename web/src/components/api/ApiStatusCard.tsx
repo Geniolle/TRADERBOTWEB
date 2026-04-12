@@ -1,10 +1,11 @@
 // web/src/components/api/ApiStatusCard.tsx
 
+import type { CSSProperties } from "react";
 import type { CandleItem, HealthResponse } from "../../types/trading";
 import type { ProviderUpdateStatus } from "../../hooks/useRealtimeFeed";
 
 type ApiStatusCardProps = {
-  sidebarCardStyle: React.CSSProperties;
+  sidebarCardStyle: CSSProperties;
   loadingHealth: boolean;
   healthError: string;
   health: HealthResponse | null;
@@ -25,6 +26,32 @@ function getStatusColor(kind: "ok" | "warn" | "error" | "neutral"): string {
   if (kind === "warn") return "#d97706";
   if (kind === "error") return "#dc2626";
   return "#64748b";
+}
+
+function sanitizeProviderUpdateMessage(
+  status: ProviderUpdateStatus,
+  message: string
+): string {
+  const normalized = String(message ?? "").trim().toLowerCase();
+
+  if (
+    normalized.includes("twelvedata error (429)") ||
+    normalized.includes("run out of api credits") ||
+    normalized.includes("api credits were used") ||
+    normalized.includes("current limit being") ||
+    normalized.includes("wait for the next day") ||
+    normalized.includes("twelvedata.com/pricing") ||
+    normalized.includes("quota") ||
+    normalized.includes("credits")
+  ) {
+    if (status === "error") {
+      return "Erro do provider por quota.";
+    }
+
+    return "Quota do provider esgotada.";
+  }
+
+  return String(message ?? "").trim();
 }
 
 function getApiStatusInfo(
@@ -134,10 +161,7 @@ function getProviderStatusInfo(
   if (isQuotaError) {
     return {
       label: candles.length > 0 ? "Offline por quota" : "Quota esgotada",
-      detail:
-        candles.length > 0
-          ? `Quota do provider esgotada. Último candle mantido em cache local. ${error}`
-          : `Quota do provider esgotada e sem cache local disponível. ${error}`,
+      detail: "Quota do provider esgotada.",
       kind: "warn" as const,
     };
   }
@@ -204,10 +228,12 @@ function getProviderUpdateInfo(
   receivedAt: string,
   eventName: string
 ) {
+  const sanitizedLog = sanitizeProviderUpdateMessage(status, log);
+
   if (status === "error") {
     return {
       label: "Falhou",
-      detail: log,
+      detail: sanitizedLog || "Erro do provider.",
       kind: "error" as const,
       candleAt: candleAt || "-",
       receivedAt: receivedAt || "-",
@@ -218,7 +244,7 @@ function getProviderUpdateInfo(
   if (status === "success") {
     return {
       label: "Atualizado",
-      detail: log,
+      detail: sanitizedLog,
       kind: "ok" as const,
       candleAt: candleAt || "-",
       receivedAt: receivedAt || "-",
@@ -229,7 +255,7 @@ function getProviderUpdateInfo(
   if (status === "waiting") {
     return {
       label: "À espera",
-      detail: log,
+      detail: sanitizedLog,
       kind: "warn" as const,
       candleAt: candleAt || "-",
       receivedAt: receivedAt || "-",
@@ -239,7 +265,7 @@ function getProviderUpdateInfo(
 
   return {
     label: "Sem dados",
-    detail: log || "Ainda sem atualização do provider.",
+    detail: sanitizedLog || "Ainda sem atualização do provider.",
     kind: "neutral" as const,
     candleAt: candleAt || "-",
     receivedAt: receivedAt || "-",

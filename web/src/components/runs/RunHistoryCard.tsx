@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+// C:\TraderBotWeb\web\src\components\runs\RunHistoryCard.tsx
+
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type {
   AnalysisSnapshot,
   StageTestRunCaseItem,
@@ -9,7 +11,7 @@ import type {
 import type { ExecutionLogStatus } from "../../hooks/useStageTests";
 
 type RunHistoryCardProps = {
-  sidebarCardStyle: React.CSSProperties;
+  sidebarCardStyle: CSSProperties;
   runSearch: string;
   setRunSearch: (value: string) => void;
   loadingRuns: boolean;
@@ -55,6 +57,25 @@ type StrategicCaseFilters = {
   trendStrengthPct: string;
   trendDirection: string;
   trendLabel: string;
+};
+
+type TrendPanelData = {
+  directionBadge: string;
+  strengthPct: string;
+  summaryTitle: string;
+  summaryText: string;
+  contextTitle: string;
+  contextText: string;
+  contextMetrics: Array<{ label: string; value: string }>;
+  movingAveragesTitle: string;
+  movingAveragesText: string;
+  movingAveragesMetrics: Array<{ label: string; value: string }>;
+  confirmationTitle: string;
+  confirmationText: string;
+  confirmationMetrics: Array<{ label: string; value: string }>;
+  momentumTitle: string;
+  momentumText: string;
+  momentumMetrics: Array<{ label: string; value: string }>;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -209,10 +230,10 @@ function normalizeDisplayText(value: string | null | undefined): string {
   const normalized = raw.toLowerCase();
 
   const map: Record<string, string> = {
-    buy: "Compra",
-    sell: "Venda",
-    long: "Compra",
-    short: "Venda",
+    buy: "Compradora",
+    sell: "Vendedora",
+    long: "Compradora",
+    short: "Vendedora",
     bullish: "Altista",
     bearish: "Baixista",
     mixed: "Misto",
@@ -226,18 +247,21 @@ function normalizeDisplayText(value: string | null | undefined): string {
     london: "Londres",
     "new york": "Nova Iorque",
     new_york: "Nova Iorque",
+    newyork: "Nova Iorque",
     range: "Lateral",
     trending: "Tendencial",
     bullish_cross: "Bullish cross",
     bearish_cross: "Bearish cross",
-    up: "Ascendente",
-    down: "Descendente",
-    flat: "Lateral",
+    bearish_below_signal: "bearish_below_signal",
+    bullish_above_signal: "bullish_above_signal",
+    up: "up",
+    down: "down",
+    flat: "flat",
     mid_range: "Meio do range",
     balanced: "Equilibrado",
     normal: "Normal",
-    high: "Alto",
-    low: "Baixo",
+    high: "Alta",
+    low: "Baixa",
     ready: "Sem sinal",
     local_ok: "Entrada validada",
     local_error: "Run com erro",
@@ -584,6 +608,84 @@ function toNumeric(value: string | number | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object") {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function getSnapshotCandle(snapshot: AnalysisSnapshot | null | undefined): Record<string, unknown> {
+  const record = asRecord(snapshot);
+  return asRecord(record.candle);
+}
+
+function getSnapshotMomentum(snapshot: AnalysisSnapshot | null | undefined): Record<string, unknown> {
+  const record = asRecord(snapshot);
+  return asRecord(record.momentum);
+}
+
+function getMomentumNumeric(
+  snapshot: AnalysisSnapshot | null | undefined,
+  ...keys: string[]
+): number | null {
+  const momentum = getSnapshotMomentum(snapshot);
+
+  for (const key of keys) {
+    const value = momentum[key];
+    const numeric = toNumeric(
+      typeof value === "string" || typeof value === "number" ? value : null
+    );
+    if (numeric != null) return numeric;
+  }
+
+  return null;
+}
+
+function getCandleNumeric(
+  snapshot: AnalysisSnapshot | null | undefined,
+  ...keys: string[]
+): number | null {
+  const candle = getSnapshotCandle(snapshot);
+
+  for (const key of keys) {
+    const value = candle[key];
+    const numeric = toNumeric(
+      typeof value === "string" || typeof value === "number" ? value : null
+    );
+    if (numeric != null) return numeric;
+  }
+
+  return null;
+}
+
+function resolveCaseDirection(item: StageTestRunCaseItem): string {
+  const rawSide = normalizeDisplayText(
+    typeof item.side === "string" ? item.side : null
+  );
+
+  if (rawSide !== "-") {
+    return rawSide;
+  }
+
+  const analysisDirection = normalizeDisplayText(item.analysis?.direction);
+
+  if (analysisDirection !== "-") {
+    return analysisDirection;
+  }
+
+  const outcomeDirection = normalizeDisplayText(
+    typeof item.direction === "string" ? item.direction : null
+  );
+
+  if (outcomeDirection !== "-") {
+    return outcomeDirection;
+  }
+
+  return "-";
+}
+
 function calculateTrendStrength(
   analysis: StageTestRunTechnicalAnalysis | null
 ): TrendStrengthResult {
@@ -623,7 +725,9 @@ function calculateTrendStrength(
     if (ema40Slope != null && ema40Slope > 0) score += 15;
     if (marketStructure === "trending") score += 10;
     if (rsiSlope === "up") score += 5;
-    if (macdState === "bullish_cross") score += 5;
+    if (macdState === "bullish_cross" || macdState === "bullish_above_signal") {
+      score += 5;
+    }
 
     if (marketStructure === "range") score -= 20;
     if (priceVs40 === "below") score -= 15;
@@ -636,7 +740,9 @@ function calculateTrendStrength(
     if (ema40Slope != null && ema40Slope < 0) score += 15;
     if (marketStructure === "trending") score += 10;
     if (rsiSlope === "down") score += 5;
-    if (macdState === "bearish_cross") score += 5;
+    if (macdState === "bearish_cross" || macdState === "bearish_below_signal") {
+      score += 5;
+    }
 
     if (marketStructure === "range") score -= 20;
     if (priceVs40 === "above") score -= 15;
@@ -649,7 +755,7 @@ function calculateTrendStrength(
   const pct = clamp(score, 0, 100);
 
   let label = "Fraca";
-  if (pct >= 80) label = "Forte";
+  if (pct >= 80) label = "Alta";
   else if (pct >= 60) label = "Favorável";
   else if (pct >= 40) label = "Neutra";
 
@@ -704,17 +810,11 @@ function getTrendBiasLabel(
     return "Venda a favor da tendência";
   }
 
-  if (
-    (direction === "buy" || direction === "long") &&
-    alignment === "bearish"
-  ) {
+  if ((direction === "buy" || direction === "long") && alignment === "bearish") {
     return "Compra contra tendência";
   }
 
-  if (
-    (direction === "sell" || direction === "short") &&
-    alignment === "bullish"
-  ) {
+  if ((direction === "sell" || direction === "short") && alignment === "bullish") {
     return "Venda contra tendência";
   }
 
@@ -743,7 +843,14 @@ function getSignalQualityLabel(
   if (alignment === "bullish" || alignment === "bearish") score += 2;
   if (entryLocation && entryLocation !== "mid_range") score += 1;
   if (rsiZone && rsiZone !== "neutral") score += 1;
-  if (macdState === "bullish_cross" || macdState === "bearish_cross") score += 1;
+  if (
+    macdState === "bullish_cross" ||
+    macdState === "bearish_cross" ||
+    macdState === "bullish_above_signal" ||
+    macdState === "bearish_below_signal"
+  ) {
+    score += 1;
+  }
 
   if (structure === "range") score -= 2;
   if (entryLocation === "mid_range") score -= 1;
@@ -871,11 +978,17 @@ function scoreTechnicalAnalysis(
     trend += 1.5;
   }
 
-  if ((direction === "buy" || direction === "long") && macdState === "bullish_cross") {
+  if (
+    (direction === "buy" || direction === "long") &&
+    (macdState === "bullish_cross" || macdState === "bullish_above_signal")
+  ) {
     momentum += 2;
   }
 
-  if ((direction === "sell" || direction === "short") && macdState === "bearish_cross") {
+  if (
+    (direction === "sell" || direction === "short") &&
+    (macdState === "bearish_cross" || macdState === "bearish_below_signal")
+  ) {
     momentum += 2;
   }
 
@@ -1019,7 +1132,7 @@ function buildAnalysisNarrative(
 
   if (trendStrength.pct < 60) {
     negatives.push(
-      `A percentagem de tendência no gatilho foi baixa para um EMA Cross (${formatCompactPercent(
+      `A percentagem da tendência no gatilho foi baixa para um EMA Cross (${formatCompactPercent(
         trendStrength.pct
       )}).`
     );
@@ -1200,14 +1313,177 @@ function groupIndicators(
       value: String(snapshot.trend.ema_40_slope),
     });
   }
-  if (snapshot?.momentum?.macd_histogram_slope != null) {
+
+  const macdHistogramSlope = getMomentumNumeric(snapshot, "macd_histogram_slope");
+  if (macdHistogramSlope != null) {
     groups.momentum.push({
       label: "Inclinação histograma MACD",
-      value: String(snapshot.momentum.macd_histogram_slope),
+      value: String(macdHistogramSlope),
     });
   }
 
   return groups;
+}
+
+function buildTrendPanelData(
+  analysis: StageTestRunTechnicalAnalysis | null
+): TrendPanelData {
+  const snapshot = analysis?.snapshot;
+  const filters = buildStrategicCaseFilters(analysis);
+  const strength = calculateTrendStrength(analysis);
+
+  if (!snapshot) {
+    return {
+      directionBadge: "-",
+      strengthPct: "-",
+      summaryTitle: "Tendência",
+      summaryText: "Sem snapshot técnico disponível para este case.",
+      contextTitle: "Contexto Geral",
+      contextText: "Não foi possível reconstruir o contexto técnico do momento da entrada.",
+      contextMetrics: [
+        { label: "Tendência", value: "-" },
+        { label: "Força %", value: "-" },
+        { label: "Preço atual", value: "-" },
+      ],
+      movingAveragesTitle: "O Mapa de Médias",
+      movingAveragesText: "Sem dados de médias móveis.",
+      movingAveragesMetrics: [
+        { label: "EMA 20", value: "-" },
+        { label: "EMA 40", value: "-" },
+        { label: "Alinhamento", value: "-" },
+      ],
+      confirmationTitle: "Força e Confirmação",
+      confirmationText: "Sem confirmação suficiente no snapshot.",
+      confirmationMetrics: [
+        { label: "Estrutura", value: "-" },
+        { label: "Sinal", value: "-" },
+        { label: "Local", value: "-" },
+      ],
+      momentumTitle: "Momentum e Exaustão",
+      momentumText: "Sem leitura de momentum disponível.",
+      momentumMetrics: [
+        { label: "RSI", value: "-" },
+        { label: "MACD", value: "-" },
+        { label: "Leitura", value: "-" },
+      ],
+    };
+  }
+
+  const direction = (analysis?.direction ?? "").trim().toLowerCase();
+  const isBuy = direction === "buy" || direction === "long";
+  const isSell = direction === "sell" || direction === "short";
+
+  const referencePrice =
+    toNumeric(snapshot.trigger_context?.reference_price) ??
+    getCandleNumeric(snapshot, "close", "candle_close") ??
+    getCandleNumeric(snapshot, "open", "candle_open");
+
+  const ema20 = toNumeric(snapshot.trend?.ema_20);
+  const ema40 = toNumeric(snapshot.trend?.ema_40);
+  const rsiValue = toNumeric(snapshot.momentum?.rsi_14);
+  const macdValue = getMomentumNumeric(snapshot, "macd_line", "macd");
+  const signalValue = getMomentumNumeric(snapshot, "macd_signal", "signal");
+  const histogramValue = getMomentumNumeric(snapshot, "macd_histogram", "histogram");
+
+  const structureText =
+    filters.marketStructure !== "-"
+      ? `Estrutura ${filters.marketStructure.toLowerCase()}`
+      : "Estrutura não disponível";
+
+  const contextText =
+    strength.pct >= 80
+      ? "O contexto estava alinhado e com forte favorecimento da direção da entrada."
+      : strength.pct >= 60
+        ? "O contexto era favorável, embora sem máxima convicção estrutural."
+        : strength.pct >= 40
+          ? "O contexto era apenas neutro a moderado para a entrada."
+          : "O contexto da entrada era fraco e pouco alinhado com a tendência.";
+
+  const movingAveragesText =
+    filters.emaAlignment !== "-"
+      ? `As médias indicavam viés ${filters.emaAlignment.toLowerCase()} no momento do gatilho.`
+      : "As médias não devolvem leitura suficiente.";
+
+  const confirmationText =
+    filters.signalQuality !== "-"
+      ? `Leitura de confirmação classificada como ${filters.signalQuality.toLowerCase()}.`
+      : "Sem leitura consolidada de confirmação.";
+
+  const momentumText =
+    filters.rsiZone !== "-" || filters.macdState !== "-"
+      ? `RSI em ${filters.rsiZone.toLowerCase()} e MACD em ${filters.macdState.toLowerCase()}.`
+      : "Sem leitura consolidada de momentum.";
+
+  return {
+    directionBadge: strength.direction,
+    strengthPct: formatCompactPercent(strength.pct),
+    summaryTitle: "Tendência",
+    summaryText: `${strength.label} | ${contextText}`,
+    contextTitle: "Contexto Geral",
+    contextText,
+    contextMetrics: [
+      { label: "Tendência", value: strength.direction },
+      { label: "Força %", value: formatCompactPercent(strength.pct) },
+      {
+        label: "Preço atual",
+        value: referencePrice != null ? formatAnalysisNumber(referencePrice, 5) : "-",
+      },
+    ],
+    movingAveragesTitle: "O Mapa de Médias",
+    movingAveragesText,
+    movingAveragesMetrics: [
+      {
+        label: "EMA 20",
+        value: ema20 != null ? formatAnalysisNumber(ema20, 5) : "-",
+      },
+      {
+        label: "EMA 40",
+        value: ema40 != null ? formatAnalysisNumber(ema40, 5) : "-",
+      },
+      { label: "Alinhamento", value: filters.emaAlignment },
+      { label: "Preço vs EMA 20", value: filters.priceVsEma20 },
+      { label: "Preço vs EMA 40", value: filters.priceVsEma40 },
+    ],
+    confirmationTitle: "Força e Confirmação",
+    confirmationText,
+    confirmationMetrics: [
+      { label: "Estrutura", value: filters.marketStructure },
+      { label: "Viés", value: filters.trendBias },
+      { label: "Local", value: filters.entryLocation },
+      { label: "Qualidade", value: filters.signalQuality },
+      { label: "EMA 20 slope", value: filters.ema20Slope },
+      { label: "EMA 40 slope", value: filters.ema40Slope },
+    ],
+    momentumTitle: "Momentum e Exaustão",
+    momentumText,
+    momentumMetrics: [
+      {
+        label: "RSI",
+        value: rsiValue != null ? formatAnalysisNumber(rsiValue, 2) : "-",
+      },
+      { label: "Zona RSI", value: filters.rsiZone },
+      {
+        label: "MACD",
+        value: macdValue != null ? formatAnalysisNumber(macdValue, 6) : "-",
+      },
+      {
+        label: "Sinal",
+        value: signalValue != null ? formatAnalysisNumber(signalValue, 6) : "-",
+      },
+      {
+        label: "Histograma",
+        value:
+          histogramValue != null ? formatAnalysisNumber(histogramValue, 6) : "-",
+      },
+      { label: "Estado MACD", value: filters.macdState },
+      { label: "Sessão", value: filters.session },
+      {
+        label: "Direção da entrada",
+        value: isBuy ? "Compradora" : isSell ? "Vendedora" : "-",
+      },
+      { label: "Estrutura base", value: structureText },
+    ],
+  };
 }
 
 function AnalysisSection({
@@ -1215,7 +1491,7 @@ function AnalysisSection({
   children,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div
@@ -1400,6 +1676,285 @@ function RulePill({
   );
 }
 
+function TrendInlineHeader({
+  analysis,
+}: {
+  analysis: StageTestRunTechnicalAnalysis | null;
+}) {
+  const trend = calculateTrendStrength(analysis);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #bbf7d0",
+        borderRadius: 12,
+        padding: "10px 12px",
+        background: "#f0fdf4",
+        display: "grid",
+        gap: 4,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <strong style={{ fontSize: 15, color: "#166534" }}>Tendência</strong>
+
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 999,
+            border: "1px solid #86efac",
+            background: "#ffffff",
+            color: "#166534",
+          }}
+        >
+          {trend.label}
+        </span>
+
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 999,
+            border: "1px solid #86efac",
+            background: "#ffffff",
+            color: "#166534",
+          }}
+        >
+          {formatCompactPercent(trend.pct)}
+        </span>
+      </div>
+
+      <span
+        style={{
+          fontSize: 12,
+          color: "#166534",
+          lineHeight: 1.45,
+        }}
+      >
+        {trend.summary}
+      </span>
+    </div>
+  );
+}
+
+function TrendSummaryPanel({
+  analysis,
+}: {
+  analysis: StageTestRunTechnicalAnalysis | null;
+}) {
+  const panel = buildTrendPanelData(analysis);
+
+  return (
+    <div
+      style={{
+        border: "1px solid #bbf7d0",
+        borderRadius: 14,
+        padding: 12,
+        background: "#f0fdf4",
+        display: "grid",
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "grid", gap: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <strong style={{ fontSize: 16, color: "#166534" }}>
+              {panel.summaryTitle}
+            </strong>
+
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 999,
+                border: "1px solid #86efac",
+                background: "#ffffff",
+                color: "#166534",
+              }}
+            >
+              {panel.directionBadge}
+            </span>
+
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 999,
+                border: "1px solid #86efac",
+                background: "#ffffff",
+                color: "#166534",
+              }}
+            >
+              {panel.strengthPct}
+            </span>
+          </div>
+
+          <span
+            style={{
+              fontSize: 12,
+              color: "#166534",
+              lineHeight: 1.45,
+            }}
+          >
+            {panel.summaryText}
+          </span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.1fr 1.1fr",
+          gap: 12,
+          alignItems: "start",
+        }}
+      >
+        <div style={{ display: "grid", gap: 12 }}>
+          <AnalysisSection title={panel.contextTitle}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.5,
+              }}
+            >
+              {panel.contextText}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {panel.contextMetrics.map((item) => (
+                <AnalysisMetricCard
+                  key={`context-${item.label}`}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
+          </AnalysisSection>
+
+          <AnalysisSection title={panel.confirmationTitle}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.5,
+              }}
+            >
+              {panel.confirmationText}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {panel.confirmationMetrics.map((item) => (
+                <AnalysisMetricCard
+                  key={`confirmation-${item.label}`}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
+          </AnalysisSection>
+        </div>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <AnalysisSection title={panel.movingAveragesTitle}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.5,
+              }}
+            >
+              {panel.movingAveragesText}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {panel.movingAveragesMetrics.map((item) => (
+                <AnalysisMetricCard
+                  key={`moving-avg-${item.label}`}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
+          </AnalysisSection>
+
+          <AnalysisSection title={panel.momentumTitle}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "#475569",
+                lineHeight: 1.5,
+              }}
+            >
+              {panel.momentumText}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {panel.momentumMetrics.map((item) => (
+                <AnalysisMetricCard
+                  key={`momentum-${item.label}`}
+                  label={item.label}
+                  value={item.value}
+                />
+              ))}
+            </div>
+          </AnalysisSection>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CaseAnalysisBlock({
   analysis,
   runStatus,
@@ -1499,7 +2054,6 @@ function CaseAnalysisBlock({
   const grouped = groupIndicators(analysis);
   const scores = scoreTechnicalAnalysis(analysis);
   const narrative = buildAnalysisNarrative(analysis);
-  const filters = buildStrategicCaseFilters(analysis);
 
   const conflictsCount = narrative.conflicts.length;
 
@@ -1617,82 +2171,7 @@ function CaseAnalysisBlock({
         </span>
       </div>
 
-      <AnalysisSection title="Tendência no momento do gatilho">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 8,
-          }}
-        >
-          <AnalysisMetricCard
-            label="Força da tendência"
-            value={filters.trendStrengthPct}
-          />
-          <AnalysisMetricCard
-            label="Direção dominante"
-            value={filters.trendDirection}
-          />
-          <AnalysisMetricCard
-            label="Leitura"
-            value={filters.trendLabel}
-          />
-          <AnalysisMetricCard
-            label="Alinhamento EMA"
-            value={filters.emaAlignment}
-          />
-          <AnalysisMetricCard
-            label="Preço vs EMA 20"
-            value={filters.priceVsEma20}
-          />
-          <AnalysisMetricCard
-            label="Preço vs EMA 40"
-            value={filters.priceVsEma40}
-          />
-          <AnalysisMetricCard
-            label="Inclinação EMA 20"
-            value={filters.ema20Slope}
-          />
-          <AnalysisMetricCard
-            label="Inclinação EMA 40"
-            value={filters.ema40Slope}
-          />
-          <AnalysisMetricCard
-            label="Estrutura do mercado"
-            value={filters.marketStructure}
-          />
-          <AnalysisMetricCard
-            label="Viés"
-            value={filters.trendBias}
-          />
-        </div>
-      </AnalysisSection>
-
-      <AnalysisSection title="Filtros estratégicos do case">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 8,
-          }}
-        >
-          <AnalysisMetricCard label="Sessão" value={filters.session} />
-          <AnalysisMetricCard
-            label="Local da entrada"
-            value={filters.entryLocation}
-          />
-          <AnalysisMetricCard label="Zona RSI" value={filters.rsiZone} />
-          <AnalysisMetricCard
-            label="Inclinação RSI"
-            value={filters.rsiSlope}
-          />
-          <AnalysisMetricCard label="Estado MACD" value={filters.macdState} />
-          <AnalysisMetricCard
-            label="Qualidade do sinal"
-            value={filters.signalQuality}
-          />
-        </div>
-      </AnalysisSection>
+      <TrendSummaryPanel analysis={analysis} />
 
       <AnalysisSection title="Resumo executivo do case">
         <div
@@ -1740,11 +2219,11 @@ function CaseAnalysisBlock({
               padding: 12,
               background: "#ffffff",
               fontSize: 12,
-              lineHeight: 1.65,
               color: "#334155",
+              lineHeight: 1.65,
             }}
           >
-            O objetivo deste bloco é facilitar a comparação entre fails e hits. A percentagem da tendência deve ajudar a descobrir filtros como “abortar gatilho quando a força da tendência estiver abaixo de 60%”.
+            O objetivo deste bloco é facilitar a comparação entre fails e hits. A percentagem da tendência ajuda a descobrir filtros como “abortar gatilho quando a força da tendência estiver abaixo de 60%”.
           </div>
         </div>
       </AnalysisSection>
@@ -2129,7 +2608,7 @@ function CasesSection({
             const caseKey = `${strategyKey}::${caseId}`;
             const badge = getOutcomeBadge(item.outcome);
             const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
-            const filters = buildStrategicCaseFilters(item.analysis ?? null);
+            const resolvedDirection = resolveCaseDirection(item);
 
             return (
               <div
@@ -2195,7 +2674,7 @@ function CasesSection({
                   }}
                 >
                   {detailRow("Case ID", caseId)}
-                  {detailRow("Direção", normalizeDisplayText(formatValue(item.side)))}
+                  {detailRow("Direção", resolvedDirection)}
                   {detailRow("Status", normalizeDisplayText(formatValue(item.status)))}
                   {detailRow("Outcome", normalizeDisplayText(formatValue(item.outcome)))}
                   {detailRow("Trigger", formatDateTime(item.trigger_time))}
@@ -2213,66 +2692,7 @@ function CasesSection({
                   {detailRow("Close reason", formatValue(item.close_reason))}
                 </div>
 
-                <AnalysisSection title="Leitura rápida para comparação entre cases">
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                      gap: 8,
-                    }}
-                  >
-                    <AnalysisMetricCard label="Sessão" value={filters.session} />
-                    <AnalysisMetricCard
-                      label="Estrutura"
-                      value={filters.marketStructure}
-                    />
-                    <AnalysisMetricCard
-                      label="Força tendência"
-                      value={filters.trendStrengthPct}
-                    />
-                    <AnalysisMetricCard
-                      label="Direção dominante"
-                      value={filters.trendDirection}
-                    />
-                    <AnalysisMetricCard
-                      label="Leitura"
-                      value={filters.trendLabel}
-                    />
-                    <AnalysisMetricCard
-                      label="Alinhamento EMA"
-                      value={filters.emaAlignment}
-                    />
-                    <AnalysisMetricCard
-                      label="Preço vs EMA 20"
-                      value={filters.priceVsEma20}
-                    />
-                    <AnalysisMetricCard
-                      label="Preço vs EMA 40"
-                      value={filters.priceVsEma40}
-                    />
-                    <AnalysisMetricCard
-                      label="EMA 20 slope"
-                      value={filters.ema20Slope}
-                    />
-                    <AnalysisMetricCard
-                      label="EMA 40 slope"
-                      value={filters.ema40Slope}
-                    />
-                    <AnalysisMetricCard
-                      label="Local entrada"
-                      value={filters.entryLocation}
-                    />
-                    <AnalysisMetricCard label="Zona RSI" value={filters.rsiZone} />
-                    <AnalysisMetricCard
-                      label="Estado MACD"
-                      value={filters.macdState}
-                    />
-                    <AnalysisMetricCard
-                      label="Qualidade do sinal"
-                      value={filters.signalQuality}
-                    />
-                  </div>
-                </AnalysisSection>
+                <TrendInlineHeader analysis={item.analysis ?? null} />
 
                 <div
                   style={{

@@ -22,7 +22,6 @@ import ChartSummary from "./ChartSummary";
 import ChartLegend from "./ChartLegend";
 import ChartEmptyState from "./ChartEmptyState";
 import ChartLoadingState from "./ChartLoadingState";
-import ChartErrorState from "./ChartErrorState";
 import type { IndicatorSettings } from "../../hooks/useIndicatorSettings";
 import { buildPriceScaleData } from "./utils/chartScale";
 import { useChartCountdown } from "./hooks/useChartCountdown";
@@ -286,7 +285,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     mainCardStyle,
     chartContainerRef,
     loadingCandles,
-    candlesError,
     chartData,
     candles,
     overlays,
@@ -344,27 +342,21 @@ function CandlesChartCard(props: CandlesChartCardProps) {
 
   const hasChartSnapshot = chartData.length > 0;
 
-  const showMarketInfo = !loadingCandles && !candlesError;
-  const showPriceScale =
-    !loadingCandles && !candlesError && priceScaleData.levels.length > 0;
+  const showMarketInfo = !loadingCandles;
+  const showPriceScale = !loadingCandles && priceScaleData.levels.length > 0;
   const showCurrentPriceLine =
     !loadingCandles &&
-    !candlesError &&
     hasChartSnapshot &&
     currentPrice !== null &&
     priceScaleData.currentPriceTop !== null;
-  const showCountdown =
-    !loadingCandles && !candlesError && Boolean(effectiveChartTimeframe);
-  const showEmptyState =
-    !loadingCandles && !candlesError && !hasChartSnapshot;
+  const showCountdown = !loadingCandles && Boolean(effectiveChartTimeframe);
+  const showEmptyState = !loadingCandles && !hasChartSnapshot;
   const showOverlays =
     !loadingCandles &&
-    !candlesError &&
     hasChartSnapshot &&
     showStrategyOverlays &&
     hasOverlayContent;
-  const showFooter =
-    !loadingCandles && !candlesError && hasChartSnapshot;
+  const showFooter = !loadingCandles && hasChartSnapshot;
 
   return (
     <section style={mainCardStyle}>
@@ -498,10 +490,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
               )}
 
               {loadingCandles && <ChartLoadingState />}
-
-              {!loadingCandles && candlesError && (
-                <ChartErrorState candlesError={candlesError} />
-              )}
 
               <div style={{ width: "100%" }}>
                 <div
