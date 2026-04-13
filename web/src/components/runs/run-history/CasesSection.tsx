@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { CaseAnalysisBlock } from "./CaseAnalysisBlock";
-import { CasesFilterButton, DetailRow } from "./RunHistoryShared";
+import { CasesFilterButton } from "./RunHistoryShared";
 import { TrendInlineHeader } from "./TrendPanels";
 import {
   buildEmaDirectionSummary,
@@ -29,50 +29,6 @@ type MovingAverageBadge = {
   arrow: ArrowVisual;
 };
 
-function CompactIndicatorRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "56px minmax(0, 1fr)",
-        gap: 6,
-        alignItems: "center",
-        minWidth: 0,
-        justifySelf: "start",
-        textAlign: "left",
-      }}
-    >
-      <span
-        style={{
-          color: "#64748b",
-          fontSize: 11,
-          lineHeight: 1.2,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-      </span>
-
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "flex-start",
-          minWidth: 0,
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function toNumeric(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -94,6 +50,30 @@ function asRecord(value: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+function asString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asString(item).trim())
+    .filter((item) => item.length > 0);
+}
+
+function formatTokenLabel(value: unknown): string {
+  const text = asString(value).trim();
+  if (!text) return "-";
+
+  return text
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function getUpArrow(): ArrowVisual {
@@ -153,6 +133,232 @@ function getArrowBySlopeText(value: unknown): ArrowVisual {
 function formatMaValue(value: number | null): string {
   if (value == null) return "-";
   return value.toFixed(6).replace(".", ",");
+}
+
+function renderArrowBadge(arrow: ArrowVisual) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 22,
+        width: 22,
+        height: 22,
+        padding: 0,
+        borderRadius: 999,
+        color: arrow.color,
+        background: arrow.background,
+        border: `1px solid ${arrow.border}`,
+        fontWeight: 700,
+        fontSize: 11,
+        lineHeight: 1,
+        flexShrink: 0,
+      }}
+    >
+      {arrow.symbol}
+    </span>
+  );
+}
+
+function InfoField({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 4,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          color: "#64748b",
+          fontWeight: 600,
+          lineHeight: 1.2,
+        }}
+      >
+        {label}
+      </span>
+
+      <div
+        style={{
+          fontSize: 12,
+          color: "#0f172a",
+          fontWeight: 700,
+          lineHeight: 1.35,
+          minWidth: 0,
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function GroupCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        background: "#ffffff",
+        padding: 12,
+        display: "grid",
+        gap: 10,
+        minWidth: 0,
+        height: "100%",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "#0f172a",
+          letterSpacing: 0.2,
+        }}
+      >
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Chip({
+  children,
+  color = "#0f172a",
+  background = "#ffffff",
+  border = "#dbe2ea",
+}: {
+  children: ReactNode;
+  color?: string;
+  background?: string;
+  border?: string;
+}) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        borderRadius: 999,
+        border: `1px solid ${border}`,
+        background,
+        color,
+        fontSize: 12,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ListCard({
+  title,
+  items,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  tone: "positive" | "negative";
+}) {
+  const palette =
+    tone === "positive"
+      ? {
+          background: "#f0fdf4",
+          border: "#bbf7d0",
+          title: "#166534",
+          itemBackground: "#ffffff",
+          itemBorder: "#dcfce7",
+          itemText: "#14532d",
+        }
+      : {
+          background: "#fef2f2",
+          border: "#fecaca",
+          title: "#991b1b",
+          itemBackground: "#ffffff",
+          itemBorder: "#fee2e2",
+          itemText: "#7f1d1d",
+        };
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${palette.border}`,
+        borderRadius: 12,
+        background: palette.background,
+        padding: 12,
+        display: "grid",
+        gap: 8,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: palette.title,
+        }}
+      >
+        {title}
+      </div>
+
+      {items.length === 0 ? (
+        <div
+          style={{
+            fontSize: 12,
+            color: "#64748b",
+          }}
+        >
+          Nenhum.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          {items.map((item) => (
+            <span
+              key={`${title}-${item}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: palette.itemBackground,
+                border: `1px solid ${palette.itemBorder}`,
+                color: palette.itemText,
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1.2,
+              }}
+            >
+              {formatTokenLabel(item)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function buildMovingAverageBadges(item: StageTestRunCaseItem): MovingAverageBadge[] {
@@ -378,29 +584,86 @@ function buildMacdArrow(item: StageTestRunCaseItem): ArrowVisual {
   return getArrowBySlopeText(momentum.macd_histogram_slope);
 }
 
-function renderArrowBadge(arrow: ArrowVisual) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minWidth: 20,
-        width: 20,
-        height: 20,
-        padding: 0,
-        borderRadius: 999,
-        color: arrow.color,
-        background: arrow.background,
-        border: `1px solid ${arrow.border}`,
-        fontWeight: 700,
-        fontSize: 11,
-        lineHeight: 1,
-      }}
-    >
-      {arrow.symbol}
-    </span>
-  );
+function getCandlestickPhase2(item: StageTestRunCaseItem): Record<string, unknown> {
+  const analysis = item.analysis ? asRecord(item.analysis) : {};
+  const snapshot = asRecord(analysis.snapshot);
+  const intelligence = asRecord(snapshot.candlestick_intelligence);
+  return asRecord(intelligence.phase_2_sequence_patterns);
+}
+
+function getCandlestickPhase3(item: StageTestRunCaseItem): Record<string, unknown> {
+  const analysis = item.analysis ? asRecord(item.analysis) : {};
+  const snapshot = asRecord(analysis.snapshot);
+  const intelligence = asRecord(snapshot.candlestick_intelligence);
+  return asRecord(intelligence.phase_3_confirmation);
+}
+
+function getActionBadgeStyle(action: string) {
+  const normalized = action.trim().toLowerCase();
+
+  if (normalized === "validar_entrada") {
+    return {
+      color: "#166534",
+      border: "#86efac",
+      background: "#f0fdf4",
+    };
+  }
+
+  if (normalized === "aceitar_com_confirmacao") {
+    return {
+      color: "#1d4ed8",
+      border: "#93c5fd",
+      background: "#eff6ff",
+    };
+  }
+
+  if (normalized === "ter_cautela") {
+    return {
+      color: "#92400e",
+      border: "#fcd34d",
+      background: "#fffbeb",
+    };
+  }
+
+  return {
+    color: "#991b1b",
+    border: "#fca5a5",
+    background: "#fef2f2",
+  };
+}
+
+function getConfirmationBadgeStyle(label: string) {
+  const normalized = label.trim().toLowerCase();
+
+  if (normalized === "forte") {
+    return {
+      color: "#166534",
+      border: "#86efac",
+      background: "#f0fdf4",
+    };
+  }
+
+  if (normalized === "boa") {
+    return {
+      color: "#1d4ed8",
+      border: "#93c5fd",
+      background: "#eff6ff",
+    };
+  }
+
+  if (normalized === "neutra") {
+    return {
+      color: "#92400e",
+      border: "#fcd34d",
+      background: "#fffbeb",
+    };
+  }
+
+  return {
+    color: "#991b1b",
+    border: "#fca5a5",
+    background: "#fef2f2",
+  };
 }
 
 export function CasesSection({
@@ -432,9 +695,7 @@ export function CasesSection({
   );
 
   const totalTimeouts = useMemo(
-    () =>
-      cases.filter((item) => normalizeOutcome(item.outcome) === "timeout")
-        .length,
+    () => cases.filter((item) => normalizeOutcome(item.outcome) === "timeout").length,
     [cases]
   );
 
@@ -450,12 +711,7 @@ export function CasesSection({
         gap: 12,
       }}
     >
-      <div
-        style={{
-          display: "grid",
-          gap: 8,
-        }}
-      >
+      <div style={{ display: "grid", gap: 8 }}>
         <div
           style={{
             display: "flex",
@@ -578,20 +834,23 @@ export function CasesSection({
           Nenhum caso encontrado para este filtro.
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gap: 12 }}>
           {filteredCases.map((item, index) => {
             const caseId = item.id ?? `case-${index + 1}`;
             const caseNumber = item.case_number ?? index + 1;
             const caseKey = `${strategyKey}::${caseId}`;
             const badge = getOutcomeBadge(item.outcome);
             const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
+
             const resolvedSignal = resolveCaseDirection(item);
             const signalAccent = getDirectionAccent(resolvedSignal);
+
             const emaDirectionSummary = buildEmaDirectionSummary(
               item.analysis ?? null,
               resolvedSignal,
               item.metadata ?? null
             );
+
             const movingAverageBadges = buildMovingAverageBadges(item);
             const adxArrow = buildAdxArrow(item);
             const volumeArrow = buildVolumeArrow(item);
@@ -599,16 +858,43 @@ export function CasesSection({
             const rsiArrow = buildRsiArrow(item);
             const macdArrow = buildMacdArrow(item);
 
+            const phase2 = getCandlestickPhase2(item);
+            const phase3 = getCandlestickPhase3(item);
+
+            const entryLocation = formatTokenLabel(phase2.entry_location);
+            const sequenceBias = formatTokenLabel(phase2.sequence_bias);
+            const dominantPattern = formatTokenLabel(phase2.dominant_pattern);
+            const sequenceSummary = asString(phase2.sequence_summary).trim() || "-";
+
+            const confirmationScore = asString(phase3.confirmation_score).trim() || "-";
+            const confirmationLabelRaw = asString(phase3.confirmation_label).trim();
+            const confirmationLabel = confirmationLabelRaw
+              ? formatTokenLabel(confirmationLabelRaw)
+              : "-";
+
+            const recommendedActionRaw = asString(phase3.recommended_action).trim();
+            const recommendedAction = recommendedActionRaw
+              ? formatTokenLabel(recommendedActionRaw)
+              : "-";
+
+            const reasonsFor = asStringArray(phase3.reasons_for);
+            const reasonsAgainst = asStringArray(phase3.reasons_against);
+
+            const confirmationBadgeStyle = getConfirmationBadgeStyle(
+              confirmationLabelRaw
+            );
+            const actionBadgeStyle = getActionBadgeStyle(recommendedActionRaw);
+
             return (
               <div
                 key={caseKey}
                 style={{
                   border: "1px solid #dbe2ea",
-                  borderRadius: 10,
-                  padding: 12,
+                  borderRadius: 14,
+                  padding: 14,
                   background: "#ffffff",
                   display: "grid",
-                  gap: 10,
+                  gap: 12,
                 }}
               >
                 <div
@@ -616,25 +902,31 @@ export function CasesSection({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "flex-start",
-                    gap: 10,
+                    gap: 12,
                     flexWrap: "wrap",
                   }}
                 >
                   <div style={{ display: "grid", gap: 4 }}>
-                    <strong style={{ fontSize: 13, color: "#0f172a" }}>
+                    <strong style={{ fontSize: 14, color: "#0f172a" }}>
                       Case #{caseNumber}
                     </strong>
+
                     <span
                       style={{
                         fontSize: 12,
-                        color: "#0f172a",
-                        fontWeight: 700,
-                        wordBreak: "break-word",
+                        color: "#475569",
+                        fontWeight: 600,
                       }}
                     >
                       ID: {caseId}
                     </span>
-                    <span style={{ fontSize: 12, color: "#64748b" }}>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "#64748b",
+                      }}
+                    >
                       Trigger: {formatDateTime(item.trigger_time)}
                     </span>
                   </div>
@@ -642,8 +934,8 @@ export function CasesSection({
                   <span
                     style={{
                       fontSize: 11,
-                      fontWeight: 700,
-                      padding: "4px 8px",
+                      fontWeight: 800,
+                      padding: "5px 10px",
                       borderRadius: 999,
                       background: badge.background,
                       color: badge.color,
@@ -655,284 +947,309 @@ export function CasesSection({
                   </span>
                 </div>
 
+                <GroupCard title="Resumo principal">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <InfoField
+                      label="Sinal"
+                      value={
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: resolvedSignal === "-" ? 0 : "4px 10px",
+                            borderRadius: 999,
+                            color: signalAccent.color,
+                            background: signalAccent.background,
+                            border:
+                              resolvedSignal === "-"
+                                ? "none"
+                                : `1px solid ${signalAccent.border}`,
+                            fontWeight: 800,
+                            width: "fit-content",
+                          }}
+                        >
+                          {resolvedSignal}
+                        </span>
+                      }
+                    />
+
+                    <InfoField
+                      label="Confirmação"
+                      value={
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: confirmationLabel === "-" ? 0 : "4px 10px",
+                            borderRadius: 999,
+                            color: confirmationBadgeStyle.color,
+                            background:
+                              confirmationLabel === "-"
+                                ? "transparent"
+                                : confirmationBadgeStyle.background,
+                            border:
+                              confirmationLabel === "-"
+                                ? "none"
+                                : `1px solid ${confirmationBadgeStyle.border}`,
+                            fontWeight: 800,
+                            width: "fit-content",
+                          }}
+                        >
+                          {confirmationLabel}
+                        </span>
+                      }
+                    />
+
+                    <InfoField
+                      label="Ação sugerida"
+                      value={
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: recommendedAction === "-" ? 0 : "4px 10px",
+                            borderRadius: 999,
+                            color: actionBadgeStyle.color,
+                            background:
+                              recommendedAction === "-"
+                                ? "transparent"
+                                : actionBadgeStyle.background,
+                            border:
+                              recommendedAction === "-"
+                                ? "none"
+                                : `1px solid ${actionBadgeStyle.border}`,
+                            fontWeight: 800,
+                            width: "fit-content",
+                          }}
+                        >
+                          {recommendedAction}
+                        </span>
+                      }
+                    />
+
+                    <InfoField
+                      label="Score"
+                      value={<span>{confirmationScore}</span>}
+                    />
+
+                    <InfoField
+                      label="Entrada tipo"
+                      value={<span>{normalizeDisplayText(entryLocation)}</span>}
+                    />
+
+                    <InfoField
+                      label="Viés sequência"
+                      value={<span>{normalizeDisplayText(sequenceBias)}</span>}
+                    />
+
+                    <InfoField
+                      label="Padrão dominante"
+                      value={<span>{normalizeDisplayText(dominantPattern)}</span>}
+                    />
+
+                    <InfoField
+                      label="Resumo sequência"
+                      value={<span>{normalizeDisplayText(sequenceSummary)}</span>}
+                    />
+                  </div>
+                </GroupCard>
+
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 8,
-                    justifyItems: "start",
-                    alignItems: "start",
-                    textAlign: "left",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                    gap: 12,
+                    alignItems: "stretch",
                   }}
                 >
-                  <DetailRow label="Case ID" value={caseId} />
+                  <GroupCard title="Direção e médias">
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <Chip>
+                        <span>Curta</span>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 22,
+                            height: 22,
+                            padding: "0 6px",
+                            borderRadius: 999,
+                            color: emaDirectionSummary.m9Arrow.color,
+                            background: emaDirectionSummary.m9Arrow.background,
+                            border: `1px solid ${emaDirectionSummary.m9Arrow.border}`,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {emaDirectionSummary.m9Arrow.arrow}
+                        </span>
+                        <span>{emaDirectionSummary.m9Value}</span>
+                      </Chip>
 
-                  <DetailRow
-                    label="Sinal"
-                    value={
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "flex-start",
-                          gap: 6,
-                          padding: resolvedSignal === "-" ? 0 : "2px 8px",
-                          borderRadius: 999,
-                          color: signalAccent.color,
-                          background: signalAccent.background,
-                          border:
-                            resolvedSignal === "-"
-                              ? "none"
-                              : `1px solid ${signalAccent.border}`,
-                          fontWeight: 700,
-                          width: "fit-content",
-                          whiteSpace: "nowrap",
-                        }}
+                      <Chip>
+                        <span>Longa</span>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: 22,
+                            height: 22,
+                            padding: "0 6px",
+                            borderRadius: 999,
+                            color: emaDirectionSummary.m21Arrow.color,
+                            background: emaDirectionSummary.m21Arrow.background,
+                            border: `1px solid ${emaDirectionSummary.m21Arrow.border}`,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {emaDirectionSummary.m21Arrow.arrow}
+                        </span>
+                        <span>{emaDirectionSummary.m21Value}</span>
+                      </Chip>
+
+                      <Chip
+                        color={emaDirectionSummary.crossConfirmedColor}
+                        background={emaDirectionSummary.crossConfirmedBackground}
+                        border={emaDirectionSummary.crossConfirmedBorder}
                       >
-                        {resolvedSignal}
-                      </span>
-                    }
-                  />
+                        {emaDirectionSummary.crossConfirmedLabel}
+                      </Chip>
 
-                  <div
-                    style={{
-                      gridColumn: "span 2",
-                      minWidth: 460,
-                      maxWidth: "100%",
-                      justifySelf: "start",
-                    }}
-                  >
-                    <DetailRow
-                      label="Direção"
-                      value={
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "flex-start",
-                            gap: 8,
-                            flexWrap: "nowrap",
-                            whiteSpace: "nowrap",
-                            lineHeight: 1.5,
-                            width: "fit-content",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textAlign: "left",
-                          }}
+                      {movingAverageBadges.map((itemBadge) => (
+                        <Chip
+                          key={itemBadge.label}
+                          color="#0f172a"
+                          background="#ffffff"
+                          border={itemBadge.arrow.border}
                         >
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
-                            Curta
-                          </span>
+                          <span>{itemBadge.label}</span>
+                          {renderArrowBadge(itemBadge.arrow)}
+                          <span>{itemBadge.value}</span>
+                        </Chip>
+                      ))}
+                    </div>
+                  </GroupCard>
 
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minWidth: 22,
-                              height: 22,
-                              padding: "0 6px",
-                              borderRadius: 999,
-                              color: emaDirectionSummary.m9Arrow.color,
-                              background: emaDirectionSummary.m9Arrow.background,
-                              border: `1px solid ${emaDirectionSummary.m9Arrow.border}`,
-                              fontWeight: 700,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {emaDirectionSummary.m9Arrow.arrow}
-                          </span>
+                  <GroupCard title="Leitura rápida dos indicadores">
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 10,
+                        alignContent: "flex-start",
+                      }}
+                    >
+                      <Chip>{renderArrowBadge(adxArrow)} ADX</Chip>
+                      <Chip>{renderArrowBadge(volumeArrow)} Volume</Chip>
+                      <Chip>{renderArrowBadge(cloudArrow)} Nuvem</Chip>
+                      <Chip>{renderArrowBadge(rsiArrow)} RSI</Chip>
+                      <Chip>{renderArrowBadge(macdArrow)} MACD</Chip>
+                    </div>
+                  </GroupCard>
+                </div>
 
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
-                            {emaDirectionSummary.m9Value}
-                          </span>
-
-                          <span style={{ color: "#94a3b8", flexShrink: 0 }}>/</span>
-
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
-                            Longa
-                          </span>
-
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minWidth: 22,
-                              height: 22,
-                              padding: "0 6px",
-                              borderRadius: 999,
-                              color: emaDirectionSummary.m21Arrow.color,
-                              background: emaDirectionSummary.m21Arrow.background,
-                              border: `1px solid ${emaDirectionSummary.m21Arrow.border}`,
-                              fontWeight: 700,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {emaDirectionSummary.m21Arrow.arrow}
-                          </span>
-
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
-                            {emaDirectionSummary.m21Value}
-                          </span>
-
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "flex-start",
-                              padding: "2px 8px",
-                              borderRadius: 999,
-                              color: emaDirectionSummary.crossConfirmedColor,
-                              background:
-                                emaDirectionSummary.crossConfirmedBackground,
-                              border: `1px solid ${emaDirectionSummary.crossConfirmedBorder}`,
-                              fontWeight: 700,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {emaDirectionSummary.crossConfirmedLabel}
-                          </span>
-                        </span>
-                      }
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      gridColumn: "span 2",
-                      minWidth: 420,
-                      maxWidth: "100%",
-                      justifySelf: "start",
-                    }}
-                  >
-                    <DetailRow
-                      label="Médias"
-                      value={
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "flex-start",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            lineHeight: 1.5,
-                            width: "fit-content",
-                            maxWidth: "100%",
-                            textAlign: "left",
-                          }}
-                        >
-                          {movingAverageBadges.map((itemBadge) => (
-                            <span
-                              key={itemBadge.label}
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                padding: "2px 8px",
-                                borderRadius: 999,
-                                border: `1px solid ${itemBadge.arrow.border}`,
-                                background: "#ffffff",
-                                color: "#0f172a",
-                                fontWeight: 700,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              <span>{itemBadge.label}</span>
-                              <span
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  minWidth: 20,
-                                  height: 20,
-                                  padding: "0 6px",
-                                  borderRadius: 999,
-                                  color: itemBadge.arrow.color,
-                                  background: itemBadge.arrow.background,
-                                  border: `1px solid ${itemBadge.arrow.border}`,
-                                  fontWeight: 700,
-                                }}
-                              >
-                                {itemBadge.arrow.symbol}
-                              </span>
-                              <span>{itemBadge.value}</span>
-                            </span>
-                          ))}
-                        </span>
-                      }
-                    />
-                  </div>
-
-                  <CompactIndicatorRow
-                    label="ADX"
-                    value={renderArrowBadge(adxArrow)}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <ListCard
+                    title="Pontos a favor"
+                    items={reasonsFor}
+                    tone="positive"
                   />
-                  <CompactIndicatorRow
-                    label="Volume"
-                    value={renderArrowBadge(volumeArrow)}
-                  />
-                  <CompactIndicatorRow
-                    label="Nuvem"
-                    value={renderArrowBadge(cloudArrow)}
-                  />
-                  <CompactIndicatorRow
-                    label="RSI"
-                    value={renderArrowBadge(rsiArrow)}
-                  />
-                  <CompactIndicatorRow
-                    label="MACD"
-                    value={renderArrowBadge(macdArrow)}
-                  />
-
-                  <DetailRow
-                    label="Outcome"
-                    value={normalizeDisplayText(formatValue(item.outcome))}
-                  />
-                  <DetailRow
-                    label="Trigger"
-                    value={formatDateTime(item.trigger_time)}
-                  />
-                  <DetailRow
-                    label="Trigger candle"
-                    value={formatDateTime(item.trigger_candle_time)}
-                  />
-                  <DetailRow label="Entrada" value={formatValue(item.entry_price)} />
-                  <DetailRow label="Fecho" value={formatValue(item.close_price)} />
-                  <DetailRow
-                    label="Trigger price"
-                    value={formatValue(item.trigger_price)}
-                  />
-                  <DetailRow label="Target" value={formatValue(item.target_price)} />
-                  <DetailRow
-                    label="Invalidação"
-                    value={formatValue(item.invalidation_price)}
-                  />
-                  <DetailRow
-                    label="Entry time"
-                    value={formatDateTime(item.entry_time)}
-                  />
-                  <DetailRow
-                    label="Close time"
-                    value={formatDateTime(item.close_time)}
-                  />
-                  <DetailRow
-                    label="Bars resolução"
-                    value={formatValue(item.bars_to_resolution)}
-                  />
-                  <DetailRow
-                    label="MFE"
-                    value={formatValue(item.max_favorable_excursion)}
-                  />
-                  <DetailRow
-                    label="MAE"
-                    value={formatValue(item.max_adverse_excursion)}
-                  />
-                  <DetailRow
-                    label="Close reason"
-                    value={formatValue(item.close_reason)}
+                  <ListCard
+                    title="Pontos contra"
+                    items={reasonsAgainst}
+                    tone="negative"
                   />
                 </div>
+
+                <GroupCard title="Dados do trade">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <InfoField
+                      label="Outcome"
+                      value={normalizeDisplayText(formatValue(item.outcome))}
+                    />
+                    <InfoField
+                      label="Trigger"
+                      value={formatDateTime(item.trigger_time)}
+                    />
+                    <InfoField
+                      label="Trigger candle"
+                      value={formatDateTime(item.trigger_candle_time)}
+                    />
+                    <InfoField
+                      label="Entrada"
+                      value={formatValue(item.entry_price)}
+                    />
+                    <InfoField
+                      label="Fecho"
+                      value={formatValue(item.close_price)}
+                    />
+                    <InfoField
+                      label="Trigger price"
+                      value={formatValue(item.trigger_price)}
+                    />
+                    <InfoField
+                      label="Target"
+                      value={formatValue(item.target_price)}
+                    />
+                    <InfoField
+                      label="Invalidação"
+                      value={formatValue(item.invalidation_price)}
+                    />
+                    <InfoField
+                      label="Entry time"
+                      value={formatDateTime(item.entry_time)}
+                    />
+                    <InfoField
+                      label="Close time"
+                      value={formatDateTime(item.close_time)}
+                    />
+                    <InfoField
+                      label="Bars resolução"
+                      value={formatValue(item.bars_to_resolution)}
+                    />
+                    <InfoField
+                      label="MFE"
+                      value={formatValue(item.max_favorable_excursion)}
+                    />
+                    <InfoField
+                      label="MAE"
+                      value={formatValue(item.max_adverse_excursion)}
+                    />
+                    <InfoField
+                      label="Close reason"
+                      value={formatValue(item.close_reason)}
+                    />
+                  </div>
+                </GroupCard>
 
                 <TrendInlineHeader analysis={item.analysis ?? null} />
 
@@ -948,13 +1265,13 @@ export function CasesSection({
                     type="button"
                     onClick={() => onToggleCaseAnalysis(caseKey)}
                     style={{
-                      height: 34,
-                      padding: "0 12px",
-                      borderRadius: 8,
+                      height: 36,
+                      padding: "0 14px",
+                      borderRadius: 10,
                       border: "1px solid #cbd5e1",
                       background: "#ffffff",
                       color: "#0f172a",
-                      fontWeight: 700,
+                      fontWeight: 800,
                       cursor: "pointer",
                     }}
                   >
