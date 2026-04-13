@@ -182,6 +182,54 @@ function buildAnalysisFromSnapshot(
 
   const indicators: { label: string; value: string }[] = [];
   const rules: StageTestRunRuleItem[] = [];
+  const trendRecord = toRecord(snapshot.trend);
+  const ema9 =
+    trendRecord?.ema_9 ??
+    trendRecord?.ema9 ??
+    trendRecord?.m9 ??
+    trendRecord?.ema_09 ??
+    null;
+  const ema21 =
+    trendRecord?.ema_21 ??
+    trendRecord?.ema21 ??
+    trendRecord?.m21 ??
+    null;
+  const ema9Slope =
+    trendRecord?.ema_9_slope ??
+    trendRecord?.ema9_slope ??
+    trendRecord?.slope_ema_9 ??
+    trendRecord?.slope_m9 ??
+    null;
+  const ema21Slope =
+    trendRecord?.ema_21_slope ??
+    trendRecord?.ema21_slope ??
+    trendRecord?.slope_ema_21 ??
+    trendRecord?.slope_m21 ??
+    null;
+
+  console.log("[StageTests][snapshot.trend]", snapshot.trend);
+  console.log("[StageTests][EMA check]", {
+    ema_5: snapshot.trend?.ema_5,
+    ema_9: trendRecord?.ema_9,
+    ema9: trendRecord?.ema9,
+    m9: trendRecord?.m9,
+    ema_09: trendRecord?.ema_09,
+    ema_10: snapshot.trend?.ema_10,
+    ema_20: snapshot.trend?.ema_20,
+    ema_21: trendRecord?.ema_21,
+    ema21: trendRecord?.ema21,
+    m21: trendRecord?.m21,
+    ema_30: snapshot.trend?.ema_30,
+    ema_40: snapshot.trend?.ema_40,
+    ema_9_slope: trendRecord?.ema_9_slope,
+    ema9_slope: trendRecord?.ema9_slope,
+    slope_ema_9: trendRecord?.slope_ema_9,
+    slope_m9: trendRecord?.slope_m9,
+    ema_21_slope: trendRecord?.ema_21_slope,
+    ema21_slope: trendRecord?.ema21_slope,
+    slope_ema_21: trendRecord?.slope_ema_21,
+    slope_m21: trendRecord?.slope_m21,
+  });
 
   pushIndicator(
     indicators,
@@ -190,10 +238,16 @@ function buildAnalysisFromSnapshot(
   );
   pushIndicator(indicators, "Sessão", snapshot.trigger_context?.session);
   pushIndicator(indicators, "EMA 5", snapshot.trend?.ema_5);
+  pushIndicator(indicators, "EMA 9", ema9);
   pushIndicator(indicators, "EMA 10", snapshot.trend?.ema_10);
   pushIndicator(indicators, "EMA 20", snapshot.trend?.ema_20);
+  pushIndicator(indicators, "EMA 21", ema21);
   pushIndicator(indicators, "EMA 30", snapshot.trend?.ema_30);
   pushIndicator(indicators, "EMA 40", snapshot.trend?.ema_40);
+  pushIndicator(indicators, "Inclinação EMA 9", ema9Slope);
+  pushIndicator(indicators, "Inclinação EMA 20", snapshot.trend?.ema_20_slope);
+  pushIndicator(indicators, "Inclinação EMA 21", ema21Slope);
+  pushIndicator(indicators, "Inclinação EMA 40", snapshot.trend?.ema_40_slope);
   pushIndicator(indicators, "Alinhamento EMA", snapshot.trend?.ema_alignment);
   pushIndicator(indicators, "Preço vs EMA 20", snapshot.trend?.price_vs_ema_20);
   pushIndicator(indicators, "Preço vs EMA 40", snapshot.trend?.price_vs_ema_40);
@@ -313,7 +367,6 @@ function buildAnalysisFromSnapshot(
     snapshot,
   };
 }
-
 function readRulesFromUnknown(value: unknown): StageTestRunRuleItem[] {
   if (!Array.isArray(value)) return [];
 

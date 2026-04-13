@@ -202,7 +202,8 @@ export function CasesSection({
             const signalAccent = getDirectionAccent(resolvedSignal);
             const emaDirectionSummary = buildEmaDirectionSummary(
               item.analysis ?? null,
-              resolvedSignal
+              resolvedSignal,
+              item.metadata ?? null
             );
 
             return (
@@ -303,7 +304,7 @@ export function CasesSection({
                   <div
                     style={{
                       gridColumn: "span 2",
-                      minWidth: 420,
+                      minWidth: 460,
                       maxWidth: "100%",
                       justifySelf: "start",
                     }}
@@ -326,7 +327,9 @@ export function CasesSection({
                             textAlign: "left",
                           }}
                         >
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>M9</span>
+                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
+                            Curta
+                          </span>
 
                           <span
                             style={{
@@ -353,7 +356,9 @@ export function CasesSection({
 
                           <span style={{ color: "#94a3b8", flexShrink: 0 }}>/</span>
 
-                          <span style={{ color: "#0f172a", flexShrink: 0 }}>M21</span>
+                          <span style={{ color: "#0f172a", flexShrink: 0 }}>
+                            Longa
+                          </span>
 
                           <span
                             style={{

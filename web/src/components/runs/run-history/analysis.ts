@@ -23,21 +23,172 @@ import {
   getMomentumNumeric,
   toNumeric,
 } from "./data";
-import {
-  normalizeDisplayText,
-  normalizeRuleLabel,
-} from "./normalizers";
-import {
-  getArrowVisual,
-  getRuleVisualState,
-} from "./status";
+import { normalizeDisplayText, normalizeRuleLabel } from "./normalizers";
+import { getArrowVisual, getRuleVisualState } from "./status";
+
+type AnalysisMetadataRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object") {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function getSnapshotTrend(
+  snapshot: AnalysisSnapshot | null | undefined
+): Record<string, unknown> {
+  const record = asRecord(snapshot);
+  return asRecord(record.trend);
+}
+
+function getTrendNumeric(
+  snapshot: AnalysisSnapshot | null | undefined,
+  ...keys: string[]
+): number | null {
+  const trend = getSnapshotTrend(snapshot);
+
+  for (const key of keys) {
+    const value = trend[key];
+    const numeric = toNumeric(
+      typeof value === "string" || typeof value === "number" ? value : null
+    );
+    if (numeric != null) {
+      return numeric;
+    }
+  }
+
+  return null;
+}
+
+function resolveTradeBias(
+  analysis: StageTestRunTechnicalAnalysis | null,
+  signalLabel: string,
+  metadata?: AnalysisMetadataRecord | null
+): "buy" | "sell" | null {
+  const normalizedSignal = signalLabel.trim().toLowerCase();
+
+  if (["compradora", "buy", "long"].includes(normalizedSignal)) {
+    return "buy";
+  }
+
+  if (["vendedora", "sell", "short"].includes(normalizedSignal)) {
+    return "sell";
+  }
+
+  const metadataBiasCandidates = [
+    metadata?.trade_bias,
+    metadata?.direction,
+    metadata?.side,
+  ];
+
+  for (const candidate of metadataBiasCandidates) {
+    const raw = String(candidate ?? "")
+      .trim()
+      .toLowerCase();
+
+    if (["buy", "long", "compradora"].includes(raw)) {
+      return "buy";
+    }
+
+    if (["sell", "short", "vendedora"].includes(raw)) {
+      return "sell";
+    }
+  }
+
+  const normalizedAnalysisDirection = (analysis?.direction ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (["buy", "long"].includes(normalizedAnalysisDirection)) {
+    return "buy";
+  }
+
+  if (["sell", "short"].includes(normalizedAnalysisDirection)) {
+    return "sell";
+  }
+
+  return null;
+}
+
+function getMetadataNumeric(
+  metadata: AnalysisMetadataRecord | null | undefined,
+  ...keys: string[]
+): number | null {
+  if (!metadata) return null;
+
+  for (const key of keys) {
+    const value = metadata[key];
+    const numeric = toNumeric(
+      typeof value === "string" || typeof value === "number" ? value : null
+    );
+    if (numeric != null) {
+      return numeric;
+    }
+  }
+
+  return null;
+}
+
+function getSlopeDirectionFromText(
+  value: unknown
+): "up" | "down" | "flat" | null {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) return null;
+  if (["up", "bullish", "rising"].includes(normalized)) return "up";
+  if (["down", "bearish", "falling"].includes(normalized)) return "down";
+  if (["flat", "neutral", "sideways"].includes(normalized)) return "flat";
+
+  return null;
+}
+
+function buildCrossConfirmationFromMetadata(
+  metadata: AnalysisMetadataRecord | null | undefined,
+  tradeBias: "buy" | "sell" | null
+): boolean | null {
+  const previousShort = getMetadataNumeric(metadata, "previous_short_ema");
+  const previousLong = getMetadataNumeric(metadata, "previous_long_ema");
+  const currentShort = getMetadataNumeric(metadata, "current_short_ema");
+  const currentLong = getMetadataNumeric(metadata, "current_long_ema");
+
+  if (
+    previousShort == null ||
+    previousLong == null ||
+    currentShort == null ||
+    currentLong == null
+  ) {
+    return null;
+  }
+
+  if (tradeBias === "buy") {
+    return previousShort <= previousLong && currentShort > currentLong;
+  }
+
+  if (tradeBias === "sell") {
+    return previousShort >= previousLong && currentShort < currentLong;
+  }
+
+  return null;
+}
 
 export function buildEmaDirectionSummary(
   analysis: StageTestRunTechnicalAnalysis | null,
-  signalLabel: string
+  signalLabel: string,
+  metadata?: AnalysisMetadataRecord | null
 ): EmaDirectionSummary {
-  const m9Value =
+  const snapshot = analysis?.snapshot ?? null;
+  const tradeBias = resolveTradeBias(analysis, signalLabel, metadata ?? null);
+
+  const shortValue =
+    getMetadataNumeric(metadata ?? null, "current_short_ema") ??
     findIndicatorNumeric(analysis, [
+      "EMA curta",
+      "EMA short",
+      "Short EMA",
       "EMA 9",
       "M9",
       "ema9",
@@ -45,67 +196,127 @@ export function buildEmaDirectionSummary(
       "ema 09",
       "m 9",
     ]) ??
-    findIndicatorNumeric(analysis, ["EMA curta", "EMA short", "Short EMA"]) ??
+    getTrendNumeric(snapshot, "ema_9", "ema9", "m9", "ema_09") ??
     null;
 
-  const m21Value =
+  const longValue =
+    getMetadataNumeric(metadata ?? null, "current_long_ema") ??
     findIndicatorNumeric(analysis, [
+      "EMA longa",
+      "EMA long",
+      "Long EMA",
       "EMA 21",
       "M21",
       "ema21",
       "ema_21",
       "m 21",
     ]) ??
-    findIndicatorNumeric(analysis, ["EMA longa", "EMA long", "Long EMA"]) ??
+    getTrendNumeric(snapshot, "ema_21", "ema21", "m21") ??
     null;
 
-  const m9Slope =
+  const shortSlopeText =
+    getSlopeDirectionFromText(metadata?.current_short_ema_slope) ??
+    getSlopeDirectionFromText(
+      getSnapshotTrend(snapshot).ema_9_slope ??
+        getSnapshotTrend(snapshot).ema9_slope ??
+        getSnapshotTrend(snapshot).slope_ema_9 ??
+        getSnapshotTrend(snapshot).slope_m9
+    ) ??
+    null;
+
+  const longSlopeText =
+    getSlopeDirectionFromText(metadata?.current_long_ema_slope) ??
+    getSlopeDirectionFromText(
+      getSnapshotTrend(snapshot).ema_21_slope ??
+        getSnapshotTrend(snapshot).ema21_slope ??
+        getSnapshotTrend(snapshot).slope_ema_21 ??
+        getSnapshotTrend(snapshot).slope_m21
+    ) ??
+    null;
+
+  const shortSlopeNumeric =
     findIndicatorNumeric(analysis, [
+      "Inclinação EMA curta",
+      "Short EMA slope",
       "Inclinação EMA 9",
       "Slope EMA 9",
       "EMA 9 slope",
       "inclinação ema9",
-    ]) ?? null;
+    ]) ??
+    getTrendNumeric(
+      snapshot,
+      "ema_9_slope",
+      "ema9_slope",
+      "slope_ema_9",
+      "slope_m9"
+    ) ??
+    null;
 
-  const m21Slope =
+  const longSlopeNumeric =
     findIndicatorNumeric(analysis, [
+      "Inclinação EMA longa",
+      "Long EMA slope",
       "Inclinação EMA 21",
       "Slope EMA 21",
       "EMA 21 slope",
       "inclinação ema21",
-    ]) ?? null;
+    ]) ??
+    getTrendNumeric(
+      snapshot,
+      "ema_21_slope",
+      "ema21_slope",
+      "slope_ema_21",
+      "slope_m21"
+    ) ??
+    null;
 
-  const normalizedSignal = signalLabel.trim().toLowerCase();
-  const isBuyer = ["compradora", "buy", "long"].includes(normalizedSignal);
-  const isSeller = ["vendedora", "sell", "short"].includes(normalizedSignal);
+  let shortIsUp =
+    shortSlopeText != null
+      ? shortSlopeText !== "down"
+      : shortSlopeNumeric != null
+        ? shortSlopeNumeric >= 0
+        : tradeBias === "buy"
+          ? true
+          : tradeBias === "sell"
+            ? false
+            : true;
 
-  const normalizedAnalysisDirection = (analysis?.direction ?? "").trim().toLowerCase();
-  const isBuyerByAnalysis = ["buy", "long"].includes(normalizedAnalysisDirection);
-  const isSellerByAnalysis = ["sell", "short"].includes(normalizedAnalysisDirection);
+  let longIsUp =
+    longSlopeText != null
+      ? longSlopeText !== "down"
+      : longSlopeNumeric != null
+        ? longSlopeNumeric >= 0
+        : tradeBias === "buy"
+          ? true
+          : tradeBias === "sell"
+            ? false
+            : true;
 
-  const finalIsBuyer = isBuyer || isBuyerByAnalysis;
-  const finalIsSeller = isSeller || isSellerByAnalysis;
+  let crossConfirmed =
+    buildCrossConfirmationFromMetadata(metadata ?? null, tradeBias);
 
-  const m9IsUp =
-    m9Slope != null ? m9Slope >= 0 : finalIsBuyer ? true : finalIsSeller ? false : true;
+  if (crossConfirmed == null && shortValue != null && longValue != null) {
+    if (tradeBias === "buy") {
+      crossConfirmed = shortValue > longValue;
+    } else if (tradeBias === "sell") {
+      crossConfirmed = shortValue < longValue;
+    } else if (shortValue !== longValue) {
+      crossConfirmed = true;
+    }
+  }
 
-  const m21IsUp =
-    m21Slope != null
-      ? m21Slope >= 0
-      : finalIsBuyer
-        ? true
-        : finalIsSeller
-          ? false
-          : true;
-
-  const crossConfirmed =
-    m9Value != null && m21Value != null
-      ? finalIsBuyer
-        ? m9Value > m21Value
-        : finalIsSeller
-          ? m9Value < m21Value
-          : null
-      : null;
+  // Ajuste visual pedido:
+  // - compradora + cruzamento confirmado => curta verde / longa vermelha
+  // - vendedora + cruzamento confirmado => curta vermelha / longa verde
+  if (crossConfirmed === true) {
+    if (tradeBias === "buy") {
+      shortIsUp = true;
+      longIsUp = false;
+    } else if (tradeBias === "sell") {
+      shortIsUp = false;
+      longIsUp = true;
+    }
+  }
 
   const crossConfirmedLabel =
     crossConfirmed == null
@@ -124,10 +335,10 @@ export function buildEmaDirectionSummary(
     crossConfirmed === false ? "#fca5a5" : "#86efac";
 
   return {
-    m9Value: formatDirectionalEmaValue(m9Value, 6),
-    m21Value: formatDirectionalEmaValue(m21Value, 6),
-    m9Arrow: getArrowVisual(m9IsUp),
-    m21Arrow: getArrowVisual(m21IsUp),
+    m9Value: formatDirectionalEmaValue(shortValue, 6),
+    m21Value: formatDirectionalEmaValue(longValue, 6),
+    m9Arrow: getArrowVisual(shortIsUp),
+    m21Arrow: getArrowVisual(longIsUp),
     crossConfirmedLabel,
     crossConfirmedColor,
     crossConfirmedBackground,
@@ -189,7 +400,10 @@ export function calculateTrendStrength(
     if (ema40Slope != null && ema40Slope < 0) score += 15;
     if (marketStructure === "trending") score += 10;
     if (rsiSlope === "down") score += 5;
-    if (macdState === "bearish_cross" || macdState === "bearish_below_signal") {
+    if (
+      macdState === "bearish_cross" ||
+      macdState === "bearish_below_signal"
+    ) {
       score += 5;
     }
 
@@ -263,7 +477,10 @@ export function getTrendBiasLabel(
     return "Compra contra tendência";
   }
 
-  if ((direction === "sell" || direction === "short") && alignment === "bullish") {
+  if (
+    (direction === "sell" || direction === "short") &&
+    alignment === "bullish"
+  ) {
     return "Venda contra tendência";
   }
 
@@ -793,7 +1010,8 @@ export function buildTrendPanelData(
       summaryTitle: "Tendência",
       summaryText: "Sem snapshot técnico disponível para este case.",
       contextTitle: "Contexto Geral",
-      contextText: "Não foi possível reconstruir o contexto técnico do momento da entrada.",
+      contextText:
+        "Não foi possível reconstruir o contexto técnico do momento da entrada.",
       contextMetrics: [
         { label: "Tendência", value: "-" },
         { label: "Força %", value: "-" },
@@ -837,7 +1055,11 @@ export function buildTrendPanelData(
   const rsiValue = toNumeric(snapshot.momentum?.rsi_14);
   const macdValue = getMomentumNumeric(snapshot, "macd_line", "macd");
   const signalValue = getMomentumNumeric(snapshot, "macd_signal", "signal");
-  const histogramValue = getMomentumNumeric(snapshot, "macd_histogram", "histogram");
+  const histogramValue = getMomentumNumeric(
+    snapshot,
+    "macd_histogram",
+    "histogram"
+  );
 
   const structureText =
     filters.marketStructure !== "-"
@@ -880,7 +1102,10 @@ export function buildTrendPanelData(
       { label: "Força %", value: formatCompactPercent(strength.pct) },
       {
         label: "Preço atual",
-        value: referencePrice != null ? formatAnalysisNumber(referencePrice, 5) : "-",
+        value:
+          referencePrice != null
+            ? formatAnalysisNumber(referencePrice, 5)
+            : "-",
       },
     ],
     movingAveragesTitle: "O Mapa de Médias",
@@ -927,7 +1152,9 @@ export function buildTrendPanelData(
       {
         label: "Histograma",
         value:
-          histogramValue != null ? formatAnalysisNumber(histogramValue, 6) : "-",
+          histogramValue != null
+            ? formatAnalysisNumber(histogramValue, 6)
+            : "-",
       },
       { label: "Estado MACD", value: filters.macdState },
       { label: "Sessão", value: filters.session },
