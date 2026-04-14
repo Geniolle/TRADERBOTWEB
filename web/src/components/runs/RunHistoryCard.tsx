@@ -292,6 +292,10 @@ function RunHistoryCard({
                   expandedCasesByStrategy[item.strategy_key]
                 );
 
+                const latestRunSymbol = item.last_run?.symbol ?? selectedSymbol ?? "";
+                const latestRunTimeframe =
+                  item.last_run?.timeframe ?? selectedTimeframe ?? "";
+
                 return (
                   <div
                     key={item.strategy_key}
@@ -555,6 +559,11 @@ function RunHistoryCard({
                         cases={cases}
                         expandedCaseAnalysisById={expandedCaseAnalysisById}
                         onToggleCaseAnalysis={toggleCaseAnalysis}
+                        chartSymbol={latestRunSymbol}
+                        chartTimeframe={latestRunTimeframe}
+                        marketSymbol={selectedSymbol}
+                        marketTimeframe={selectedTimeframe}
+                        strategyLabel={item.strategy_name}
                       />
                     )}
                   </div>

@@ -42,20 +42,30 @@ type CandleApiItem = {
   close: string | number;
 };
 
+type MarkerLane = "top" | "bottom";
+
 type ChartMarkerItem = {
   id: string;
   label: string;
+  shortLabel: string;
   time: string;
   price: number;
   color: string;
+  lane: MarkerLane;
 };
 
 type MarkerPosition = ChartMarkerItem & {
   left: number;
-  top: number;
+  pointTop: number;
+  labelTop: number;
+  labelLeft: number;
 };
 
 const CHART_HEIGHT = 560;
+const LABEL_HALF_WIDTH = 54;
+const TOP_BASE = 18;
+const BOTTOM_BASE = CHART_HEIGHT - 34;
+const LANE_STEP = 24;
 
 function normalizeTimeframe(value: string): string {
   return String(value ?? "").trim().toLowerCase();
@@ -209,13 +219,16 @@ function detectCrossMarkers(
       ((previousDiff <= 0 && diff > 0) || (previousDiff >= 0 && diff < 0))
     ) {
       const timeIso = new Date(Number(item.time) * 1000).toISOString();
+      const isBullish = diff > 0;
 
       crosses.push({
         id: `cross-${item.time}`,
-        label: diff > 0 ? "Cruzamento alta M9/M21" : "Cruzamento baixa M9/M21",
+        label: isBullish ? "Cruzamento alta M9/M21" : "Cruzamento baixa M9/M21",
+        shortLabel: "Cruzamento",
         time: timeIso,
         price: fastValue,
-        color: diff > 0 ? "#2563eb" : "#f59e0b",
+        color: isBullish ? "#2563eb" : "#f59e0b",
+        lane: "top",
       });
     }
 
@@ -244,7 +257,9 @@ function detectCrossMarkers(
     .map((entry) => ({
       ...entry.item,
       label: `${entry.item.label} (mais próximo do trade)`,
+      shortLabel: "Cruzamento",
       color: "#7c3aed",
+      lane: "top" as MarkerLane,
     }));
 
   const recent = crosses.slice(-2);
@@ -272,9 +287,11 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     markers.push({
       id: `${selectedCase.id}-trigger`,
       label: "Trigger",
+      shortLabel: "Trigger",
       time: selectedCase.trigger_time,
       price: triggerPrice,
       color: "#0ea5e9",
+      lane: "bottom",
     });
   }
 
@@ -282,9 +299,11 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     markers.push({
       id: `${selectedCase.id}-entry`,
       label: "Entrada",
+      shortLabel: "Entrada",
       time: selectedCase.entry_time,
       price: entryPrice,
       color: "#16a34a",
+      lane: "bottom",
     });
   }
 
@@ -292,9 +311,11 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     markers.push({
       id: `${selectedCase.id}-exit`,
       label: "Saída",
+      shortLabel: "Saída",
       time: selectedCase.close_time,
       price: closePrice,
       color: "#dc2626",
+      lane: "bottom",
     });
   }
 
@@ -302,9 +323,11 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     markers.push({
       id: `${selectedCase.id}-target`,
       label: "Target",
+      shortLabel: "Target",
       time: selectedCase.entry_time,
       price: targetPrice,
       color: "#10b981",
+      lane: "bottom",
     });
   }
 
@@ -312,13 +335,57 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     markers.push({
       id: `${selectedCase.id}-invalidation`,
       label: "Invalidação",
+      shortLabel: "Invalidação",
       time: selectedCase.entry_time,
       price: invalidationPrice,
       color: "#f97316",
+      lane: "top",
     });
   }
 
   return markers;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function distributeMarkerLanes(markers: MarkerPosition[]): MarkerPosition[] {
+  const byLane: Record<MarkerLane, MarkerPosition[]> = {
+    top: [],
+    bottom: [],
+  };
+
+  for (const marker of markers) {
+    byLane[marker.lane].push(marker);
+  }
+
+  const processLane = (lane: MarkerLane, items: MarkerPosition[]) => {
+    const sorted = [...items].sort((a, b) => a.left - b.left);
+
+    let clusterIndex = 0;
+    let previousLeft = -Infinity;
+
+    for (const item of sorted) {
+      if (Math.abs(item.left - previousLeft) < 90) {
+        clusterIndex += 1;
+      } else {
+        clusterIndex = 0;
+      }
+
+      previousLeft = item.left;
+
+      item.labelTop =
+        lane === "top"
+          ? TOP_BASE + clusterIndex * LANE_STEP
+          : BOTTOM_BASE - clusterIndex * LANE_STEP;
+    }
+  };
+
+  processLane("top", byLane.top);
+  processLane("bottom", byLane.bottom);
+
+  return [...byLane.top, ...byLane.bottom];
 }
 
 export default function StageTestCaseChartModal({
@@ -384,29 +451,39 @@ export default function StageTestCaseChartModal({
   const syncMarkerPositions = useCallback(() => {
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
+    const container = chartContainerRef.current;
 
-    if (!chart || !candleSeries || !allMarkers.length) {
+    if (!chart || !candleSeries || !container || !allMarkers.length) {
       setMarkerPositions([]);
       return;
     }
+
+    const width = Math.max(container.clientWidth, 400);
 
     const nextPositions: MarkerPosition[] = [];
 
     for (const marker of allMarkers) {
       const time = toUtcTimestamp(marker.time);
       const left = chart.timeScale().timeToCoordinate(time as Time);
-      const top = candleSeries.priceToCoordinate(marker.price);
+      const pointTop = candleSeries.priceToCoordinate(marker.price);
 
-      if (left == null || top == null) continue;
+      if (left == null || pointTop == null) continue;
 
       nextPositions.push({
         ...marker,
         left,
-        top,
+        pointTop,
+        labelTop: marker.lane === "top" ? TOP_BASE : BOTTOM_BASE,
+        labelLeft: clamp(left, LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
       });
     }
 
-    setMarkerPositions(nextPositions);
+    const distributed = distributeMarkerLanes(nextPositions).map((marker) => ({
+      ...marker,
+      labelLeft: clamp(marker.left, LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
+    }));
+
+    setMarkerPositions(distributed);
   }, [allMarkers]);
 
   useEffect(() => {
@@ -452,8 +529,8 @@ export default function StageTestCaseChartModal({
         const rawItems = Array.isArray(payload)
           ? payload
           : Array.isArray(payload.items)
-          ? payload.items
-          : [];
+            ? payload.items
+            : [];
 
         if (!cancelled) {
           setCandles(rawItems);
@@ -713,48 +790,76 @@ export default function StageTestCaseChartModal({
             }}
           />
 
-          {markerPositions.map((marker) => (
-            <div
-              key={marker.id}
-              title={`${marker.label} | ${formatPrice(marker.price)} | ${formatDateTime(
-                marker.time
-              )}`}
-              style={{
-                position: "absolute",
-                left: marker.left,
-                top: marker.top,
-                transform: "translate(-50%, -50%)",
-                pointerEvents: "auto",
-                zIndex: 10,
-              }}
-            >
+          {markerPositions.map((marker) => {
+            const connectorHeight = Math.max(
+              12,
+              Math.abs(marker.pointTop - marker.labelTop) - 10
+            );
+            const connectorTop =
+              marker.lane === "top" ? marker.labelTop + 18 : marker.pointTop + 8;
+
+            return (
               <div
+                key={marker.id}
+                title={`${marker.label} | ${formatPrice(marker.price)} | ${formatDateTime(
+                  marker.time
+                )}`}
                 style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 999,
-                  background: marker.color,
-                  border: "2px solid #ffffff",
-                  boxShadow: "0 0 0 1px rgba(15,23,42,0.18)",
-                  margin: "0 auto",
-                }}
-              />
-              <div
-                style={{
-                  marginTop: 4,
-                  padding: "3px 6px",
-                  borderRadius: 999,
-                  background: "#0f172a",
-                  color: "#fff",
-                  fontSize: 11,
-                  whiteSpace: "nowrap",
-                  boxShadow: "0 2px 8px rgba(15,23,42,0.15)",
+                  position: "absolute",
+                  inset: 0,
+                  pointerEvents: "none",
+                  zIndex: 10,
                 }}
               >
-                {marker.label}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: marker.left,
+                    top: marker.pointTop,
+                    transform: "translate(-50%, -50%)",
+                    width: 12,
+                    height: 12,
+                    borderRadius: 999,
+                    background: marker.color,
+                    border: "2px solid #ffffff",
+                    boxShadow: "0 0 0 1px rgba(15,23,42,0.18)",
+                  }}
+                />
+
+                <div
+                  style={{
+                    position: "absolute",
+                    left: marker.left,
+                    top: connectorTop,
+                    transform: "translateX(-50%)",
+                    width: 2,
+                    height: connectorHeight,
+                    background: marker.color,
+                    opacity: 0.6,
+                  }}
+                />
+
+                <div
+                  style={{
+                    position: "absolute",
+                    left: marker.labelLeft,
+                    top: marker.labelTop,
+                    transform: "translateX(-50%)",
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: "#0f172a",
+                    color: "#fff",
+                    fontSize: 11,
+                    whiteSpace: "nowrap",
+                    boxShadow: "0 2px 8px rgba(15,23,42,0.15)",
+                    pointerEvents: "auto",
+                  }}
+                >
+                  {marker.shortLabel}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div style={legendStyle}>

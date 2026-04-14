@@ -115,9 +115,7 @@ function getArrowByComparison(
 }
 
 function getArrowBySlopeText(value: unknown): ArrowVisual {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase();
+  const normalized = String(value ?? "").trim().toLowerCase();
 
   if (["up", "bullish", "rising", "above"].includes(normalized)) {
     return getUpArrow();
@@ -668,7 +666,8 @@ function getConfirmationBadgeStyle(label: string) {
 
 function resolveChartSymbol(
   item: StageTestRunCaseItem,
-  fallbackSymbol?: string
+  fallbackChartSymbol?: string,
+  fallbackMarketSymbol?: string
 ): string {
   const metadata = asRecord(item.metadata);
 
@@ -677,13 +676,15 @@ function resolveChartSymbol(
     asString(metadata.asset_symbol).trim() ||
     asString(metadata.instrument_symbol).trim() ||
     asString(metadata.market_symbol).trim() ||
-    asString(fallbackSymbol).trim()
+    asString(fallbackChartSymbol).trim() ||
+    asString(fallbackMarketSymbol).trim()
   );
 }
 
 function resolveChartTimeframe(
   item: StageTestRunCaseItem,
-  fallbackTimeframe?: string
+  fallbackChartTimeframe?: string,
+  fallbackMarketTimeframe?: string
 ): string {
   const metadata = asRecord(item.metadata);
 
@@ -691,7 +692,8 @@ function resolveChartTimeframe(
     asString(metadata.timeframe).trim() ||
     asString(metadata.chart_timeframe).trim() ||
     asString(metadata.market_timeframe).trim() ||
-    asString(fallbackTimeframe).trim()
+    asString(fallbackChartTimeframe).trim() ||
+    asString(fallbackMarketTimeframe).trim()
   );
 }
 
@@ -703,6 +705,8 @@ export function CasesSection({
   chartSymbol,
   chartTimeframe,
   strategyLabel,
+  marketSymbol,
+  marketTimeframe,
 }: {
   strategyKey: string;
   cases: StageTestRunCaseItem[];
@@ -711,6 +715,8 @@ export function CasesSection({
   chartSymbol?: string;
   chartTimeframe?: string;
   strategyLabel?: string;
+  marketSymbol?: string;
+  marketTimeframe?: string;
 }) {
   const [filter, setFilter] = useState<CaseFilter>("all");
   const [selectedChartCaseId, setSelectedChartCaseId] = useState<string>("");
@@ -737,18 +743,26 @@ export function CasesSection({
 
   const selectedChartCase = useMemo(() => {
     if (!selectedChartCaseId) return null;
-    return cases.find((item) => String(item.id) === selectedChartCaseId) ?? null;
+
+    return (
+      cases.find((item, index) => String(item.id ?? `case-${index + 1}`) === selectedChartCaseId) ??
+      null
+    );
   }, [cases, selectedChartCaseId]);
 
   const resolvedModalSymbol = useMemo(() => {
     if (!selectedChartCase) return "";
-    return resolveChartSymbol(selectedChartCase, chartSymbol);
-  }, [selectedChartCase, chartSymbol]);
+    return resolveChartSymbol(selectedChartCase, chartSymbol, marketSymbol);
+  }, [selectedChartCase, chartSymbol, marketSymbol]);
 
   const resolvedModalTimeframe = useMemo(() => {
     if (!selectedChartCase) return "";
-    return resolveChartTimeframe(selectedChartCase, chartTimeframe);
-  }, [selectedChartCase, chartTimeframe]);
+    return resolveChartTimeframe(
+      selectedChartCase,
+      chartTimeframe,
+      marketTimeframe
+    );
+  }, [selectedChartCase, chartTimeframe, marketTimeframe]);
 
   const resolvedStrategyLabel = strategyLabel?.trim() || strategyKey;
 
@@ -890,7 +904,7 @@ export function CasesSection({
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {filteredCases.map((item, index) => {
-              const caseId = item.id ?? `case-${index + 1}`;
+              const caseId = String(item.id ?? `case-${index + 1}`);
               const caseNumber = item.case_number ?? index + 1;
               const caseKey = `${strategyKey}::${caseId}`;
               const badge = getOutcomeBadge(item.outcome);
@@ -939,10 +953,15 @@ export function CasesSection({
               );
               const actionBadgeStyle = getActionBadgeStyle(recommendedActionRaw);
 
-              const currentCaseChartSymbol = resolveChartSymbol(item, chartSymbol);
+              const currentCaseChartSymbol = resolveChartSymbol(
+                item,
+                chartSymbol,
+                marketSymbol
+              );
               const currentCaseChartTimeframe = resolveChartTimeframe(
                 item,
-                chartTimeframe
+                chartTimeframe,
+                marketTimeframe
               );
 
               const canOpenChart = Boolean(
@@ -1105,10 +1124,7 @@ export function CasesSection({
                         }
                       />
 
-                      <InfoField
-                        label="Score"
-                        value={<span>{confirmationScore}</span>}
-                      />
+                      <InfoField label="Score" value={<span>{confirmationScore}</span>} />
 
                       <InfoField
                         label="Entrada tipo"
@@ -1239,16 +1255,8 @@ export function CasesSection({
                       gap: 12,
                     }}
                   >
-                    <ListCard
-                      title="Pontos a favor"
-                      items={reasonsFor}
-                      tone="positive"
-                    />
-                    <ListCard
-                      title="Pontos contra"
-                      items={reasonsAgainst}
-                      tone="negative"
-                    />
+                    <ListCard title="Pontos a favor" items={reasonsFor} tone="positive" />
+                    <ListCard title="Pontos contra" items={reasonsAgainst} tone="negative" />
                   </div>
 
                   <GroupCard title="Dados do trade">
@@ -1263,42 +1271,24 @@ export function CasesSection({
                         label="Outcome"
                         value={normalizeDisplayText(formatValue(item.outcome))}
                       />
-                      <InfoField
-                        label="Trigger"
-                        value={formatDateTime(item.trigger_time)}
-                      />
+                      <InfoField label="Trigger" value={formatDateTime(item.trigger_time)} />
                       <InfoField
                         label="Trigger candle"
                         value={formatDateTime(item.trigger_candle_time)}
                       />
-                      <InfoField
-                        label="Entrada"
-                        value={formatValue(item.entry_price)}
-                      />
-                      <InfoField
-                        label="Fecho"
-                        value={formatValue(item.close_price)}
-                      />
+                      <InfoField label="Entrada" value={formatValue(item.entry_price)} />
+                      <InfoField label="Fecho" value={formatValue(item.close_price)} />
                       <InfoField
                         label="Trigger price"
                         value={formatValue(item.trigger_price)}
                       />
-                      <InfoField
-                        label="Target"
-                        value={formatValue(item.target_price)}
-                      />
+                      <InfoField label="Target" value={formatValue(item.target_price)} />
                       <InfoField
                         label="Invalidação"
                         value={formatValue(item.invalidation_price)}
                       />
-                      <InfoField
-                        label="Entry time"
-                        value={formatDateTime(item.entry_time)}
-                      />
-                      <InfoField
-                        label="Close time"
-                        value={formatDateTime(item.close_time)}
-                      />
+                      <InfoField label="Entry time" value={formatDateTime(item.entry_time)} />
+                      <InfoField label="Close time" value={formatDateTime(item.close_time)} />
                       <InfoField
                         label="Bars resolução"
                         value={formatValue(item.bars_to_resolution)}
@@ -1347,7 +1337,7 @@ export function CasesSection({
 
                     <button
                       type="button"
-                      onClick={() => setSelectedChartCaseId(String(item.id))}
+                      onClick={() => setSelectedChartCaseId(caseId)}
                       disabled={!canOpenChart}
                       style={{
                         height: 36,
@@ -1363,7 +1353,7 @@ export function CasesSection({
                       }}
                       title={
                         canOpenChart
-                          ? "Abrir este trade no gráfico"
+                          ? `Abrir este trade no gráfico (${currentCaseChartSymbol} / ${currentCaseChartTimeframe})`
                           : "Sem símbolo, timeframe ou horários suficientes para abrir o gráfico"
                       }
                     >
