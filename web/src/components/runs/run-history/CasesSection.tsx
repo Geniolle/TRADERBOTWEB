@@ -3,7 +3,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { CaseAnalysisBlock } from "./CaseAnalysisBlock";
 import { CasesFilterButton } from "./RunHistoryShared";
-import { TrendInlineHeader } from "./TrendPanels";
 import {
   buildEmaDirectionSummary,
   formatDateTime,
@@ -219,8 +218,6 @@ function GroupCard({
         padding: 12,
         display: "grid",
         gap: 10,
-        minWidth: 0,
-        height: "100%",
       }}
     >
       <div
@@ -369,6 +366,7 @@ function buildMovingAverageBadges(item: StageTestRunCaseItem): MovingAverageBadg
 
   const currentShort =
     toNumeric(metadata.current_short_ema) ??
+    toNumeric(trend.short_ema) ??
     toNumeric(trend.ema_9) ??
     toNumeric(trend.ema9) ??
     toNumeric(trend.m9);
@@ -381,6 +379,7 @@ function buildMovingAverageBadges(item: StageTestRunCaseItem): MovingAverageBadg
 
   const currentLong =
     toNumeric(metadata.current_long_ema) ??
+    toNumeric(trend.long_ema) ??
     toNumeric(trend.ema_21) ??
     toNumeric(trend.ema21) ??
     toNumeric(trend.m21);
@@ -1066,9 +1065,8 @@ export function CasesSection({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
                     gap: 12,
-                    alignItems: "stretch",
                   }}
                 >
                   <GroupCard title="Direção e médias">
@@ -1153,7 +1151,6 @@ export function CasesSection({
                         display: "flex",
                         flexWrap: "wrap",
                         gap: 10,
-                        alignContent: "flex-start",
                       }}
                     >
                       <Chip>{renderArrowBadge(adxArrow)} ADX</Chip>
@@ -1250,8 +1247,6 @@ export function CasesSection({
                     />
                   </div>
                 </GroupCard>
-
-                <TrendInlineHeader analysis={item.analysis ?? null} />
 
                 <div
                   style={{
