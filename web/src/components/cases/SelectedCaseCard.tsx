@@ -1,6 +1,8 @@
 // web/src/components/cases/SelectedCaseCard.tsx
 
+import { useMemo, useState } from "react";
 import { formatDateTime } from "../../utils/format";
+import StageTestCaseChartModal from "../stage-tests/StageTestCaseChartModal";
 import type { RunDetailsResponse, RunCaseMetadata } from "../../types/trading";
 
 type SelectedCaseCardProps = {
@@ -90,132 +92,190 @@ function SelectedCaseCard({
   runDetails,
   selectedCaseId,
 }: SelectedCaseCardProps) {
+  const [isChartOpen, setIsChartOpen] = useState(false);
+
   const selectedCase =
     runDetails?.cases.find((item) => item.id === selectedCaseId) ?? null;
 
   const metadata = selectedCase ? readMetadata(selectedCase) : {};
   const snapshot = metadata.analysis_snapshot;
 
+  const chartSymbol = runDetails?.run?.symbol ?? "";
+  const chartTimeframe = runDetails?.run?.timeframe ?? "";
+  const chartStrategyLabel = runDetails?.run?.strategy_key ?? "strategy-desconhecida";
+
+  const canOpenChart = useMemo(() => {
+    return Boolean(
+      selectedCase &&
+        chartSymbol &&
+        chartTimeframe &&
+        (selectedCase.trigger_time ||
+          selectedCase.entry_time ||
+          selectedCase.close_time)
+    );
+  }, [selectedCase, chartSymbol, chartTimeframe]);
+
   return (
-    <div style={mainCardStyle}>
-      <h2 style={sectionTitleStyle}>Case selecionado</h2>
+    <>
+      <div style={mainCardStyle}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <h2 style={{ ...sectionTitleStyle, marginBottom: 0 }}>Case selecionado</h2>
 
-      {!selectedCase && <p>Nenhum case selecionado.</p>}
-
-      {selectedCase && (
-        <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155" }}>
-          <InfoRow label="ID" value={selectedCase.id} />
-          <InfoRow label="Status" value={selectedCase.status} />
-          <InfoRow label="Outcome" value={selectedCase.outcome ?? "-"} />
-          <InfoRow label="Entry Price" value={selectedCase.entry_price} />
-          <InfoRow label="Target Price" value={selectedCase.target_price} />
-          <InfoRow label="Invalidation Price" value={selectedCase.invalidation_price} />
-          <InfoRow label="Close Price" value={selectedCase.close_price ?? "-"} />
-          <InfoRow label="Trigger Time" value={formatDateTime(selectedCase.trigger_time ?? null)} />
-          <InfoRow label="Entry Time" value={formatDateTime(selectedCase.entry_time ?? null)} />
-          <InfoRow label="Close Time" value={formatDateTime(selectedCase.close_time ?? null)} />
-          <InfoRow label="Bars To Resolution" value={selectedCase.bars_to_resolution} />
-          <InfoRow label="MFE" value={selectedCase.max_favorable_excursion} />
-          <InfoRow label="MAE" value={selectedCase.max_adverse_excursion} />
-          <InfoRow label="Setup Type" value={metadata.setup_type ?? "-"} />
-          <InfoRow label="Trade Bias" value={metadata.trade_bias ?? "-"} />
-          <InfoRow label="Close Reason" value={metadata.close_reason ?? "-"} />
-
-          {snapshot && (
-            <>
-              <SectionTitle>Contexto</SectionTitle>
-              <InfoRow label="Session" value={snapshot.trigger_context?.session ?? "-"} />
-              <InfoRow label="Day" value={snapshot.trigger_context?.day_of_week ?? "-"} />
-              <InfoRow label="Hour" value={snapshot.trigger_context?.hour_of_day ?? "-"} />
-
-              <SectionTitle>Tendência</SectionTitle>
-              <InfoRow label="EMA Alignment" value={snapshot.trend?.ema_alignment ?? "-"} />
-              <InfoRow label="Price vs EMA 20" value={snapshot.trend?.price_vs_ema_20 ?? "-"} />
-              <InfoRow label="Price vs EMA 40" value={snapshot.trend?.price_vs_ema_40 ?? "-"} />
-              <InfoRow label="EMA 5 Slope" value={snapshot.trend?.ema_5_slope ?? "-"} />
-              <InfoRow label="EMA 10 Slope" value={snapshot.trend?.ema_10_slope ?? "-"} />
-              <InfoRow label="EMA 20 Slope" value={snapshot.trend?.ema_20_slope ?? "-"} />
-              <InfoRow label="EMA 30 Slope" value={snapshot.trend?.ema_30_slope ?? "-"} />
-              <InfoRow label="EMA 40 Slope" value={snapshot.trend?.ema_40_slope ?? "-"} />
-
-              <SectionTitle>Momentum</SectionTitle>
-              <InfoRow label="RSI 14" value={snapshot.momentum?.rsi_14 ?? "-"} />
-              <InfoRow label="RSI Zone" value={snapshot.momentum?.rsi_zone ?? "-"} />
-              <InfoRow label="RSI Slope" value={snapshot.momentum?.rsi_slope ?? "-"} />
-              <InfoRow label="MACD State" value={snapshot.momentum?.macd_state ?? "-"} />
-              <InfoRow
-                label="MACD Histogram Slope"
-                value={snapshot.momentum?.macd_histogram_slope ?? "-"}
-              />
-
-              <SectionTitle>Bollinger</SectionTitle>
-              <InfoRow label="Upper" value={snapshot.bollinger?.upper ?? "-"} />
-              <InfoRow label="Middle" value={snapshot.bollinger?.middle ?? "-"} />
-              <InfoRow label="Lower" value={snapshot.bollinger?.lower ?? "-"} />
-              <InfoRow label="Bandwidth" value={snapshot.bollinger?.bandwidth ?? "-"} />
-
-              <SectionTitle>Estrutura</SectionTitle>
-              <InfoRow
-                label="Market Structure"
-                value={snapshot.structure?.market_structure ?? "-"}
-              />
-              <InfoRow label="Entry Location" value={snapshot.structure?.entry_location ?? "-"} />
-              <InfoRow
-                label="Distance to Support"
-                value={snapshot.structure?.distance_to_recent_support ?? "-"}
-              />
-              <InfoRow
-                label="Distance to Resistance"
-                value={snapshot.structure?.distance_to_recent_resistance ?? "-"}
-              />
-
-              <SectionTitle>Candle de Trigger</SectionTitle>
-              <InfoRow
-                label="Candle Type"
-                value={snapshot.trigger_candle?.candle_type ?? "-"}
-              />
-              <InfoRow label="Body Ratio" value={snapshot.trigger_candle?.body_ratio ?? "-"} />
-              <InfoRow label="Upper Wick" value={snapshot.trigger_candle?.upper_wick ?? "-"} />
-              <InfoRow label="Lower Wick" value={snapshot.trigger_candle?.lower_wick ?? "-"} />
-
-              <SectionTitle>Patterns</SectionTitle>
-              <InfoRow
-                label="BB Reentry Long"
-                value={<BoolBadge value={snapshot.patterns?.bb_reentry_long} />}
-              />
-              <InfoRow
-                label="BB Reentry Short"
-                value={<BoolBadge value={snapshot.patterns?.bb_reentry_short} />}
-              />
-              <InfoRow
-                label="EMA Trend Confirmed Long"
-                value={<BoolBadge value={snapshot.patterns?.ema_trend_confirmed_long} />}
-              />
-              <InfoRow
-                label="EMA Trend Confirmed Short"
-                value={<BoolBadge value={snapshot.patterns?.ema_trend_confirmed_short} />}
-              />
-              <InfoRow
-                label="RSI Recovery Long"
-                value={<BoolBadge value={snapshot.patterns?.rsi_recovery_long} />}
-              />
-              <InfoRow
-                label="MACD Confirmation Long"
-                value={<BoolBadge value={snapshot.patterns?.macd_confirmation_long} />}
-              />
-              <InfoRow
-                label="Countertrend Long"
-                value={<BoolBadge value={snapshot.patterns?.countertrend_long} />}
-              />
-              <InfoRow
-                label="Countertrend Short"
-                value={<BoolBadge value={snapshot.patterns?.countertrend_short} />}
-              />
-            </>
+          {selectedCase && (
+            <button
+              type="button"
+              onClick={() => setIsChartOpen(true)}
+              disabled={!canOpenChart}
+              style={{
+                height: 40,
+                padding: "0 14px",
+                borderRadius: 10,
+                border: canOpenChart ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                background: canOpenChart ? "#2563eb" : "#f8fafc",
+                color: canOpenChart ? "#ffffff" : "#64748b",
+                cursor: canOpenChart ? "pointer" : "not-allowed",
+                fontWeight: 600,
+              }}
+            >
+              Ver no gráfico
+            </button>
           )}
         </div>
-      )}
-    </div>
+
+        {!selectedCase && <p>Nenhum case selecionado.</p>}
+
+        {selectedCase && (
+          <div style={{ display: "grid", gap: 8, fontSize: 14, color: "#334155", marginTop: 16 }}>
+            <InfoRow label="ID" value={selectedCase.id} />
+            <InfoRow label="Status" value={selectedCase.status} />
+            <InfoRow label="Outcome" value={selectedCase.outcome ?? "-"} />
+            <InfoRow label="Entry Price" value={selectedCase.entry_price} />
+            <InfoRow label="Target Price" value={selectedCase.target_price} />
+            <InfoRow label="Invalidation Price" value={selectedCase.invalidation_price} />
+            <InfoRow label="Close Price" value={selectedCase.close_price ?? "-"} />
+            <InfoRow label="Trigger Time" value={formatDateTime(selectedCase.trigger_time ?? null)} />
+            <InfoRow label="Entry Time" value={formatDateTime(selectedCase.entry_time ?? null)} />
+            <InfoRow label="Close Time" value={formatDateTime(selectedCase.close_time ?? null)} />
+            <InfoRow label="Bars To Resolution" value={selectedCase.bars_to_resolution} />
+            <InfoRow label="MFE" value={selectedCase.max_favorable_excursion} />
+            <InfoRow label="MAE" value={selectedCase.max_adverse_excursion} />
+            <InfoRow label="Setup Type" value={metadata.setup_type ?? "-"} />
+            <InfoRow label="Trade Bias" value={metadata.trade_bias ?? "-"} />
+            <InfoRow label="Close Reason" value={metadata.close_reason ?? "-"} />
+
+            {snapshot && (
+              <>
+                <SectionTitle>Contexto</SectionTitle>
+                <InfoRow label="Session" value={snapshot.trigger_context?.session ?? "-"} />
+                <InfoRow label="Day" value={snapshot.trigger_context?.day_of_week ?? "-"} />
+                <InfoRow label="Hour" value={snapshot.trigger_context?.hour_of_day ?? "-"} />
+
+                <SectionTitle>Tendência</SectionTitle>
+                <InfoRow label="EMA Alignment" value={snapshot.trend?.ema_alignment ?? "-"} />
+                <InfoRow label="Price vs EMA 20" value={snapshot.trend?.price_vs_ema_20 ?? "-"} />
+                <InfoRow label="Price vs EMA 40" value={snapshot.trend?.price_vs_ema_40 ?? "-"} />
+                <InfoRow label="EMA 5 Slope" value={snapshot.trend?.ema_5_slope ?? "-"} />
+                <InfoRow label="EMA 10 Slope" value={snapshot.trend?.ema_10_slope ?? "-"} />
+                <InfoRow label="EMA 20 Slope" value={snapshot.trend?.ema_20_slope ?? "-"} />
+                <InfoRow label="EMA 30 Slope" value={snapshot.trend?.ema_30_slope ?? "-"} />
+                <InfoRow label="EMA 40 Slope" value={snapshot.trend?.ema_40_slope ?? "-"} />
+
+                <SectionTitle>Momentum</SectionTitle>
+                <InfoRow label="RSI 14" value={snapshot.momentum?.rsi_14 ?? "-"} />
+                <InfoRow label="RSI Zone" value={snapshot.momentum?.rsi_zone ?? "-"} />
+                <InfoRow label="RSI Slope" value={snapshot.momentum?.rsi_slope ?? "-"} />
+                <InfoRow label="MACD State" value={snapshot.momentum?.macd_state ?? "-"} />
+                <InfoRow
+                  label="MACD Histogram Slope"
+                  value={snapshot.momentum?.macd_histogram_slope ?? "-"}
+                />
+
+                <SectionTitle>Bollinger</SectionTitle>
+                <InfoRow label="Upper" value={snapshot.bollinger?.upper ?? "-"} />
+                <InfoRow label="Middle" value={snapshot.bollinger?.middle ?? "-"} />
+                <InfoRow label="Lower" value={snapshot.bollinger?.lower ?? "-"} />
+                <InfoRow label="Bandwidth" value={snapshot.bollinger?.bandwidth ?? "-"} />
+
+                <SectionTitle>Estrutura</SectionTitle>
+                <InfoRow
+                  label="Market Structure"
+                  value={snapshot.structure?.market_structure ?? "-"}
+                />
+                <InfoRow label="Entry Location" value={snapshot.structure?.entry_location ?? "-"} />
+                <InfoRow
+                  label="Distance to Support"
+                  value={snapshot.structure?.distance_to_recent_support ?? "-"}
+                />
+                <InfoRow
+                  label="Distance to Resistance"
+                  value={snapshot.structure?.distance_to_recent_resistance ?? "-"}
+                />
+
+                <SectionTitle>Candle de Trigger</SectionTitle>
+                <InfoRow
+                  label="Candle Type"
+                  value={snapshot.trigger_candle?.candle_type ?? "-"}
+                />
+                <InfoRow label="Body Ratio" value={snapshot.trigger_candle?.body_ratio ?? "-"} />
+                <InfoRow label="Upper Wick" value={snapshot.trigger_candle?.upper_wick ?? "-"} />
+                <InfoRow label="Lower Wick" value={snapshot.trigger_candle?.lower_wick ?? "-"} />
+
+                <SectionTitle>Patterns</SectionTitle>
+                <InfoRow
+                  label="BB Reentry Long"
+                  value={<BoolBadge value={snapshot.patterns?.bb_reentry_long} />}
+                />
+                <InfoRow
+                  label="BB Reentry Short"
+                  value={<BoolBadge value={snapshot.patterns?.bb_reentry_short} />}
+                />
+                <InfoRow
+                  label="EMA Trend Confirmed Long"
+                  value={<BoolBadge value={snapshot.patterns?.ema_trend_confirmed_long} />}
+                />
+                <InfoRow
+                  label="EMA Trend Confirmed Short"
+                  value={<BoolBadge value={snapshot.patterns?.ema_trend_confirmed_short} />}
+                />
+                <InfoRow
+                  label="RSI Recovery Long"
+                  value={<BoolBadge value={snapshot.patterns?.rsi_recovery_long} />}
+                />
+                <InfoRow
+                  label="MACD Confirmation Long"
+                  value={<BoolBadge value={snapshot.patterns?.macd_confirmation_long} />}
+                />
+                <InfoRow
+                  label="Countertrend Long"
+                  value={<BoolBadge value={snapshot.patterns?.countertrend_long} />}
+                />
+                <InfoRow
+                  label="Countertrend Short"
+                  value={<BoolBadge value={snapshot.patterns?.countertrend_short} />}
+                />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <StageTestCaseChartModal
+        open={isChartOpen && Boolean(selectedCase)}
+        onClose={() => setIsChartOpen(false)}
+        symbol={chartSymbol}
+        timeframe={chartTimeframe}
+        strategyLabel={chartStrategyLabel}
+        selectedCase={selectedCase}
+      />
+    </>
   );
 }
 

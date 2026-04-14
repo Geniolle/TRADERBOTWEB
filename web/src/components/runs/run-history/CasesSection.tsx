@@ -1,6 +1,7 @@
 // C:\TraderBotWeb\web\src\components\runs\run-history\CasesSection.tsx
 
 import { useMemo, useState, type ReactNode } from "react";
+import StageTestCaseChartModal from "../../stage-tests/StageTestCaseChartModal";
 import { CaseAnalysisBlock } from "./CaseAnalysisBlock";
 import { CasesFilterButton } from "./RunHistoryShared";
 import {
@@ -665,18 +666,54 @@ function getConfirmationBadgeStyle(label: string) {
   };
 }
 
+function resolveChartSymbol(
+  item: StageTestRunCaseItem,
+  fallbackSymbol?: string
+): string {
+  const metadata = asRecord(item.metadata);
+
+  return (
+    asString(metadata.symbol).trim() ||
+    asString(metadata.asset_symbol).trim() ||
+    asString(metadata.instrument_symbol).trim() ||
+    asString(metadata.market_symbol).trim() ||
+    asString(fallbackSymbol).trim()
+  );
+}
+
+function resolveChartTimeframe(
+  item: StageTestRunCaseItem,
+  fallbackTimeframe?: string
+): string {
+  const metadata = asRecord(item.metadata);
+
+  return (
+    asString(metadata.timeframe).trim() ||
+    asString(metadata.chart_timeframe).trim() ||
+    asString(metadata.market_timeframe).trim() ||
+    asString(fallbackTimeframe).trim()
+  );
+}
+
 export function CasesSection({
   strategyKey,
   cases,
   expandedCaseAnalysisById,
   onToggleCaseAnalysis,
+  chartSymbol,
+  chartTimeframe,
+  strategyLabel,
 }: {
   strategyKey: string;
   cases: StageTestRunCaseItem[];
   expandedCaseAnalysisById: Record<string, boolean>;
   onToggleCaseAnalysis: (caseKey: string) => void;
+  chartSymbol?: string;
+  chartTimeframe?: string;
+  strategyLabel?: string;
 }) {
   const [filter, setFilter] = useState<CaseFilter>("all");
+  const [selectedChartCaseId, setSelectedChartCaseId] = useState<string>("");
 
   const filteredCases = useMemo(() => {
     if (filter === "all") return cases;
@@ -698,597 +735,665 @@ export function CasesSection({
     [cases]
   );
 
-  return (
-    <div
-      style={{
-        marginTop: 12,
-        border: "1px solid #dbe2ea",
-        borderRadius: 12,
-        padding: 12,
-        background: "#f8fafc",
-        display: "grid",
-        gap: 12,
-      }}
-    >
-      <div style={{ display: "grid", gap: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "grid", gap: 6 }}>
-            <strong style={{ fontSize: 14, color: "#0f172a" }}>
-              Casos do último run
-            </strong>
+  const selectedChartCase = useMemo(() => {
+    if (!selectedChartCaseId) return null;
+    return cases.find((item) => String(item.id) === selectedChartCaseId) ?? null;
+  }, [cases, selectedChartCaseId]);
 
-            <span
+  const resolvedModalSymbol = useMemo(() => {
+    if (!selectedChartCase) return "";
+    return resolveChartSymbol(selectedChartCase, chartSymbol);
+  }, [selectedChartCase, chartSymbol]);
+
+  const resolvedModalTimeframe = useMemo(() => {
+    if (!selectedChartCase) return "";
+    return resolveChartTimeframe(selectedChartCase, chartTimeframe);
+  }, [selectedChartCase, chartTimeframe]);
+
+  const resolvedStrategyLabel = strategyLabel?.trim() || strategyKey;
+
+  return (
+    <>
+      <div
+        style={{
+          marginTop: 12,
+          border: "1px solid #dbe2ea",
+          borderRadius: 12,
+          padding: 12,
+          background: "#f8fafc",
+          display: "grid",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "grid", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "grid", gap: 6 }}>
+              <strong style={{ fontSize: 14, color: "#0f172a" }}>
+                Casos do último run
+              </strong>
+
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#475569",
+                  lineHeight: 1.45,
+                }}
+              >
+                O foco aqui é encontrar padrões recorrentes nos fails para afinar a
+                regra da estratégia.
+              </span>
+            </div>
+
+            <div
               style={{
-                fontSize: 12,
-                color: "#475569",
-                lineHeight: 1.45,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              O foco aqui é encontrar padrões recorrentes nos fails para afinar a
-              regra da estratégia.
-            </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: "#dcfce7",
+                  color: "#166534",
+                  border: "1px solid #86efac",
+                }}
+              >
+                Hits {totalHits}
+              </span>
+
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: "#fee2e2",
+                  color: "#991b1b",
+                  border: "1px solid #fca5a5",
+                }}
+              >
+                Fails {totalFails}
+              </span>
+
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: "#fffbeb",
+                  color: "#92400e",
+                  border: "1px solid #fcd34d",
+                }}
+              >
+                Timeouts {totalTimeouts}
+              </span>
+            </div>
           </div>
 
           <div
             style={{
               display: "flex",
-              alignItems: "center",
               gap: 8,
               flexWrap: "wrap",
             }}
           >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "#dcfce7",
-                color: "#166534",
-                border: "1px solid #86efac",
-              }}
-            >
-              Hits {totalHits}
-            </span>
-
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "#fee2e2",
-                color: "#991b1b",
-                border: "1px solid #fca5a5",
-              }}
-            >
-              Fails {totalFails}
-            </span>
-
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "#fffbeb",
-                color: "#92400e",
-                border: "1px solid #fcd34d",
-              }}
-            >
-              Timeouts {totalTimeouts}
-            </span>
+            <CasesFilterButton
+              active={filter === "all"}
+              label={`Todos (${cases.length})`}
+              onClick={() => setFilter("all")}
+            />
+            <CasesFilterButton
+              active={filter === "hit"}
+              label={`Hits (${totalHits})`}
+              onClick={() => setFilter("hit")}
+            />
+            <CasesFilterButton
+              active={filter === "fail"}
+              label={`Fails (${totalFails})`}
+              onClick={() => setFilter("fail")}
+            />
+            <CasesFilterButton
+              active={filter === "timeout"}
+              label={`Timeouts (${totalTimeouts})`}
+              onClick={() => setFilter("timeout")}
+            />
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          <CasesFilterButton
-            active={filter === "all"}
-            label={`Todos (${cases.length})`}
-            onClick={() => setFilter("all")}
-          />
-          <CasesFilterButton
-            active={filter === "hit"}
-            label={`Hits (${totalHits})`}
-            onClick={() => setFilter("hit")}
-          />
-          <CasesFilterButton
-            active={filter === "fail"}
-            label={`Fails (${totalFails})`}
-            onClick={() => setFilter("fail")}
-          />
-          <CasesFilterButton
-            active={filter === "timeout"}
-            label={`Timeouts (${totalTimeouts})`}
-            onClick={() => setFilter("timeout")}
-          />
-        </div>
+        {filteredCases.length === 0 ? (
+          <div
+            style={{
+              border: "1px solid #e2e8f0",
+              borderRadius: 10,
+              padding: 12,
+              background: "#ffffff",
+              fontSize: 12,
+              color: "#64748b",
+            }}
+          >
+            Nenhum caso encontrado para este filtro.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {filteredCases.map((item, index) => {
+              const caseId = item.id ?? `case-${index + 1}`;
+              const caseNumber = item.case_number ?? index + 1;
+              const caseKey = `${strategyKey}::${caseId}`;
+              const badge = getOutcomeBadge(item.outcome);
+              const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
+
+              const resolvedSignal = resolveCaseDirection(item);
+              const signalAccent = getDirectionAccent(resolvedSignal);
+
+              const emaDirectionSummary = buildEmaDirectionSummary(
+                item.analysis ?? null,
+                resolvedSignal,
+                item.metadata ?? null
+              );
+
+              const movingAverageBadges = buildMovingAverageBadges(item);
+              const adxArrow = buildAdxArrow(item);
+              const volumeArrow = buildVolumeArrow(item);
+              const cloudArrow = buildCloudArrow(item);
+              const rsiArrow = buildRsiArrow(item);
+              const macdArrow = buildMacdArrow(item);
+
+              const phase2 = getCandlestickPhase2(item);
+              const phase3 = getCandlestickPhase3(item);
+
+              const entryLocation = formatTokenLabel(phase2.entry_location);
+              const sequenceBias = formatTokenLabel(phase2.sequence_bias);
+              const dominantPattern = formatTokenLabel(phase2.dominant_pattern);
+              const sequenceSummary = asString(phase2.sequence_summary).trim() || "-";
+
+              const confirmationScore = asString(phase3.confirmation_score).trim() || "-";
+              const confirmationLabelRaw = asString(phase3.confirmation_label).trim();
+              const confirmationLabel = confirmationLabelRaw
+                ? formatTokenLabel(confirmationLabelRaw)
+                : "-";
+
+              const recommendedActionRaw = asString(phase3.recommended_action).trim();
+              const recommendedAction = recommendedActionRaw
+                ? formatTokenLabel(recommendedActionRaw)
+                : "-";
+
+              const reasonsFor = asStringArray(phase3.reasons_for);
+              const reasonsAgainst = asStringArray(phase3.reasons_against);
+
+              const confirmationBadgeStyle = getConfirmationBadgeStyle(
+                confirmationLabelRaw
+              );
+              const actionBadgeStyle = getActionBadgeStyle(recommendedActionRaw);
+
+              const currentCaseChartSymbol = resolveChartSymbol(item, chartSymbol);
+              const currentCaseChartTimeframe = resolveChartTimeframe(
+                item,
+                chartTimeframe
+              );
+
+              const canOpenChart = Boolean(
+                currentCaseChartSymbol &&
+                  currentCaseChartTimeframe &&
+                  (item.trigger_time ||
+                    item.trigger_candle_time ||
+                    item.entry_time ||
+                    item.close_time)
+              );
+
+              return (
+                <div
+                  key={caseKey}
+                  style={{
+                    border: "1px solid #dbe2ea",
+                    borderRadius: 14,
+                    padding: 14,
+                    background: "#ffffff",
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: 4 }}>
+                      <strong style={{ fontSize: 14, color: "#0f172a" }}>
+                        Case #{caseNumber}
+                      </strong>
+
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "#475569",
+                          fontWeight: 600,
+                        }}
+                      >
+                        ID: {caseId}
+                      </span>
+
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "#64748b",
+                        }}
+                      >
+                        Trigger: {formatDateTime(item.trigger_time)}
+                      </span>
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "5px 10px",
+                        borderRadius: 999,
+                        background: badge.background,
+                        color: badge.color,
+                        border: `1px solid ${badge.border}`,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {badge.label}
+                    </span>
+                  </div>
+
+                  <GroupCard title="Resumo principal">
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      <InfoField
+                        label="Sinal"
+                        value={
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: resolvedSignal === "-" ? 0 : "4px 10px",
+                              borderRadius: 999,
+                              color: signalAccent.color,
+                              background: signalAccent.background,
+                              border:
+                                resolvedSignal === "-"
+                                  ? "none"
+                                  : `1px solid ${signalAccent.border}`,
+                              fontWeight: 800,
+                              width: "fit-content",
+                            }}
+                          >
+                            {resolvedSignal}
+                          </span>
+                        }
+                      />
+
+                      <InfoField
+                        label="Confirmação"
+                        value={
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: confirmationLabel === "-" ? 0 : "4px 10px",
+                              borderRadius: 999,
+                              color: confirmationBadgeStyle.color,
+                              background:
+                                confirmationLabel === "-"
+                                  ? "transparent"
+                                  : confirmationBadgeStyle.background,
+                              border:
+                                confirmationLabel === "-"
+                                  ? "none"
+                                  : `1px solid ${confirmationBadgeStyle.border}`,
+                              fontWeight: 800,
+                              width: "fit-content",
+                            }}
+                          >
+                            {confirmationLabel}
+                          </span>
+                        }
+                      />
+
+                      <InfoField
+                        label="Ação sugerida"
+                        value={
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: recommendedAction === "-" ? 0 : "4px 10px",
+                              borderRadius: 999,
+                              color: actionBadgeStyle.color,
+                              background:
+                                recommendedAction === "-"
+                                  ? "transparent"
+                                  : actionBadgeStyle.background,
+                              border:
+                                recommendedAction === "-"
+                                  ? "none"
+                                  : `1px solid ${actionBadgeStyle.border}`,
+                              fontWeight: 800,
+                              width: "fit-content",
+                            }}
+                          >
+                            {recommendedAction}
+                          </span>
+                        }
+                      />
+
+                      <InfoField
+                        label="Score"
+                        value={<span>{confirmationScore}</span>}
+                      />
+
+                      <InfoField
+                        label="Entrada tipo"
+                        value={<span>{normalizeDisplayText(entryLocation)}</span>}
+                      />
+
+                      <InfoField
+                        label="Viés sequência"
+                        value={<span>{normalizeDisplayText(sequenceBias)}</span>}
+                      />
+
+                      <InfoField
+                        label="Padrão dominante"
+                        value={<span>{normalizeDisplayText(dominantPattern)}</span>}
+                      />
+
+                      <InfoField
+                        label="Resumo sequência"
+                        value={<span>{normalizeDisplayText(sequenceSummary)}</span>}
+                      />
+                    </div>
+                  </GroupCard>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                      gap: 12,
+                    }}
+                  >
+                    <GroupCard title="Direção e médias">
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          alignItems: "center",
+                        }}
+                      >
+                        <Chip>
+                          <span>Curta</span>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              minWidth: 22,
+                              height: 22,
+                              padding: "0 6px",
+                              borderRadius: 999,
+                              color: emaDirectionSummary.m9Arrow.color,
+                              background: emaDirectionSummary.m9Arrow.background,
+                              border: `1px solid ${emaDirectionSummary.m9Arrow.border}`,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {emaDirectionSummary.m9Arrow.arrow}
+                          </span>
+                          <span>{emaDirectionSummary.m9Value}</span>
+                        </Chip>
+
+                        <Chip>
+                          <span>Longa</span>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              minWidth: 22,
+                              height: 22,
+                              padding: "0 6px",
+                              borderRadius: 999,
+                              color: emaDirectionSummary.m21Arrow.color,
+                              background: emaDirectionSummary.m21Arrow.background,
+                              border: `1px solid ${emaDirectionSummary.m21Arrow.border}`,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {emaDirectionSummary.m21Arrow.arrow}
+                          </span>
+                          <span>{emaDirectionSummary.m21Value}</span>
+                        </Chip>
+
+                        <Chip
+                          color={emaDirectionSummary.crossConfirmedColor}
+                          background={emaDirectionSummary.crossConfirmedBackground}
+                          border={emaDirectionSummary.crossConfirmedBorder}
+                        >
+                          {emaDirectionSummary.crossConfirmedLabel}
+                        </Chip>
+
+                        {movingAverageBadges.map((itemBadge) => (
+                          <Chip
+                            key={itemBadge.label}
+                            color="#0f172a"
+                            background="#ffffff"
+                            border={itemBadge.arrow.border}
+                          >
+                            <span>{itemBadge.label}</span>
+                            {renderArrowBadge(itemBadge.arrow)}
+                            <span>{itemBadge.value}</span>
+                          </Chip>
+                        ))}
+                      </div>
+                    </GroupCard>
+
+                    <GroupCard title="Leitura rápida dos indicadores">
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 10,
+                        }}
+                      >
+                        <Chip>{renderArrowBadge(adxArrow)} ADX</Chip>
+                        <Chip>{renderArrowBadge(volumeArrow)} Volume</Chip>
+                        <Chip>{renderArrowBadge(cloudArrow)} Nuvem</Chip>
+                        <Chip>{renderArrowBadge(rsiArrow)} RSI</Chip>
+                        <Chip>{renderArrowBadge(macdArrow)} MACD</Chip>
+                      </div>
+                    </GroupCard>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <ListCard
+                      title="Pontos a favor"
+                      items={reasonsFor}
+                      tone="positive"
+                    />
+                    <ListCard
+                      title="Pontos contra"
+                      items={reasonsAgainst}
+                      tone="negative"
+                    />
+                  </div>
+
+                  <GroupCard title="Dados do trade">
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      <InfoField
+                        label="Outcome"
+                        value={normalizeDisplayText(formatValue(item.outcome))}
+                      />
+                      <InfoField
+                        label="Trigger"
+                        value={formatDateTime(item.trigger_time)}
+                      />
+                      <InfoField
+                        label="Trigger candle"
+                        value={formatDateTime(item.trigger_candle_time)}
+                      />
+                      <InfoField
+                        label="Entrada"
+                        value={formatValue(item.entry_price)}
+                      />
+                      <InfoField
+                        label="Fecho"
+                        value={formatValue(item.close_price)}
+                      />
+                      <InfoField
+                        label="Trigger price"
+                        value={formatValue(item.trigger_price)}
+                      />
+                      <InfoField
+                        label="Target"
+                        value={formatValue(item.target_price)}
+                      />
+                      <InfoField
+                        label="Invalidação"
+                        value={formatValue(item.invalidation_price)}
+                      />
+                      <InfoField
+                        label="Entry time"
+                        value={formatDateTime(item.entry_time)}
+                      />
+                      <InfoField
+                        label="Close time"
+                        value={formatDateTime(item.close_time)}
+                      />
+                      <InfoField
+                        label="Bars resolução"
+                        value={formatValue(item.bars_to_resolution)}
+                      />
+                      <InfoField
+                        label="MFE"
+                        value={formatValue(item.max_favorable_excursion)}
+                      />
+                      <InfoField
+                        label="MAE"
+                        value={formatValue(item.max_adverse_excursion)}
+                      />
+                      <InfoField
+                        label="Close reason"
+                        value={formatValue(item.close_reason)}
+                      />
+                    </div>
+                  </GroupCard>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onToggleCaseAnalysis(caseKey)}
+                      style={{
+                        height: 36,
+                        padding: "0 14px",
+                        borderRadius: 10,
+                        border: "1px solid #cbd5e1",
+                        background: "#ffffff",
+                        color: "#0f172a",
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {isExpanded
+                        ? "Ocultar análise do case"
+                        : "Exibir análise do case"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChartCaseId(String(item.id))}
+                      disabled={!canOpenChart}
+                      style={{
+                        height: 36,
+                        padding: "0 14px",
+                        borderRadius: 10,
+                        border: canOpenChart
+                          ? "1px solid #2563eb"
+                          : "1px solid #cbd5e1",
+                        background: canOpenChart ? "#2563eb" : "#f8fafc",
+                        color: canOpenChart ? "#ffffff" : "#64748b",
+                        fontWeight: 800,
+                        cursor: canOpenChart ? "pointer" : "not-allowed",
+                      }}
+                      title={
+                        canOpenChart
+                          ? "Abrir este trade no gráfico"
+                          : "Sem símbolo, timeframe ou horários suficientes para abrir o gráfico"
+                      }
+                    >
+                      Ver no gráfico
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <CaseAnalysisBlock
+                      analysis={item.analysis ?? null}
+                      runStatus={item.outcome}
+                      caseId={caseId}
+                      caseNumber={caseNumber}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {filteredCases.length === 0 ? (
-        <div
-          style={{
-            border: "1px solid #e2e8f0",
-            borderRadius: 10,
-            padding: 12,
-            background: "#ffffff",
-            fontSize: 12,
-            color: "#64748b",
-          }}
-        >
-          Nenhum caso encontrado para este filtro.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {filteredCases.map((item, index) => {
-            const caseId = item.id ?? `case-${index + 1}`;
-            const caseNumber = item.case_number ?? index + 1;
-            const caseKey = `${strategyKey}::${caseId}`;
-            const badge = getOutcomeBadge(item.outcome);
-            const isExpanded = Boolean(expandedCaseAnalysisById[caseKey]);
-
-            const resolvedSignal = resolveCaseDirection(item);
-            const signalAccent = getDirectionAccent(resolvedSignal);
-
-            const emaDirectionSummary = buildEmaDirectionSummary(
-              item.analysis ?? null,
-              resolvedSignal,
-              item.metadata ?? null
-            );
-
-            const movingAverageBadges = buildMovingAverageBadges(item);
-            const adxArrow = buildAdxArrow(item);
-            const volumeArrow = buildVolumeArrow(item);
-            const cloudArrow = buildCloudArrow(item);
-            const rsiArrow = buildRsiArrow(item);
-            const macdArrow = buildMacdArrow(item);
-
-            const phase2 = getCandlestickPhase2(item);
-            const phase3 = getCandlestickPhase3(item);
-
-            const entryLocation = formatTokenLabel(phase2.entry_location);
-            const sequenceBias = formatTokenLabel(phase2.sequence_bias);
-            const dominantPattern = formatTokenLabel(phase2.dominant_pattern);
-            const sequenceSummary = asString(phase2.sequence_summary).trim() || "-";
-
-            const confirmationScore = asString(phase3.confirmation_score).trim() || "-";
-            const confirmationLabelRaw = asString(phase3.confirmation_label).trim();
-            const confirmationLabel = confirmationLabelRaw
-              ? formatTokenLabel(confirmationLabelRaw)
-              : "-";
-
-            const recommendedActionRaw = asString(phase3.recommended_action).trim();
-            const recommendedAction = recommendedActionRaw
-              ? formatTokenLabel(recommendedActionRaw)
-              : "-";
-
-            const reasonsFor = asStringArray(phase3.reasons_for);
-            const reasonsAgainst = asStringArray(phase3.reasons_against);
-
-            const confirmationBadgeStyle = getConfirmationBadgeStyle(
-              confirmationLabelRaw
-            );
-            const actionBadgeStyle = getActionBadgeStyle(recommendedActionRaw);
-
-            return (
-              <div
-                key={caseKey}
-                style={{
-                  border: "1px solid #dbe2ea",
-                  borderRadius: 14,
-                  padding: 14,
-                  background: "#ffffff",
-                  display: "grid",
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <strong style={{ fontSize: 14, color: "#0f172a" }}>
-                      Case #{caseNumber}
-                    </strong>
-
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "#475569",
-                        fontWeight: 600,
-                      }}
-                    >
-                      ID: {caseId}
-                    </span>
-
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "#64748b",
-                      }}
-                    >
-                      Trigger: {formatDateTime(item.trigger_time)}
-                    </span>
-                  </div>
-
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      padding: "5px 10px",
-                      borderRadius: 999,
-                      background: badge.background,
-                      color: badge.color,
-                      border: `1px solid ${badge.border}`,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {badge.label}
-                  </span>
-                </div>
-
-                <GroupCard title="Resumo principal">
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <InfoField
-                      label="Sinal"
-                      value={
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: resolvedSignal === "-" ? 0 : "4px 10px",
-                            borderRadius: 999,
-                            color: signalAccent.color,
-                            background: signalAccent.background,
-                            border:
-                              resolvedSignal === "-"
-                                ? "none"
-                                : `1px solid ${signalAccent.border}`,
-                            fontWeight: 800,
-                            width: "fit-content",
-                          }}
-                        >
-                          {resolvedSignal}
-                        </span>
-                      }
-                    />
-
-                    <InfoField
-                      label="Confirmação"
-                      value={
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: confirmationLabel === "-" ? 0 : "4px 10px",
-                            borderRadius: 999,
-                            color: confirmationBadgeStyle.color,
-                            background:
-                              confirmationLabel === "-"
-                                ? "transparent"
-                                : confirmationBadgeStyle.background,
-                            border:
-                              confirmationLabel === "-"
-                                ? "none"
-                                : `1px solid ${confirmationBadgeStyle.border}`,
-                            fontWeight: 800,
-                            width: "fit-content",
-                          }}
-                        >
-                          {confirmationLabel}
-                        </span>
-                      }
-                    />
-
-                    <InfoField
-                      label="Ação sugerida"
-                      value={
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: recommendedAction === "-" ? 0 : "4px 10px",
-                            borderRadius: 999,
-                            color: actionBadgeStyle.color,
-                            background:
-                              recommendedAction === "-"
-                                ? "transparent"
-                                : actionBadgeStyle.background,
-                            border:
-                              recommendedAction === "-"
-                                ? "none"
-                                : `1px solid ${actionBadgeStyle.border}`,
-                            fontWeight: 800,
-                            width: "fit-content",
-                          }}
-                        >
-                          {recommendedAction}
-                        </span>
-                      }
-                    />
-
-                    <InfoField
-                      label="Score"
-                      value={<span>{confirmationScore}</span>}
-                    />
-
-                    <InfoField
-                      label="Entrada tipo"
-                      value={<span>{normalizeDisplayText(entryLocation)}</span>}
-                    />
-
-                    <InfoField
-                      label="Viés sequência"
-                      value={<span>{normalizeDisplayText(sequenceBias)}</span>}
-                    />
-
-                    <InfoField
-                      label="Padrão dominante"
-                      value={<span>{normalizeDisplayText(dominantPattern)}</span>}
-                    />
-
-                    <InfoField
-                      label="Resumo sequência"
-                      value={<span>{normalizeDisplayText(sequenceSummary)}</span>}
-                    />
-                  </div>
-                </GroupCard>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                    gap: 12,
-                  }}
-                >
-                  <GroupCard title="Direção e médias">
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <Chip>
-                        <span>Curta</span>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: 22,
-                            height: 22,
-                            padding: "0 6px",
-                            borderRadius: 999,
-                            color: emaDirectionSummary.m9Arrow.color,
-                            background: emaDirectionSummary.m9Arrow.background,
-                            border: `1px solid ${emaDirectionSummary.m9Arrow.border}`,
-                            fontWeight: 800,
-                          }}
-                        >
-                          {emaDirectionSummary.m9Arrow.arrow}
-                        </span>
-                        <span>{emaDirectionSummary.m9Value}</span>
-                      </Chip>
-
-                      <Chip>
-                        <span>Longa</span>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: 22,
-                            height: 22,
-                            padding: "0 6px",
-                            borderRadius: 999,
-                            color: emaDirectionSummary.m21Arrow.color,
-                            background: emaDirectionSummary.m21Arrow.background,
-                            border: `1px solid ${emaDirectionSummary.m21Arrow.border}`,
-                            fontWeight: 800,
-                          }}
-                        >
-                          {emaDirectionSummary.m21Arrow.arrow}
-                        </span>
-                        <span>{emaDirectionSummary.m21Value}</span>
-                      </Chip>
-
-                      <Chip
-                        color={emaDirectionSummary.crossConfirmedColor}
-                        background={emaDirectionSummary.crossConfirmedBackground}
-                        border={emaDirectionSummary.crossConfirmedBorder}
-                      >
-                        {emaDirectionSummary.crossConfirmedLabel}
-                      </Chip>
-
-                      {movingAverageBadges.map((itemBadge) => (
-                        <Chip
-                          key={itemBadge.label}
-                          color="#0f172a"
-                          background="#ffffff"
-                          border={itemBadge.arrow.border}
-                        >
-                          <span>{itemBadge.label}</span>
-                          {renderArrowBadge(itemBadge.arrow)}
-                          <span>{itemBadge.value}</span>
-                        </Chip>
-                      ))}
-                    </div>
-                  </GroupCard>
-
-                  <GroupCard title="Leitura rápida dos indicadores">
-                    <div
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 10,
-                      }}
-                    >
-                      <Chip>{renderArrowBadge(adxArrow)} ADX</Chip>
-                      <Chip>{renderArrowBadge(volumeArrow)} Volume</Chip>
-                      <Chip>{renderArrowBadge(cloudArrow)} Nuvem</Chip>
-                      <Chip>{renderArrowBadge(rsiArrow)} RSI</Chip>
-                      <Chip>{renderArrowBadge(macdArrow)} MACD</Chip>
-                    </div>
-                  </GroupCard>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <ListCard
-                    title="Pontos a favor"
-                    items={reasonsFor}
-                    tone="positive"
-                  />
-                  <ListCard
-                    title="Pontos contra"
-                    items={reasonsAgainst}
-                    tone="negative"
-                  />
-                </div>
-
-                <GroupCard title="Dados do trade">
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <InfoField
-                      label="Outcome"
-                      value={normalizeDisplayText(formatValue(item.outcome))}
-                    />
-                    <InfoField
-                      label="Trigger"
-                      value={formatDateTime(item.trigger_time)}
-                    />
-                    <InfoField
-                      label="Trigger candle"
-                      value={formatDateTime(item.trigger_candle_time)}
-                    />
-                    <InfoField
-                      label="Entrada"
-                      value={formatValue(item.entry_price)}
-                    />
-                    <InfoField
-                      label="Fecho"
-                      value={formatValue(item.close_price)}
-                    />
-                    <InfoField
-                      label="Trigger price"
-                      value={formatValue(item.trigger_price)}
-                    />
-                    <InfoField
-                      label="Target"
-                      value={formatValue(item.target_price)}
-                    />
-                    <InfoField
-                      label="Invalidação"
-                      value={formatValue(item.invalidation_price)}
-                    />
-                    <InfoField
-                      label="Entry time"
-                      value={formatDateTime(item.entry_time)}
-                    />
-                    <InfoField
-                      label="Close time"
-                      value={formatDateTime(item.close_time)}
-                    />
-                    <InfoField
-                      label="Bars resolução"
-                      value={formatValue(item.bars_to_resolution)}
-                    />
-                    <InfoField
-                      label="MFE"
-                      value={formatValue(item.max_favorable_excursion)}
-                    />
-                    <InfoField
-                      label="MAE"
-                      value={formatValue(item.max_adverse_excursion)}
-                    />
-                    <InfoField
-                      label="Close reason"
-                      value={formatValue(item.close_reason)}
-                    />
-                  </div>
-                </GroupCard>
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onToggleCaseAnalysis(caseKey)}
-                    style={{
-                      height: 36,
-                      padding: "0 14px",
-                      borderRadius: 10,
-                      border: "1px solid #cbd5e1",
-                      background: "#ffffff",
-                      color: "#0f172a",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {isExpanded
-                      ? "Ocultar análise do case"
-                      : "Exibir análise do case"}
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <CaseAnalysisBlock
-                    analysis={item.analysis ?? null}
-                    runStatus={item.outcome}
-                    caseId={caseId}
-                    caseNumber={caseNumber}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      <StageTestCaseChartModal
+        open={Boolean(selectedChartCase)}
+        onClose={() => setSelectedChartCaseId("")}
+        symbol={resolvedModalSymbol}
+        timeframe={resolvedModalTimeframe}
+        strategyLabel={resolvedStrategyLabel}
+        selectedCase={selectedChartCase}
+      />
+    </>
   );
 }

@@ -29,6 +29,10 @@ type FetchCandlesResult = {
   preserveExisting: boolean;
 };
 
+type LatestCandleResponse = CandleItem | null;
+
+const INCREMENTAL_LIMIT = 5000;
+
 function normalizeSymbol(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim().toUpperCase();
@@ -72,47 +76,6 @@ function candleTimestamp(value: string): number {
 
 function candleKey(item: { open_time: string }): string {
   return String(candleTimestamp(item.open_time));
-}
-
-function timeframeToWindowMs(
-  timeframe: string,
-  mode: "full" | "incremental"
-): number {
-  const normalized = normalizeTimeframe(timeframe);
-
-  if (mode === "incremental") {
-    if (normalized === "1m") return 2 * 60 * 60 * 1000;
-    if (normalized === "3m") return 4 * 60 * 60 * 1000;
-    if (normalized === "5m") return 6 * 60 * 60 * 1000;
-    if (normalized === "15m") return 12 * 60 * 60 * 1000;
-    if (normalized === "30m") return 24 * 60 * 60 * 1000;
-    if (normalized === "1h") return 2 * 24 * 60 * 60 * 1000;
-    if (normalized === "4h") return 7 * 24 * 60 * 60 * 1000;
-    return 30 * 24 * 60 * 60 * 1000;
-  }
-
-  if (normalized === "1m") return 24 * 60 * 60 * 1000;
-  if (normalized === "3m") return 24 * 60 * 60 * 1000;
-  if (normalized === "5m") return 24 * 60 * 60 * 1000;
-  if (normalized === "15m") return 3 * 24 * 60 * 60 * 1000;
-  if (normalized === "30m") return 3 * 24 * 60 * 60 * 1000;
-  if (normalized === "1h") return 15 * 24 * 60 * 60 * 1000;
-  if (normalized === "4h") return 15 * 24 * 60 * 60 * 1000;
-
-  return 60 * 24 * 60 * 60 * 1000;
-}
-
-function buildRange(
-  timeframe: string,
-  mode: "full" | "incremental"
-): { startAt: string; endAt: string } {
-  const now = new Date();
-  const start = new Date(now.getTime() - timeframeToWindowMs(timeframe, mode));
-
-  return {
-    startAt: start.toISOString(),
-    endAt: now.toISOString(),
-  };
 }
 
 function normalizeCandleItem(item: unknown): CandleItem | null {
@@ -359,19 +322,6 @@ function extractErrorMessage(status: number, payloadText: string): string {
   return `HTTP ${status}`;
 }
 
-function isQuotaExceededError(status: number, message: string): boolean {
-  const normalized = String(message ?? "").toLowerCase();
-
-  return (
-    status === 429 ||
-    normalized.includes("quota") ||
-    normalized.includes("credits") ||
-    normalized.includes("api credits") ||
-    normalized.includes("run out of api credits") ||
-    normalized.includes("too many requests")
-  );
-}
-
 function getMinimumCandlesForStableSnapshot(timeframe: string): number {
   const normalized = normalizeTimeframe(timeframe);
 
@@ -393,6 +343,63 @@ function isInsufficientSnapshot(
 ): boolean {
   if (items.length === 0) return true;
   return items.length < getMinimumCandlesForStableSnapshot(timeframe);
+}
+
+async function fetchJson(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const payloadText = await response.text();
+    throw new Error(extractErrorMessage(response.status, payloadText));
+  }
+
+  return response.json();
+}
+
+function buildCandlesUrl(params: {
+  symbol: string;
+  timeframe: string;
+  startAt?: string;
+  endAt?: string;
+  limit?: number;
+  mode?: "full" | "incremental";
+}): string {
+  const query = new URLSearchParams({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+  });
+
+  if (params.startAt) {
+    query.set("start_at", params.startAt);
+  }
+
+  if (params.endAt) {
+    query.set("end_at", params.endAt);
+  }
+
+  if (typeof params.limit === "number" && Number.isFinite(params.limit)) {
+    query.set("limit", String(params.limit));
+  }
+
+  if (params.mode) {
+    query.set("mode", params.mode);
+  }
+
+  return `${API_HTTP_BASE_URL}/candles?${query.toString()}`;
+}
+
+function buildLatestUrl(symbol: string, timeframe: string): string {
+  const query = new URLSearchParams({
+    symbol,
+    timeframe,
+  });
+
+  return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
 }
 
 function useCandles({
@@ -449,48 +456,132 @@ function useCandles({
       setCandlesError("");
 
       try {
-        const { startAt, endAt } = buildRange(timeframe, mode);
+        if (mode === "full") {
+          const nowIso = new Date().toISOString();
 
-        const params = new URLSearchParams({
-          symbol,
-          timeframe,
-          start_at: startAt,
-          end_at: endAt,
-          limit: mode === "full" ? "5000" : "1000",
-          mode,
-        });
+          const payload = await fetchJson(
+            buildCandlesUrl({
+              symbol,
+              timeframe,
+              mode: "full",
+            })
+          );
 
-        const response = await fetch(
-          `${API_HTTP_BASE_URL}/candles?${params.toString()}`,
-          {
-            method: "GET",
-            headers: {
-              Accept: "application/json",
-            },
-          }
-        );
+          const parsed = parsePayload(
+            payload,
+            symbol,
+            timeframe,
+            "full",
+            "",
+            nowIso
+          );
 
-        if (!response.ok) {
-          const payloadText = await response.text();
-          const message = extractErrorMessage(response.status, payloadText);
-
-          if (isQuotaExceededError(response.status, message)) {
-            const suffix =
-              candlesRef.current.length > 0
-                ? " Último candle mantido localmente."
-                : "";
-            throw new Error(`Offline por quota do provider. ${message}${suffix}`);
+          if (activeRequestKeyRef.current !== currentRequestKey) {
+            return {
+              items: [],
+              coverageMeta: null,
+              preserveExisting: false,
+            };
           }
 
-          throw new Error(message || `HTTP ${response.status}`);
+          return {
+            items: parsed.items,
+            coverageMeta: parsed.coverageMeta,
+            preserveExisting: false,
+          };
         }
 
-        const payload = await response.json();
+        const frontendLastCandle =
+          candlesRef.current.length > 0
+            ? candlesRef.current[candlesRef.current.length - 1]
+            : null;
+
+        const latestPayload = await fetchJson(buildLatestUrl(symbol, timeframe));
+        const latestCandle = normalizeCandleItem(
+          latestPayload as LatestCandleResponse
+        );
+
+        if (activeRequestKeyRef.current !== currentRequestKey) {
+          return {
+            items: [],
+            coverageMeta: null,
+            preserveExisting: false,
+          };
+        }
+
+        if (!latestCandle) {
+          return {
+            items: [],
+            coverageMeta: coverageMetaRef.current,
+            preserveExisting: candlesRef.current.length > 0,
+          };
+        }
+
+        if (!frontendLastCandle) {
+          const nowIso = new Date().toISOString();
+
+          const payload = await fetchJson(
+            buildCandlesUrl({
+              symbol,
+              timeframe,
+              mode: "full",
+            })
+          );
+
+          const parsed = parsePayload(
+            payload,
+            symbol,
+            timeframe,
+            "full",
+            "",
+            nowIso
+          );
+
+          return {
+            items: parsed.items,
+            coverageMeta: parsed.coverageMeta,
+            preserveExisting: false,
+          };
+        }
+
+        const frontendLastOpenMs = candleTimestamp(frontendLastCandle.open_time);
+        const backendLatestOpenMs = candleTimestamp(latestCandle.open_time);
+
+        if (backendLatestOpenMs <= frontendLastOpenMs) {
+          return {
+            items: [],
+            coverageMeta: buildCoverageMeta(
+              coverageMetaRef.current,
+              candlesRef.current,
+              symbol,
+              timeframe,
+              "incremental",
+              coverageMetaRef.current?.start_at ?? frontendLastCandle.open_time,
+              coverageMetaRef.current?.end_at ?? latestCandle.close_time
+            ),
+            preserveExisting: false,
+          };
+        }
+
+        const startAt = frontendLastCandle.open_time;
+        const endAt = latestCandle.close_time || latestCandle.open_time;
+
+        const payload = await fetchJson(
+          buildCandlesUrl({
+            symbol,
+            timeframe,
+            startAt,
+            endAt,
+            limit: INCREMENTAL_LIMIT,
+            mode: "incremental",
+          })
+        );
+
         const parsed = parsePayload(
           payload,
           symbol,
           timeframe,
-          mode,
+          "incremental",
           startAt,
           endAt
         );
@@ -583,7 +674,8 @@ function useCandles({
 
       if (parsed.coverageMeta) {
         const coverageItems =
-          mergedItems.length > 0 && !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
+          mergedItems.length > 0 &&
+          !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
             ? mergedItems
             : candlesRef.current;
 

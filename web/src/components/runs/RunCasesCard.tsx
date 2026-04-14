@@ -1,7 +1,11 @@
 // C:\TraderBotWeb\web\src\components\runs\RunCasesCard.tsx
 
-import type { CSSProperties } from "react";
-import type { RunDetailsResponse } from "../../types/trading";
+import { useMemo, useState, type CSSProperties } from "react";
+import StageTestCaseChartModal from "../stage-tests/StageTestCaseChartModal";
+import type {
+  RunCaseItem,
+  RunDetailsResponse,
+} from "../../types/trading";
 
 type RunCasesCardProps = {
   mainCardStyle: CSSProperties;
@@ -9,23 +13,6 @@ type RunCasesCardProps = {
   runDetails: RunDetailsResponse | null;
   selectedCaseId: string;
   setSelectedCaseId: (value: string) => void;
-};
-
-type RunCaseItem = {
-  case_id?: string | number | null;
-  status?: string | null;
-  direction?: string | null;
-  trigger_time?: string | null | undefined;
-  entry_time?: string | null | undefined;
-  close_time?: string | null | undefined;
-  trigger_price?: string | number | null;
-  entry_price?: string | number | null;
-  close_price?: string | number | null;
-  result_label?: string | null;
-  result_percent?: string | number | null;
-  mfe?: string | number | null;
-  mae?: string | number | null;
-  bars_to_resolution?: string | number | null;
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -52,15 +39,27 @@ function normalizeCases(runDetails: RunDetailsResponse | null): RunCaseItem[] {
     return [];
   }
 
-  return runDetails.cases as RunCaseItem[];
+  return runDetails.cases;
 }
 
 function getCaseId(item: RunCaseItem, index: number): string {
-  if (item.case_id !== null && item.case_id !== undefined && item.case_id !== "") {
-    return String(item.case_id);
+  if (item.id && String(item.id).trim()) {
+    return String(item.id);
   }
 
   return `case-${index + 1}`;
+}
+
+function buildCaseTitle(item: RunCaseItem, index: number): string {
+  const caseNumber =
+    item.case_number !== null && item.case_number !== undefined
+      ? `#${item.case_number}`
+      : getCaseId(item, index);
+
+  const side = item.side || "-";
+  const outcome = item.outcome || item.status || "-";
+
+  return `${caseNumber} / ${side} / ${outcome}`;
 }
 
 function RunCasesCard({
@@ -71,130 +70,206 @@ function RunCasesCard({
   setSelectedCaseId,
 }: RunCasesCardProps) {
   const cases = normalizeCases(runDetails);
+  const [chartCaseId, setChartCaseId] = useState<string>("");
+
+  const selectedChartCase = useMemo(() => {
+    if (!chartCaseId || !runDetails) return null;
+
+    return (
+      runDetails.cases.find((item) => String(item.id) === chartCaseId) ?? null
+    );
+  }, [chartCaseId, runDetails]);
+
+  const chartSymbol = runDetails?.run?.symbol ?? "";
+  const chartTimeframe = runDetails?.run?.timeframe ?? "";
+  const chartStrategyLabel =
+    runDetails?.run?.strategy_key ?? "strategy-desconhecida";
 
   return (
-    <div style={mainCardStyle}>
-      <h2 style={sectionTitleStyle}>Run Cases</h2>
+    <>
+      <div style={mainCardStyle}>
+        <h2 style={sectionTitleStyle}>Run Cases</h2>
 
-      {!runDetails && <div>Nenhum run selecionado.</div>}
+        {!runDetails && <div>Nenhum run selecionado.</div>}
 
-      {runDetails && cases.length === 0 && (
-        <div>Este run não possui casos disponíveis.</div>
-      )}
+        {runDetails && cases.length === 0 && (
+          <div>Este run não possui casos disponíveis.</div>
+        )}
 
-      {cases.length > 0 && (
-        <div style={{ display: "grid", gap: 12 }}>
-          {cases.map((item, index) => {
-            const caseId = getCaseId(item, index);
-            const isSelected = selectedCaseId === caseId;
+        {cases.length > 0 && (
+          <div style={{ display: "grid", gap: 12 }}>
+            {cases.map((item, index) => {
+              const caseId = getCaseId(item, index);
+              const isSelected = selectedCaseId === caseId;
 
-            return (
-              <button
-                key={caseId}
-                type="button"
-                onClick={() => setSelectedCaseId(caseId)}
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  border: isSelected ? "2px solid #0f172a" : "1px solid #cbd5e1",
-                  borderRadius: 12,
-                  padding: 14,
-                  background: isSelected ? "#f8fafc" : "#ffffff",
-                  cursor: "pointer",
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
+              return (
                 <div
+                  key={caseId}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
+                    width: "100%",
+                    textAlign: "left",
+                    border: isSelected ? "2px solid #0f172a" : "1px solid #cbd5e1",
+                    borderRadius: 12,
+                    padding: 14,
+                    background: isSelected ? "#f8fafc" : "#ffffff",
+                    display: "grid",
                     gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "center",
                   }}
                 >
-                  <strong style={{ color: "#0f172a" }}>Case {caseId}</strong>
-
-                  <span
+                  <div
                     style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#475569",
-                      background: "#f1f5f9",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: 999,
-                      padding: "4px 8px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      alignItems: "center",
                     }}
                   >
-                    {formatValue(item.status)}
-                  </span>
+                    <strong style={{ color: "#0f172a" }}>
+                      Case {buildCaseTitle(item, index)}
+                    </strong>
+
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#475569",
+                        background: "#f1f5f9",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 999,
+                        padding: "4px 8px",
+                      }}
+                    >
+                      {formatValue(item.status)}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 8,
+                      fontSize: 14,
+                      color: "#334155",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    <div>
+                      <strong>Direction:</strong> {formatValue(item.side)}
+                    </div>
+
+                    <div>
+                      <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
+                    </div>
+
+                    <div>
+                      <strong>Entry Time:</strong> {formatDateTime(item.entry_time ?? null)}
+                    </div>
+
+                    <div>
+                      <strong>Close Time:</strong> {formatDateTime(item.close_time ?? null)}
+                    </div>
+
+                    <div>
+                      <strong>Trigger Price:</strong> {formatValue(item.trigger_price)}
+                    </div>
+
+                    <div>
+                      <strong>Entry Price:</strong> {formatValue(item.entry_price)}
+                    </div>
+
+                    <div>
+                      <strong>Close Price:</strong> {formatValue(item.close_price)}
+                    </div>
+
+                    <div>
+                      <strong>Outcome:</strong> {formatValue(item.outcome)}
+                    </div>
+
+                    <div>
+                      <strong>Bars to Resolution:</strong>{" "}
+                      {formatValue(item.bars_to_resolution)}
+                    </div>
+
+                    <div>
+                      <strong>MFE:</strong> {formatValue(item.max_favorable_excursion)}
+                    </div>
+
+                    <div>
+                      <strong>MAE:</strong> {formatValue(item.max_adverse_excursion)}
+                    </div>
+
+                    <div>
+                      <strong>Target Price:</strong> {formatValue(item.target_price)}
+                    </div>
+
+                    <div>
+                      <strong>Invalidation Price:</strong>{" "}
+                      {formatValue(item.invalidation_price)}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCaseId(caseId)}
+                      style={{
+                        height: 40,
+                        padding: "0 14px",
+                        borderRadius: 10,
+                        border: "1px solid #cbd5e1",
+                        background: isSelected ? "#e2e8f0" : "#ffffff",
+                        color: "#0f172a",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {isSelected ? "Case selecionado" : "Selecionar case"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCaseId(caseId);
+                        setChartCaseId(String(item.id));
+                      }}
+                      style={{
+                        height: 40,
+                        padding: "0 14px",
+                        borderRadius: 10,
+                        border: "1px solid #2563eb",
+                        background: "#2563eb",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Ver no gráfico
+                    </button>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 8,
-                    fontSize: 14,
-                    color: "#334155",
-                    lineHeight: 1.55,
-                  }}
-                >
-                  <div>
-                    <strong>Direction:</strong> {formatValue(item.direction)}
-                  </div>
-
-                  <div>
-                    <strong>Trigger:</strong> {formatDateTime(item.trigger_time ?? null)}
-                  </div>
-
-                  <div>
-                    <strong>Entry Time:</strong> {formatDateTime(item.entry_time ?? null)}
-                  </div>
-
-                  <div>
-                    <strong>Close Time:</strong> {formatDateTime(item.close_time ?? null)}
-                  </div>
-
-                  <div>
-                    <strong>Trigger Price:</strong> {formatValue(item.trigger_price)}
-                  </div>
-
-                  <div>
-                    <strong>Entry Price:</strong> {formatValue(item.entry_price)}
-                  </div>
-
-                  <div>
-                    <strong>Close Price:</strong> {formatValue(item.close_price)}
-                  </div>
-
-                  <div>
-                    <strong>Result:</strong> {formatValue(item.result_label)}
-                  </div>
-
-                  <div>
-                    <strong>Result %:</strong> {formatValue(item.result_percent)}
-                  </div>
-
-                  <div>
-                    <strong>MFE:</strong> {formatValue(item.mfe)}
-                  </div>
-
-                  <div>
-                    <strong>MAE:</strong> {formatValue(item.mae)}
-                  </div>
-
-                  <div>
-                    <strong>Bars to Resolution:</strong> {formatValue(item.bars_to_resolution)}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      <StageTestCaseChartModal
+        open={Boolean(selectedChartCase)}
+        onClose={() => setChartCaseId("")}
+        symbol={chartSymbol}
+        timeframe={chartTimeframe}
+        strategyLabel={chartStrategyLabel}
+        selectedCase={selectedChartCase}
+      />
+    </>
   );
 }
 

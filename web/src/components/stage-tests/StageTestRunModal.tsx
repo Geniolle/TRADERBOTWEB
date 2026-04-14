@@ -3,7 +3,13 @@
 // - GET  /api/v1/stage-tests/options
 // - POST /api/v1/stage-tests/run
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   fetchStageTestOptions,
   runStageTest,
@@ -13,6 +19,8 @@ import type {
   StageTestRunResponse,
   StageTestStrategyOption,
 } from "../../types/stageTests";
+import type { StageTestRunCaseItem } from "../../types/trading";
+import StageTestCaseChartModal from "./StageTestCaseChartModal";
 
 type Props = {
   open: boolean;
@@ -24,6 +32,48 @@ const REFRESH_MS = 15000;
 function fmtPct(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "-";
   return `${value.toFixed(2)}%`;
+}
+
+function fmtNumber(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString("pt-PT", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6,
+    });
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(",", "."));
+    if (Number.isFinite(parsed)) {
+      return parsed.toLocaleString("pt-PT", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+      });
+    }
+
+    return value;
+  }
+
+  return "-";
+}
+
+function fmtDate(value: string | null | undefined): string {
+  if (!value) return "-";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return parsed.toLocaleString("pt-PT");
+}
+
+function caseLabel(item: StageTestRunCaseItem): string {
+  const parts = [
+    item.case_number != null ? `#${item.case_number}` : item.id,
+    item.side || "-",
+    item.outcome || item.status || "-",
+  ];
+
+  return parts.join(" / ");
 }
 
 export default function StageTestRunModal({ open, onClose }: Props) {
@@ -43,7 +93,9 @@ export default function StageTestRunModal({ open, onClose }: Props) {
   const [minCandles, setMinCandles] = useState<number>(1);
   const [extraArgsText, setExtraArgsText] = useState("");
 
-  async function loadOptions() {
+  const [selectedCase, setSelectedCase] = useState<StageTestRunCaseItem | null>(null);
+
+  const loadOptions = useCallback(async () => {
     try {
       setLoadingOptions(true);
       setError("");
@@ -58,7 +110,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
     } finally {
       setLoadingOptions(false);
     }
-  }
+  }, [minCandles]);
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +122,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
     }, REFRESH_MS);
 
     return () => window.clearInterval(timer);
-  }, [open, minCandles]);
+  }, [open, loadOptions]);
 
   const symbols = useMemo(() => {
     return Array.from(new Set(items.map((item) => item.symbol))).sort((a, b) =>
@@ -136,6 +188,10 @@ export default function StageTestRunModal({ open, onClose }: Props) {
     return strategies.find((item) => item.key === strategy) ?? null;
   }, [strategies, strategy]);
 
+  const cases = useMemo(() => {
+    return Array.isArray(runResult?.cases) ? runResult.cases : [];
+  }, [runResult]);
+
   async function handleRun() {
     if (!symbol || !timeframe || !strategy) return;
 
@@ -143,6 +199,7 @@ export default function StageTestRunModal({ open, onClose }: Props) {
       setRunning(true);
       setError("");
       setRunResult(null);
+      setSelectedCase(null);
 
       const extraArgs = extraArgsText
         .split(" ")
@@ -170,233 +227,303 @@ export default function StageTestRunModal({ open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div style={overlayStyle}>
-      <div style={modalStyle}>
-        <div style={headerStyle}>
-          <h2 style={{ margin: 0 }}>Run Stage Testes</h2>
-          <button onClick={onClose} style={closeButtonStyle}>
-            Fechar
-          </button>
-        </div>
+    <>
+      <div style={overlayStyle}>
+        <div style={modalStyle}>
+          <div style={headerStyle}>
+            <h2 style={{ margin: 0 }}>Run Stage Testes</h2>
+            <button onClick={onClose} style={closeButtonStyle}>
+              Fechar
+            </button>
+          </div>
 
-        <div style={gridStyle}>
-          <label style={fieldStyle}>
-            <span>Símbolo</span>
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              style={inputStyle}
-            >
-              {symbols.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div style={gridStyle}>
+            <label style={fieldStyle}>
+              <span>Símbolo</span>
+              <select
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                style={inputStyle}
+              >
+                {symbols.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label style={fieldStyle}>
-            <span>Timeframe</span>
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              style={inputStyle}
-            >
-              {timeframesForSelectedSymbol.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label style={fieldStyle}>
+              <span>Timeframe</span>
+              <select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
+                style={inputStyle}
+              >
+                {timeframesForSelectedSymbol.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label style={fieldStyle}>
-            <span>Estratégia</span>
-            <select
-              value={strategy}
-              onChange={(e) => setStrategy(e.target.value)}
-              style={inputStyle}
-            >
-              {strategies.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label style={fieldStyle}>
+              <span>Estratégia</span>
+              <select
+                value={strategy}
+                onChange={(e) => setStrategy(e.target.value)}
+                style={inputStyle}
+              >
+                {strategies.map((item) => (
+                  <option key={item.key} value={item.key}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label style={fieldStyle}>
-            <span>Mínimo de candles</span>
+            <label style={fieldStyle}>
+              <span>Mínimo de candles</span>
+              <input
+                type="number"
+                min={1}
+                value={minCandles}
+                onChange={(e) => setMinCandles(Number(e.target.value || 1))}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+
+          <label style={{ ...fieldStyle, marginTop: 12 }}>
+            <span>Extra args</span>
             <input
-              type="number"
-              min={1}
-              value={minCandles}
-              onChange={(e) => setMinCandles(Number(e.target.value || 1))}
+              value={extraArgsText}
+              onChange={(e) => setExtraArgsText(e.target.value)}
               style={inputStyle}
+              placeholder="--rsi_period 14 --target_percent 0.15"
             />
           </label>
-        </div>
 
-        <label style={{ ...fieldStyle, marginTop: 12 }}>
-          <span>Extra args</span>
-          <input
-            value={extraArgsText}
-            onChange={(e) => setExtraArgsText(e.target.value)}
-            style={inputStyle}
-            placeholder="--rsi_period 14 --target_percent 0.15"
-          />
-        </label>
-
-        <div style={infoBoxStyle}>
-          <div>
-            <strong>Atualizado:</strong>{" "}
-            {refreshedAt ? new Date(refreshedAt).toLocaleString("pt-PT") : "-"}
-          </div>
-          <div>
-            <strong>Total de combinações:</strong> {items.length}
-          </div>
-          <div>
-            <strong>Total de estratégias:</strong> {strategies.length}
-          </div>
-          <div>
-            <strong>Carregando:</strong> {loadingOptions ? "Sim" : "Não"}
-          </div>
-        </div>
-
-        {selectedStrategy && (
-          <div style={summaryBoxStyle}>
+          <div style={infoBoxStyle}>
             <div>
-              <strong>Estratégia:</strong> {selectedStrategy.label}
+              <strong>Atualizado:</strong>{" "}
+              {refreshedAt ? new Date(refreshedAt).toLocaleString("pt-PT") : "-"}
             </div>
             <div>
-              <strong>Key:</strong> {selectedStrategy.key}
+              <strong>Total de combinações:</strong> {items.length}
             </div>
             <div>
-              <strong>Descrição:</strong> {selectedStrategy.description || "-"}
+              <strong>Total de estratégias:</strong> {strategies.length}
+            </div>
+            <div>
+              <strong>Carregando:</strong> {loadingOptions ? "Sim" : "Não"}
             </div>
           </div>
-        )}
 
-        {selectedItem && (
-          <div style={summaryBoxStyle}>
-            <div>
-              <strong>Combinação:</strong> {selectedItem.symbol} /{" "}
-              {selectedItem.timeframe}
-            </div>
-            <div>
-              <strong>Candles:</strong> {selectedItem.candles_count}
-            </div>
-            <div>
-              <strong>Primeiro:</strong> {selectedItem.first_candle || "-"}
-            </div>
-            <div>
-              <strong>Último:</strong> {selectedItem.last_candle || "-"}
-            </div>
-          </div>
-        )}
-
-        {error && <div style={errorStyle}>{error}</div>}
-
-        <div style={actionsStyle}>
-          <button onClick={() => void loadOptions()} style={secondaryButtonStyle}>
-            Atualizar lista
-          </button>
-
-          <button
-            onClick={() => void handleRun()}
-            disabled={running || !symbol || !timeframe || !strategy}
-            style={primaryButtonStyle}
-          >
-            {running ? "A executar..." : "Run"}
-          </button>
-        </div>
-
-        <div style={resultBoxStyle}>
-          <h3 style={{ marginTop: 0 }}>Resultado</h3>
-          {!runResult && <div>Nenhum run executado nesta sessão.</div>}
-
-          {runResult && (
-            <>
+          {selectedStrategy && (
+            <div style={summaryBoxStyle}>
               <div>
-                <strong>Status:</strong> {runResult.ok ? "OK" : "ERRO"}
+                <strong>Estratégia:</strong> {selectedStrategy.label}
               </div>
               <div>
-                <strong>Command:</strong> {runResult.command.join(" ")}
+                <strong>Key:</strong> {selectedStrategy.key}
               </div>
               <div>
-                <strong>Return code:</strong> {runResult.return_code}
+                <strong>Descrição:</strong> {selectedStrategy.description || "-"}
               </div>
-
-              {runResult.metrics && (
-                <div style={metricsBoxStyle}>
-                  <div>
-                    <strong>Strategy class:</strong>{" "}
-                    {runResult.metrics.strategy_class}
-                  </div>
-                  <div>
-                    <strong>Runtime strategy:</strong>{" "}
-                    {runResult.metrics.runtime_strategy}
-                  </div>
-                  <div>
-                    <strong>Total candles:</strong>{" "}
-                    {runResult.metrics.total_candles}
-                  </div>
-                  <div>
-                    <strong>Warmup:</strong> {runResult.metrics.warmup}
-                  </div>
-                  <div>
-                    <strong>Triggers:</strong> {runResult.metrics.triggers}
-                  </div>
-                  <div>
-                    <strong>Closed cases:</strong>{" "}
-                    {runResult.metrics.closed_cases}
-                  </div>
-                  <div>
-                    <strong>Hits:</strong> {runResult.metrics.hits}
-                  </div>
-                  <div>
-                    <strong>Fails:</strong> {runResult.metrics.fails}
-                  </div>
-                  <div>
-                    <strong>Timeouts:</strong> {runResult.metrics.timeouts}
-                  </div>
-                  <div>
-                    <strong>Hit rate:</strong>{" "}
-                    {fmtPct(runResult.metrics.hit_rate)}
-                  </div>
-                  <div>
-                    <strong>Fail rate:</strong>{" "}
-                    {fmtPct(runResult.metrics.fail_rate)}
-                  </div>
-                  <div>
-                    <strong>Timeout rate:</strong>{" "}
-                    {fmtPct(runResult.metrics.timeout_rate)}
-                  </div>
-                  <div>
-                    <strong>Primeiro candle:</strong>{" "}
-                    {runResult.metrics.first_candle || "-"}
-                  </div>
-                  <div>
-                    <strong>Último candle:</strong>{" "}
-                    {runResult.metrics.last_candle || "-"}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ marginTop: 12 }}>
-                <strong>STDOUT</strong>
-                <pre style={preStyle}>{runResult.stdout || "(vazio)"}</pre>
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <strong>STDERR</strong>
-                <pre style={preStyle}>{runResult.stderr || "(vazio)"}</pre>
-              </div>
-            </>
+            </div>
           )}
+
+          {selectedItem && (
+            <div style={summaryBoxStyle}>
+              <div>
+                <strong>Combinação:</strong> {selectedItem.symbol} /{" "}
+                {selectedItem.timeframe}
+              </div>
+              <div>
+                <strong>Candles:</strong> {selectedItem.candles_count}
+              </div>
+              <div>
+                <strong>Primeiro:</strong> {selectedItem.first_candle || "-"}
+              </div>
+              <div>
+                <strong>Último:</strong> {selectedItem.last_candle || "-"}
+              </div>
+            </div>
+          )}
+
+          {error && <div style={errorStyle}>{error}</div>}
+
+          <div style={actionsStyle}>
+            <button onClick={() => void loadOptions()} style={secondaryButtonStyle}>
+              Atualizar lista
+            </button>
+
+            <button
+              onClick={() => void handleRun()}
+              disabled={running || !symbol || !timeframe || !strategy}
+              style={primaryButtonStyle}
+            >
+              {running ? "A executar..." : "Run"}
+            </button>
+          </div>
+
+          <div style={resultBoxStyle}>
+            <h3 style={{ marginTop: 0 }}>Resultado</h3>
+            {!runResult && <div>Nenhum run executado nesta sessão.</div>}
+
+            {runResult && (
+              <>
+                <div>
+                  <strong>Status:</strong> {runResult.ok ? "OK" : "ERRO"}
+                </div>
+                <div>
+                  <strong>Command:</strong> {runResult.command.join(" ")}
+                </div>
+                <div>
+                  <strong>Return code:</strong> {runResult.return_code}
+                </div>
+
+                {runResult.metrics && (
+                  <div style={metricsBoxStyle}>
+                    <div>
+                      <strong>Strategy class:</strong>{" "}
+                      {runResult.metrics.strategy_class}
+                    </div>
+                    <div>
+                      <strong>Runtime strategy:</strong>{" "}
+                      {runResult.metrics.runtime_strategy}
+                    </div>
+                    <div>
+                      <strong>Total candles:</strong>{" "}
+                      {runResult.metrics.total_candles}
+                    </div>
+                    <div>
+                      <strong>Warmup:</strong> {runResult.metrics.warmup}
+                    </div>
+                    <div>
+                      <strong>Triggers:</strong> {runResult.metrics.triggers}
+                    </div>
+                    <div>
+                      <strong>Closed cases:</strong>{" "}
+                      {runResult.metrics.closed_cases}
+                    </div>
+                    <div>
+                      <strong>Hits:</strong> {runResult.metrics.hits}
+                    </div>
+                    <div>
+                      <strong>Fails:</strong> {runResult.metrics.fails}
+                    </div>
+                    <div>
+                      <strong>Timeouts:</strong> {runResult.metrics.timeouts}
+                    </div>
+                    <div>
+                      <strong>Hit rate:</strong>{" "}
+                      {fmtPct(runResult.metrics.hit_rate)}
+                    </div>
+                    <div>
+                      <strong>Fail rate:</strong>{" "}
+                      {fmtPct(runResult.metrics.fail_rate)}
+                    </div>
+                    <div>
+                      <strong>Timeout rate:</strong>{" "}
+                      {fmtPct(runResult.metrics.timeout_rate)}
+                    </div>
+                    <div>
+                      <strong>Primeiro candle:</strong>{" "}
+                      {runResult.metrics.first_candle || "-"}
+                    </div>
+                    <div>
+                      <strong>Último candle:</strong>{" "}
+                      {runResult.metrics.last_candle || "-"}
+                    </div>
+                  </div>
+                )}
+
+                <div style={casesSectionStyle}>
+                  <div style={casesHeaderStyle}>
+                    <h3 style={{ margin: 0 }}>Cases do run</h3>
+                    <span style={badgeStyle}>{cases.length}</span>
+                  </div>
+
+                  {cases.length === 0 ? (
+                    <div style={emptyCasesStyle}>
+                      Este run não devolveu lista de cases. O gráfico visual abre
+                      quando o backend devolve os cases do stage test no response.
+                    </div>
+                  ) : (
+                    <div style={casesListStyle}>
+                      {cases.map((item) => (
+                        <div key={item.id} style={caseRowStyle}>
+                          <div style={caseMainInfoStyle}>
+                            <div style={caseTitleStyle}>{caseLabel(item)}</div>
+                            <div style={caseMetaStyle}>
+                              <span>
+                                <strong>Trigger:</strong> {fmtNumber(item.trigger_price)}
+                              </span>
+                              <span>
+                                <strong>Entrada:</strong> {fmtNumber(item.entry_price)}
+                              </span>
+                              <span>
+                                <strong>Saída:</strong> {fmtNumber(item.close_price)}
+                              </span>
+                            </div>
+                            <div style={caseMetaStyle}>
+                              <span>
+                                <strong>Trigger time:</strong> {fmtDate(item.trigger_time)}
+                              </span>
+                              <span>
+                                <strong>Entrada time:</strong> {fmtDate(item.entry_time)}
+                              </span>
+                              <span>
+                                <strong>Saída time:</strong> {fmtDate(item.close_time)}
+                              </span>
+                            </div>
+                            <div style={caseMetaStyle}>
+                              <span>
+                                <strong>Close reason:</strong> {item.close_reason || "-"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            style={viewChartButtonStyle}
+                            onClick={() => setSelectedCase(item)}
+                          >
+                            Ver no gráfico
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <strong>STDOUT</strong>
+                  <pre style={preStyle}>{runResult.stdout || "(vazio)"}</pre>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <strong>STDERR</strong>
+                  <pre style={preStyle}>{runResult.stderr || "(vazio)"}</pre>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      <StageTestCaseChartModal
+        open={Boolean(selectedCase)}
+        onClose={() => setSelectedCase(null)}
+        symbol={symbol}
+        timeframe={timeframe}
+        strategyLabel={selectedStrategy?.label || strategy}
+        selectedCase={selectedCase}
+      />
+    </>
   );
 }
 
@@ -413,7 +540,7 @@ const overlayStyle: CSSProperties = {
 
 const modalStyle: CSSProperties = {
   width: "100%",
-  maxWidth: 960,
+  maxWidth: 1080,
   maxHeight: "90vh",
   overflow: "auto",
   background: "#0f172a",
@@ -538,4 +665,92 @@ const preStyle: CSSProperties = {
   border: "1px solid #1e293b",
   maxHeight: 240,
   overflow: "auto",
+};
+
+const casesSectionStyle: CSSProperties = {
+  marginTop: 16,
+  padding: 12,
+  borderRadius: 12,
+  background: "#0b1220",
+  border: "1px solid #1e293b",
+};
+
+const casesHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 12,
+};
+
+const badgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 28,
+  height: 28,
+  padding: "0 10px",
+  borderRadius: 999,
+  background: "#1d4ed8",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: 12,
+};
+
+const emptyCasesStyle: CSSProperties = {
+  padding: 12,
+  borderRadius: 10,
+  background: "#111827",
+  border: "1px solid #1f2937",
+  color: "#cbd5e1",
+  lineHeight: 1.6,
+};
+
+const casesListStyle: CSSProperties = {
+  display: "grid",
+  gap: 10,
+};
+
+const caseRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 16,
+  padding: 12,
+  borderRadius: 12,
+  background: "#111827",
+  border: "1px solid #1f2937",
+};
+
+const caseMainInfoStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  flex: 1,
+  minWidth: 0,
+};
+
+const caseTitleStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: "#f8fafc",
+};
+
+const caseMetaStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 12,
+  color: "#cbd5e1",
+  fontSize: 13,
+  lineHeight: 1.5,
+};
+
+const viewChartButtonStyle: CSSProperties = {
+  height: 40,
+  padding: "0 16px",
+  borderRadius: 10,
+  border: "1px solid #2563eb",
+  background: "#1d4ed8",
+  color: "#fff",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
