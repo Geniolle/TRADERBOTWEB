@@ -1,9 +1,23 @@
 // src/utils/format.ts
 
+const APP_TIMEZONE = "Europe/Lisbon";
+
+function hasExplicitTimezone(value: string): boolean {
+  return /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim());
+}
+
 function toValidDate(value: string | null | undefined): Date | null {
   if (!value) return null;
 
-  const date = new Date(value);
+  const normalizedValue = String(value).trim();
+  if (!normalizedValue) return null;
+
+  const valueToParse = hasExplicitTimezone(normalizedValue)
+    ? normalizedValue
+    : `${normalizedValue}Z`;
+
+  const date = new Date(valueToParse);
+
   if (Number.isNaN(date.getTime())) {
     return null;
   }
@@ -16,6 +30,7 @@ export function formatDateTime(value: string | null): string {
   if (!date) return value || "-";
 
   return date.toLocaleString("pt-PT", {
+    timeZone: APP_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -63,7 +78,7 @@ export function floorToMinuteIso(value: string): string {
     return value;
   }
 
-  date.setSeconds(0, 0);
+  date.setUTCSeconds(0, 0);
   return date.toISOString();
 }
 
@@ -96,7 +111,7 @@ export function floorToTimeframeIso(value: string, timeframe: string): string {
 
   const minutes = timeframeToMinutes(timeframe);
 
-  date.setSeconds(0, 0);
+  date.setUTCSeconds(0, 0);
 
   if (minutes < 60) {
     const currentMinutes = date.getUTCMinutes();
