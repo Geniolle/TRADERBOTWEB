@@ -114,26 +114,28 @@ function DashboardPage() {
     providersError,
   } = useMarketProviders();
 
-  const {
-    marketTypes,
-    selectedMarketType,
-    setSelectedMarketType,
-    selectedCatalog,
-    setSelectedCatalog,
-    catalogSymbols,
-    selectedSymbol,
-    setSelectedSymbol,
-    availableCatalogs,
-    selectedMarketTypeLabel,
-    selectedCatalogLabel,
-    selectedSymbolData,
-    loadingMarketTypes,
-    loadingCatalogs,
-    loadingSymbols,
-    marketTypesError,
-    catalogsError,
-    symbolsError,
-  } = useMarketCatalog();
+const {
+  marketTypes,
+  selectedMarketType,
+  setSelectedMarketType,
+  selectedCatalog,
+  setSelectedCatalog,
+  catalogSymbols,
+  selectedSymbol,
+  setSelectedSymbol,
+  availableCatalogs,
+  selectedMarketTypeLabel,
+  selectedCatalogLabel,
+  selectedSymbolData,
+  loadingMarketTypes,
+  loadingCatalogs,
+  loadingSymbols,
+  marketTypesError,
+  catalogsError,
+  symbolsError,
+} = useMarketCatalog({
+  selectedProvider,
+});
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
