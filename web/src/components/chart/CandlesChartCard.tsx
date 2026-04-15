@@ -22,6 +22,7 @@ import ChartSummary from "./ChartSummary";
 import ChartLegend from "./ChartLegend";
 import ChartEmptyState from "./ChartEmptyState";
 import ChartLoadingState from "./ChartLoadingState";
+import ChartStrategyHighlights from "./ChartStrategyHighlights";
 import type { IndicatorSettings } from "../../hooks/useIndicatorSettings";
 import { buildPriceScaleData } from "./utils/chartScale";
 import { useChartCountdown } from "./hooks/useChartCountdown";
@@ -38,6 +39,11 @@ type CandlesChartCardProps = {
     markers: OverlayMarker[];
     lines: OverlayLine[];
   };
+  strategyHighlights: Array<{
+    id: string;
+    label: string;
+    score: number;
+  }>;
   selectedMarketTypeLabel: string;
   selectedCatalogLabel: string;
   effectiveChartSymbol: string;
@@ -288,6 +294,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     chartData,
     candles,
     overlays,
+    strategyHighlights,
     selectedMarketTypeLabel,
     selectedCatalogLabel,
     effectiveChartSymbol,
@@ -357,6 +364,8 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     showStrategyOverlays &&
     hasOverlayContent;
   const showFooter = !loadingCandles && hasChartSnapshot;
+  const showStrategyHighlights =
+    !loadingCandles && hasChartSnapshot && strategyHighlights.length > 0;
 
   return (
     <section style={mainCardStyle}>
@@ -521,6 +530,10 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                       height: "100%",
                     }}
                   />
+
+                  {showStrategyHighlights && (
+                    <ChartStrategyHighlights items={strategyHighlights} />
+                  )}
 
                   {showPriceScale && (
                     <ChartPriceScale levels={priceScaleData.levels} />

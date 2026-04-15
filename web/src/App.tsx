@@ -29,7 +29,7 @@ import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
 import useStageTests from "./hooks/useStageTests";
 import useStrategies from "./hooks/useStrategies";
-import StageTestsPage from "./pages/StageTestsPage";
+import StageTestsPage from "./pages/StageTestsPageContent";
 
 type TimeframeOption = {
   value: string;
@@ -73,6 +73,10 @@ function getCurrentPathname(): string {
   return window.location.pathname || "/";
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function NavLink({
   href,
   label,
@@ -114,28 +118,28 @@ function DashboardPage() {
     providersError,
   } = useMarketProviders();
 
-const {
-  marketTypes,
-  selectedMarketType,
-  setSelectedMarketType,
-  selectedCatalog,
-  setSelectedCatalog,
-  catalogSymbols,
-  selectedSymbol,
-  setSelectedSymbol,
-  availableCatalogs,
-  selectedMarketTypeLabel,
-  selectedCatalogLabel,
-  selectedSymbolData,
-  loadingMarketTypes,
-  loadingCatalogs,
-  loadingSymbols,
-  marketTypesError,
-  catalogsError,
-  symbolsError,
-} = useMarketCatalog({
-  selectedProvider,
-});
+  const {
+    marketTypes,
+    selectedMarketType,
+    setSelectedMarketType,
+    selectedCatalog,
+    setSelectedCatalog,
+    catalogSymbols,
+    selectedSymbol,
+    setSelectedSymbol,
+    availableCatalogs,
+    selectedMarketTypeLabel,
+    selectedCatalogLabel,
+    selectedSymbolData,
+    loadingMarketTypes,
+    loadingCatalogs,
+    loadingSymbols,
+    marketTypesError,
+    catalogsError,
+    symbolsError,
+  } = useMarketCatalog({
+    selectedProvider,
+  });
 
   const { strategies, loadingStrategies, strategiesError } = useStrategies();
 
@@ -281,6 +285,7 @@ const {
   });
 
   const {
+    stageTests,
     selectedRunId,
     runSearch,
     setRunSearch,
@@ -308,6 +313,42 @@ const {
     loadingRunDetails,
     runDetailsError,
   } = useRunDetails(selectedRunId);
+
+  const strategyHighlights = useMemo(() => {
+    const normalizedSymbol = normalizeText(effectiveChartSymbol);
+    const normalizedTimeframe = normalizeText(effectiveChartTimeframe);
+
+    if (!normalizedSymbol || !normalizedTimeframe) {
+      return [];
+    }
+
+    return stageTests
+      .filter((item) => {
+        const itemSymbol = normalizeText(item.last_run?.symbol);
+        const itemTimeframe = normalizeText(item.last_run?.timeframe);
+
+        return (
+          itemSymbol === normalizedSymbol &&
+          itemTimeframe === normalizedTimeframe
+        );
+      })
+      .map((item) => ({
+        id: item.strategy_key,
+        label: item.strategy_name || item.strategy_key,
+        score: Number(item.hit_rate ?? 0),
+      }))
+      .filter(
+        (item) => Number.isFinite(item.score) && item.score >= 80
+      )
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+
+        return a.label.localeCompare(b.label, "pt-PT");
+      })
+      .slice(0, 5);
+  }, [stageTests, effectiveChartSymbol, effectiveChartTimeframe]);
 
   const loadingCandles = useMemo(() => {
     if (!isMarketSelectionComplete) return false;
@@ -609,6 +650,7 @@ const {
             chartData={chartData}
             candles={candles}
             overlays={overlays}
+            strategyHighlights={strategyHighlights}
             selectedMarketTypeLabel={selectedMarketTypeLabel}
             selectedCatalogLabel={selectedCatalogLabel}
             effectiveChartSymbol={effectiveChartSymbol}
