@@ -10,6 +10,7 @@ type UseRealtimeFeedParams = {
   effectiveChartCatalog: string;
   effectiveChartSymbol: string;
   effectiveChartTimeframe: string;
+  selectedProvider: string;
   setCandles: React.Dispatch<React.SetStateAction<CandleItem[]>>;
   reloadCandles: (showLoader?: boolean) => Promise<void>;
 };
@@ -93,6 +94,11 @@ function normalizeTimeframe(value: unknown): string {
   };
 
   return aliases[normalized] ?? normalized;
+}
+
+function normalizeProvider(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
 }
 
 function safeNumber(value: unknown): number {
@@ -226,11 +232,19 @@ function shouldReloadCandles(reason: string | null | undefined): boolean {
   return false;
 }
 
-function buildLatestUrl(symbol: string, timeframe: string): string {
+function buildLatestUrl(
+  symbol: string,
+  timeframe: string,
+  provider?: string
+): string {
   const query = new URLSearchParams({
     symbol,
     timeframe,
   });
+
+  if (provider) {
+    query.set("provider", provider);
+  }
 
   return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
 }
@@ -261,9 +275,10 @@ function extractErrorMessage(status: number, payloadText: string): string {
 
 async function fetchLatestPersistedCandle(
   symbol: string,
-  timeframe: string
+  timeframe: string,
+  provider?: string
 ): Promise<CandleItem | null> {
-  const response = await fetch(buildLatestUrl(symbol, timeframe), {
+  const response = await fetch(buildLatestUrl(symbol, timeframe, provider), {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -313,17 +328,20 @@ function useRealtimeFeed({
   effectiveChartCatalog,
   effectiveChartSymbol,
   effectiveChartTimeframe,
+  selectedProvider,
   setCandles,
   reloadCandles,
 }: UseRealtimeFeedParams): UseRealtimeFeedResult {
   const scopeKey = useMemo(() => {
     return [
+      normalizeProvider(selectedProvider),
       effectiveChartMarketType || "",
       effectiveChartCatalog || "",
       effectiveChartSymbol || "",
       effectiveChartTimeframe || "",
     ].join("::");
   }, [
+    selectedProvider,
     effectiveChartMarketType,
     effectiveChartCatalog,
     effectiveChartSymbol,
@@ -370,6 +388,7 @@ function useRealtimeFeed({
     const currentScopeKey = scopeKey;
     const currentSymbol = normalizeSymbol(effectiveChartSymbol);
     const currentTimeframe = normalizeTimeframe(effectiveChartTimeframe);
+    const currentProvider = normalizeProvider(selectedProvider);
 
     isIntentionalCloseRef.current = false;
 
@@ -387,7 +406,8 @@ function useRealtimeFeed({
 
         const latestPersisted = await fetchLatestPersistedCandle(
           nextTick.symbol,
-          nextTick.timeframe
+          nextTick.timeframe,
+          currentProvider
         );
 
         if (!isMounted) return;
@@ -413,7 +433,7 @@ function useRealtimeFeed({
               candleTime: latestPersisted?.open_time ?? nextTick.open_time,
               receivedAt: providerReceivedAt,
               count: nextTick.count,
-              extra: `Persistência=CONFIRMADA | ConfirmadoEm=${persistedAt}`,
+              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=CONFIRMADA | ConfirmadoEm=${persistedAt}`,
             }),
           }));
           return;
@@ -433,8 +453,7 @@ function useRealtimeFeed({
             candleTime: nextTick.open_time,
             receivedAt: providerReceivedAt,
             count: nextTick.count,
-            extra:
-              "Persistência=PENDENTE | O provider enviou o candle, mas a API local ainda não confirmou gravação no SQLite.",
+            extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=PENDENTE | O provider enviou o candle, mas a API local ainda não confirmou gravação no SQLite.`,
           }),
         }));
       } catch (error) {
@@ -461,7 +480,7 @@ function useRealtimeFeed({
             candleTime: nextTick.open_time,
             receivedAt: providerReceivedAt,
             count: nextTick.count,
-            extra: `Persistência=ERRO | ${message}`,
+            extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=ERRO | ${message}`,
           }),
         }));
       }
@@ -475,7 +494,7 @@ function useRealtimeFeed({
         ...DEFAULT_RESULT,
         wsStatus: "connected",
         lastWsEvent: "connected",
-        lastProviderUpdateLog: `Ligação aberta em ${formatNowPt()}. A aguardar candles do provider.`,
+        lastProviderUpdateLog: `Ligação aberta em ${formatNowPt()}. A aguardar candles do provider ${currentProvider || "backend-default"}.`,
         lastProviderUpdateStatus: "waiting",
       });
 
@@ -489,6 +508,7 @@ function useRealtimeFeed({
             catalog: effectiveChartCatalog || undefined,
             symbol: effectiveChartSymbol,
             timeframe: effectiveChartTimeframe,
+            provider: currentProvider || undefined,
           })
         );
       } catch (error) {
@@ -523,7 +543,7 @@ function useRealtimeFeed({
                 : prev.lastProviderUpdateStatus,
             lastProviderUpdateLog:
               nextEvent === "subscribed"
-                ? `Subscrição confirmada em ${formatNowPt()}. A aguardar dados do provider para ${currentSymbol} em ${currentTimeframe}.`
+                ? `Subscrição confirmada em ${formatNowPt()}. A aguardar dados do provider ${currentProvider || "backend-default"} para ${currentSymbol} em ${currentTimeframe}.`
                 : prev.lastProviderUpdateLog,
           }));
           return;
@@ -607,9 +627,9 @@ function useRealtimeFeed({
               extra:
                 typeof reasonValue === "string" && reasonValue
                   ? shouldReloadCandles(reasonValue)
-                    ? `Motivo=${reasonValue} | ConfirmaçãoSQLite=EM_CURSO`
-                    : `Motivo=${reasonValue}`
-                  : undefined,
+                    ? `ProviderSelecionado=${currentProvider || "backend-default"} | Motivo=${reasonValue} | ConfirmaçãoSQLite=EM_CURSO`
+                    : `ProviderSelecionado=${currentProvider || "backend-default"} | Motivo=${reasonValue}`
+                  : `ProviderSelecionado=${currentProvider || "backend-default"}`,
             }),
           }));
 
@@ -645,8 +665,8 @@ function useRealtimeFeed({
                       : Number(countValue ?? 0),
                   extra:
                     typeof reasonValue === "string" && reasonValue
-                      ? `Motivo=${reasonValue} | ConfirmaçãoSQLite=OK`
-                      : "ConfirmaçãoSQLite=OK",
+                      ? `ProviderSelecionado=${currentProvider || "backend-default"} | Motivo=${reasonValue} | ConfirmaçãoSQLite=OK`
+                      : `ProviderSelecionado=${currentProvider || "backend-default"} | ConfirmaçãoSQLite=OK`,
                 }),
               }));
             } catch (error) {
@@ -673,7 +693,7 @@ function useRealtimeFeed({
                     typeof countValue === "number"
                       ? countValue
                       : Number(countValue ?? 0),
-                  extra: `ConfirmaçãoSQLite=ERRO | ${message}`,
+                  extra: `ProviderSelecionado=${currentProvider || "backend-default"} | ConfirmaçãoSQLite=ERRO | ${message}`,
                 }),
               }));
             }
@@ -700,7 +720,7 @@ function useRealtimeFeed({
             lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "provider_error",
             lastProviderUpdateStatus: "error",
-            lastProviderUpdateLog: `Erro do provider | Símbolo=${
+            lastProviderUpdateLog: `Erro do provider | Provider=${currentProvider || "backend-default"} | Símbolo=${
               parsedSymbol || currentSymbol || "-"
             } | Timeframe=${
               parsedTimeframe || currentTimeframe || "-"
@@ -752,8 +772,7 @@ function useRealtimeFeed({
               candleTime: lastOpenTime,
               receivedAt,
               count: sortedItems.length,
-              extra:
-                "Snapshot=RECEBIDO_VIA_WS | ConfirmaçãoSQLite=AGUARDANDO",
+              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Snapshot=RECEBIDO_VIA_WS | ConfirmaçãoSQLite=AGUARDANDO`,
             }),
           }));
 
@@ -816,8 +835,7 @@ function useRealtimeFeed({
               candleTime: nextTick.open_time,
               receivedAt,
               count: nextTick.count,
-              extra:
-                "Provider=RECEBIDO | ConfirmaçãoSQLite=EM_CURSO",
+              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Provider=RECEBIDO | ConfirmaçãoSQLite=EM_CURSO`,
             }),
           }));
 
@@ -900,6 +918,7 @@ function useRealtimeFeed({
   }, [
     hasSelection,
     scopeKey,
+    selectedProvider,
     effectiveChartMarketType,
     effectiveChartCatalog,
     effectiveChartSymbol,

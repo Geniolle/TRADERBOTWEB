@@ -13,6 +13,12 @@ type TimeframeOption = {
 
 type MarketFiltersCardProps = {
   sidebarCardStyle: React.CSSProperties;
+  loadingProviders: boolean;
+  providersError: string;
+  providers: string[];
+  selectedProvider: string;
+  setSelectedProvider: (value: string) => void;
+  backendSelectedProvider: string;
   loadingMarketTypes: boolean;
   loadingCatalogs: boolean;
   loadingSymbols: boolean;
@@ -143,6 +149,12 @@ function getMarketStatusInfo(
 
 function MarketFiltersCard({
   sidebarCardStyle,
+  loadingProviders,
+  providersError,
+  providers,
+  selectedProvider,
+  setSelectedProvider,
+  backendSelectedProvider,
   loadingMarketTypes,
   loadingCatalogs,
   loadingSymbols,
@@ -187,6 +199,45 @@ function MarketFiltersCard({
       </h2>
 
       <div style={{ display: "grid", gap: 12 }}>
+        <div>
+          <label
+            htmlFor="market-provider"
+            style={{
+              display: "block",
+              marginBottom: 6,
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#334155",
+            }}
+          >
+            Provider dos dados
+          </label>
+
+          <select
+            id="market-provider"
+            value={selectedProvider}
+            onChange={(e) => setSelectedProvider(e.target.value)}
+            disabled={loadingProviders || providers.length === 0}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #cbd5e1",
+              outline: "none",
+              fontSize: 14,
+              background: "#fff",
+            }}
+          >
+            <option value="">Selecione um provider</option>
+            {providers.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div>
           <label
             htmlFor="market-type"
@@ -366,6 +417,19 @@ function MarketFiltersCard({
         </div>
       </div>
 
+      {loadingProviders && (
+        <p style={{ margin: "12px 0 0 0" }}>A carregar providers...</p>
+      )}
+
+      {!loadingProviders && providersError && (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ color: "#dc2626", fontWeight: "bold", marginBottom: 6 }}>
+            Erro ao carregar providers
+          </p>
+          <p style={{ margin: 0 }}>{providersError}</p>
+        </div>
+      )}
+
       {loadingMarketTypes && (
         <p style={{ margin: "12px 0 0 0" }}>A carregar tipos...</p>
       )}
@@ -419,6 +483,13 @@ function MarketFiltersCard({
               color: "#475569",
             }}
           >
+            <div>
+              <strong>Provider selecionado:</strong> {selectedProvider || "-"}
+            </div>
+            <div>
+              <strong>Provider default do backend:</strong>{" "}
+              {backendSelectedProvider || "-"}
+            </div>
             <div>
               <strong>Tipo selecionado:</strong> {selectedMarketTypeLabel}
             </div>

@@ -24,6 +24,7 @@ import useChartDerivedData from "./hooks/useChartDerivedData";
 import useChartIndicators from "./hooks/useChartIndicators";
 import useIndicatorSettings from "./hooks/useIndicatorSettings";
 import useMarketCatalog from "./hooks/useMarketCatalog";
+import useMarketProviders from "./hooks/useMarketProviders.ts";
 import useRealtimeFeed from "./hooks/useRealtimeFeed";
 import useRunDetails from "./hooks/useRunDetails";
 import useStageTests from "./hooks/useStageTests";
@@ -103,6 +104,15 @@ function NavLink({
 
 function DashboardPage() {
   const { health, loadingHealth, healthError } = useApiHealth();
+
+  const {
+    providers,
+    selectedProvider,
+    setSelectedProvider,
+    backendSelectedProvider,
+    loadingProviders,
+    providersError,
+  } = useMarketProviders();
 
   const {
     marketTypes,
@@ -240,6 +250,7 @@ function DashboardPage() {
   } = useCandles({
     effectiveChartSymbol,
     effectiveChartTimeframe,
+    selectedProvider,
   });
 
   const {
@@ -262,6 +273,7 @@ function DashboardPage() {
     effectiveChartCatalog,
     effectiveChartSymbol,
     effectiveChartTimeframe,
+    selectedProvider,
     setCandles,
     reloadCandles,
   });
@@ -516,6 +528,12 @@ function DashboardPage() {
             <div style={{ display: "grid", gap: 16 }}>
               <MarketFiltersCard
                 sidebarCardStyle={sidebarCardStyle}
+                loadingProviders={loadingProviders}
+                providersError={providersError}
+                providers={providers}
+                selectedProvider={selectedProvider}
+                setSelectedProvider={setSelectedProvider}
+                backendSelectedProvider={backendSelectedProvider}
                 loadingMarketTypes={loadingMarketTypes}
                 loadingCatalogs={loadingCatalogs}
                 loadingSymbols={loadingSymbols}

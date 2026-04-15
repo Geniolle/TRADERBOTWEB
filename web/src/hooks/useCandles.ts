@@ -12,6 +12,7 @@ import type {
 type UseCandlesParams = {
   effectiveChartSymbol: string;
   effectiveChartTimeframe: string;
+  selectedProvider: string;
 };
 
 type UseCandlesResult = {
@@ -56,6 +57,11 @@ function normalizeTimeframe(value: unknown): string {
   };
 
   return aliases[normalized] ?? normalized;
+}
+
+function normalizeProvider(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
 }
 
 function normalizeIsoString(value: unknown): string {
@@ -199,7 +205,7 @@ function getDerivedCoverageFromItems(items: CandleItem[]) {
 }
 
 function buildCoverageMeta(
-  payload: Partial<CandleListResponse> | null,
+  payload: Partial<CandleListResponse> | CandleCoverageMeta | null,
   items: CandleItem[],
   symbol: string,
   timeframe: string,
@@ -364,6 +370,7 @@ async function fetchJson(url: string): Promise<unknown> {
 function buildCandlesUrl(params: {
   symbol: string;
   timeframe: string;
+  provider?: string;
   startAt?: string;
   endAt?: string;
   limit?: number;
@@ -373,6 +380,10 @@ function buildCandlesUrl(params: {
     symbol: params.symbol,
     timeframe: params.timeframe,
   });
+
+  if (params.provider) {
+    query.set("provider", params.provider);
+  }
 
   if (params.startAt) {
     query.set("start_at", params.startAt);
@@ -393,11 +404,19 @@ function buildCandlesUrl(params: {
   return `${API_HTTP_BASE_URL}/candles?${query.toString()}`;
 }
 
-function buildLatestUrl(symbol: string, timeframe: string): string {
+function buildLatestUrl(
+  symbol: string,
+  timeframe: string,
+  provider?: string
+): string {
   const query = new URLSearchParams({
     symbol,
     timeframe,
   });
+
+  if (provider) {
+    query.set("provider", provider);
+  }
 
   return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
 }
@@ -405,6 +424,7 @@ function buildLatestUrl(symbol: string, timeframe: string): string {
 function useCandles({
   effectiveChartSymbol,
   effectiveChartTimeframe,
+  selectedProvider,
 }: UseCandlesParams): UseCandlesResult {
   const [candles, setCandles] = useState<CandleItem[]>([]);
   const [coverageMeta, setCoverageMeta] = useState<CandleCoverageMeta | null>(null);
@@ -413,10 +433,11 @@ function useCandles({
 
   const requestKey = useMemo(() => {
     return [
+      normalizeProvider(selectedProvider),
       normalizeSymbol(effectiveChartSymbol),
       normalizeTimeframe(effectiveChartTimeframe),
     ].join("::");
-  }, [effectiveChartSymbol, effectiveChartTimeframe]);
+  }, [effectiveChartSymbol, effectiveChartTimeframe, selectedProvider]);
 
   const activeRequestKeyRef = useRef("");
   const candlesRef = useRef<CandleItem[]>([]);
@@ -437,6 +458,7 @@ function useCandles({
     ): Promise<FetchCandlesResult> => {
       const symbol = normalizeSymbol(effectiveChartSymbol);
       const timeframe = normalizeTimeframe(effectiveChartTimeframe);
+      const provider = normalizeProvider(selectedProvider);
 
       if (!symbol || !timeframe) {
         return {
@@ -446,7 +468,7 @@ function useCandles({
         };
       }
 
-      const currentRequestKey = `${symbol}::${timeframe}`;
+      const currentRequestKey = `${provider}::${symbol}::${timeframe}`;
       activeRequestKeyRef.current = currentRequestKey;
 
       if (showLoader) {
@@ -463,6 +485,7 @@ function useCandles({
             buildCandlesUrl({
               symbol,
               timeframe,
+              provider,
               mode: "full",
             })
           );
@@ -496,7 +519,9 @@ function useCandles({
             ? candlesRef.current[candlesRef.current.length - 1]
             : null;
 
-        const latestPayload = await fetchJson(buildLatestUrl(symbol, timeframe));
+        const latestPayload = await fetchJson(
+          buildLatestUrl(symbol, timeframe, provider)
+        );
         const latestCandle = normalizeCandleItem(
           latestPayload as LatestCandleResponse
         );
@@ -524,6 +549,7 @@ function useCandles({
             buildCandlesUrl({
               symbol,
               timeframe,
+              provider,
               mode: "full",
             })
           );
@@ -570,6 +596,7 @@ function useCandles({
           buildCandlesUrl({
             symbol,
             timeframe,
+            provider,
             startAt,
             endAt,
             limit: INCREMENTAL_LIMIT,
@@ -600,7 +627,7 @@ function useCandles({
           preserveExisting: false,
         };
       } catch (error) {
-        if (activeRequestKeyRef.current !== `${symbol}::${timeframe}`) {
+        if (activeRequestKeyRef.current !== currentRequestKey) {
           return {
             items: [],
             coverageMeta: null,
@@ -621,12 +648,12 @@ function useCandles({
           preserveExisting: candlesRef.current.length > 0,
         };
       } finally {
-        if (activeRequestKeyRef.current === `${symbol}::${timeframe}`) {
+        if (activeRequestKeyRef.current === currentRequestKey) {
           setLoadingCandles(false);
         }
       }
     },
-    [effectiveChartSymbol, effectiveChartTimeframe]
+    [effectiveChartSymbol, effectiveChartTimeframe, selectedProvider]
   );
 
   const reloadCandles = useCallback(
@@ -711,6 +738,10 @@ function useCandles({
       return;
     }
 
+    setCandles([]);
+    setCoverageMeta(null);
+    setCandlesError("");
+
     void (async () => {
       const parsed = await fetchCandles("full", true);
 
@@ -782,7 +813,13 @@ function useCandles({
 
       setCandles(nextCandles);
     })();
-  }, [requestKey, fetchCandles, effectiveChartSymbol, effectiveChartTimeframe]);
+  }, [
+    requestKey,
+    fetchCandles,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    selectedProvider,
+  ]);
 
   return {
     candles,

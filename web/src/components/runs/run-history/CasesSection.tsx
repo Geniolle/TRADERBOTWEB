@@ -1,6 +1,6 @@
 // C:\TraderBotWeb\web\src\components\runs\run-history\CasesSection.tsx
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CaseAnalysisBlock } from "./CaseAnalysisBlock";
 import { CasesFilterButton } from "./RunHistoryShared";
 import {
@@ -14,7 +14,6 @@ import {
   resolveCaseDirection,
 } from "./utils";
 import type { CaseFilter, StageTestRunCaseItem } from "./types";
-import { useState } from "react";
 
 type ArrowVisual = {
   symbol: "↑" | "↓" | "•";
@@ -27,6 +26,13 @@ type MovingAverageBadge = {
   label: string;
   value: string;
   arrow: ArrowVisual;
+};
+
+type TradePipMetrics = {
+  realizedPips: number | null;
+  targetPips: number | null;
+  riskPips: number | null;
+  rewardRiskRatio: number | null;
 };
 
 function toNumeric(value: unknown): number | null {
@@ -74,6 +80,124 @@ function formatTokenLabel(value: unknown): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function normalizeInstrumentSymbol(
+  item: StageTestRunCaseItem,
+  fallbackChartSymbol?: string,
+  fallbackMarketSymbol?: string
+): string {
+  const metadata = asRecord(item.metadata);
+
+  return (
+    asString(metadata.symbol).trim() ||
+    asString(metadata.asset_symbol).trim() ||
+    asString(metadata.instrument_symbol).trim() ||
+    asString(metadata.market_symbol).trim() ||
+    asString(fallbackChartSymbol).trim() ||
+    asString(fallbackMarketSymbol).trim()
+  ).toUpperCase();
+}
+
+function getPipSize(symbol: string): number {
+  const compact = symbol.replace(/[/\s-]/g, "").toUpperCase();
+
+  if (!compact) return 0.0001;
+  if (compact.includes("JPY")) return 0.01;
+  if (compact.startsWith("XAU") || compact.startsWith("XAG")) return 0.1;
+
+  return 0.0001;
+}
+
+function getTradePipMetrics(
+  item: StageTestRunCaseItem,
+  fallbackChartSymbol?: string,
+  fallbackMarketSymbol?: string
+): TradePipMetrics {
+  const entry = toNumeric(item.entry_price);
+  const close = toNumeric(item.close_price);
+  const target = toNumeric(item.target_price);
+  const invalidation = toNumeric(item.invalidation_price);
+
+  if (entry == null) {
+    return {
+      realizedPips: null,
+      targetPips: null,
+      riskPips: null,
+      rewardRiskRatio: null,
+    };
+  }
+
+  const directionRaw = String(
+    item.side ?? asRecord(item.metadata).setup_direction ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const isSell = ["sell", "short", "venda"].includes(directionRaw);
+  const isBuy = ["buy", "long", "compra"].includes(directionRaw);
+
+  const symbol = normalizeInstrumentSymbol(
+    item,
+    fallbackChartSymbol,
+    fallbackMarketSymbol
+  );
+  const pipSize = getPipSize(symbol);
+
+  const toPips = (distance: number | null): number | null => {
+    if (distance == null) return null;
+    if (!Number.isFinite(distance) || pipSize <= 0) return null;
+    return distance / pipSize;
+  };
+
+  let realizedDistance: number | null = null;
+  let targetDistance: number | null = null;
+  let riskDistance: number | null = null;
+
+  if (close != null) {
+    if (isSell) realizedDistance = entry - close;
+    else if (isBuy) realizedDistance = close - entry;
+    else realizedDistance = Math.abs(close - entry);
+  }
+
+  if (target != null) {
+    if (isSell) targetDistance = entry - target;
+    else if (isBuy) targetDistance = target - entry;
+    else targetDistance = Math.abs(target - entry);
+  }
+
+  if (invalidation != null) {
+    if (isSell) riskDistance = invalidation - entry;
+    else if (isBuy) riskDistance = entry - invalidation;
+    else riskDistance = Math.abs(invalidation - entry);
+  }
+
+  const realizedPips = toPips(realizedDistance);
+  const targetPips = toPips(targetDistance);
+  const riskPips = toPips(riskDistance);
+
+  const rewardRiskRatio =
+    targetPips != null && riskPips != null && riskPips > 0
+      ? targetPips / riskPips
+      : null;
+
+  return {
+    realizedPips,
+    targetPips,
+    riskPips,
+    rewardRiskRatio,
+  };
+}
+
+function formatPips(value: number | null, signed = false): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  const normalized = Number(value.toFixed(2));
+  return `${signed && normalized > 0 ? "+" : ""}${normalized.toFixed(2)} pips`;
+}
+
+function formatRatio(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(2)}R`;
 }
 
 function getUpArrow(): ArrowVisual {
@@ -946,6 +1070,12 @@ export function CasesSection({
               marketTimeframe
             );
 
+            const pipMetrics = getTradePipMetrics(
+              item,
+              chartSymbol,
+              marketSymbol
+            );
+
             const canOpenChart = Boolean(
               currentCaseChartSymbol &&
                 currentCaseChartTimeframe &&
@@ -1274,6 +1404,22 @@ export function CasesSection({
                     <InfoField
                       label="Bars resolução"
                       value={formatValue(item.bars_to_resolution)}
+                    />
+                    <InfoField
+                      label="Pips realizados"
+                      value={formatPips(pipMetrics.realizedPips, true)}
+                    />
+                    <InfoField
+                      label="Pips alvo"
+                      value={formatPips(pipMetrics.targetPips)}
+                    />
+                    <InfoField
+                      label="Pips risco"
+                      value={formatPips(pipMetrics.riskPips)}
+                    />
+                    <InfoField
+                      label="R:R"
+                      value={formatRatio(pipMetrics.rewardRiskRatio)}
                     />
                     <InfoField
                       label="MFE"
