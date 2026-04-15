@@ -1,4 +1,4 @@
-// web/src/components/stage-tests/StageTestCaseChartModal.tsx
+// C:\TraderBotWeb\web\src\components\stage-tests\StageTestCaseChartModal.tsx
 
 import {
   useCallback,
@@ -61,10 +61,10 @@ type MarkerPosition = ChartMarkerItem & {
   labelLeft: number;
 };
 
-const CHART_HEIGHT = 560;
+const DEFAULT_CHART_HEIGHT = 560;
+const MAXIMIZED_CHART_HEIGHT = 820;
 const LABEL_HALF_WIDTH = 54;
 const TOP_BASE = 18;
-const BOTTOM_BASE = CHART_HEIGHT - 34;
 const LANE_STEP = 24;
 
 function normalizeTimeframe(value: string): string {
@@ -189,12 +189,69 @@ function computeEma(
   });
 }
 
-function detectCrossMarkers(
+function buildHorizontalLevelData(
+  candleData: CandlestickData<UTCTimestamp>[],
+  price: number | null
+): LineData<UTCTimestamp>[] {
+  if (price == null || !Number.isFinite(price) || candleData.length === 0) {
+    return [];
+  }
+
+  const firstTime = candleData[0]?.time;
+  const lastTime = candleData[candleData.length - 1]?.time;
+
+  if (firstTime == null || lastTime == null) return [];
+
+  return [
+    { time: firstTime, value: price },
+    { time: lastTime, value: price },
+  ];
+}
+
+function getSetupDirection(selectedCase: StageTestRunCaseItem | null): "buy" | "sell" | null {
+  const metadata =
+    selectedCase?.metadata && typeof selectedCase.metadata === "object"
+      ? (selectedCase.metadata as Record<string, unknown>)
+      : {};
+
+  const raw = String(
+    selectedCase?.side ??
+      metadata.setup_direction ??
+      metadata.trade_bias ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (["buy", "long", "compra"].includes(raw)) return "buy";
+  if (["sell", "short", "venda"].includes(raw)) return "sell";
+  return null;
+}
+
+function getCaseAnchorTime(selectedCase: StageTestRunCaseItem | null): string | null {
+  if (!selectedCase) return null;
+
+  return (
+    selectedCase.entry_time ??
+    selectedCase.trigger_time ??
+    selectedCase.trigger_candle_time ??
+    selectedCase.close_time ??
+    null
+  );
+}
+
+function detectSingleCaseCrossMarker(
   emaFast: LineData<UTCTimestamp>[],
   emaSlow: LineData<UTCTimestamp>[],
   selectedCase: StageTestRunCaseItem | null
 ): ChartMarkerItem[] {
-  if (!emaFast.length || !emaSlow.length) return [];
+  if (!emaFast.length || !emaSlow.length || !selectedCase) return [];
+
+  const anchorTime = getCaseAnchorTime(selectedCase);
+  if (!anchorTime) return [];
+
+  const setupDirection = getSetupDirection(selectedCase);
+  const anchorMs = new Date(anchorTime).getTime();
 
   const slowMap = new Map<number, number>();
   for (const item of emaSlow) {
@@ -203,7 +260,13 @@ function detectCrossMarkers(
     }
   }
 
-  const crosses: ChartMarkerItem[] = [];
+  const crosses: Array<{
+    time: string;
+    price: number;
+    direction: "buy" | "sell";
+    deltaMs: number;
+  }> = [];
+
   let previousDiff: number | null = null;
 
   for (const item of emaFast) {
@@ -213,63 +276,48 @@ function detectCrossMarkers(
     if (fastValue == null || slowValue == null) continue;
 
     const diff = fastValue - slowValue;
+    const eventMs = Number(item.time) * 1000;
 
     if (
       previousDiff !== null &&
       ((previousDiff <= 0 && diff > 0) || (previousDiff >= 0 && diff < 0))
     ) {
-      const timeIso = new Date(Number(item.time) * 1000).toISOString();
-      const isBullish = diff > 0;
+      const direction: "buy" | "sell" = diff > 0 ? "buy" : "sell";
 
-      crosses.push({
-        id: `cross-${item.time}`,
-        label: isBullish ? "Cruzamento alta M9/M21" : "Cruzamento baixa M9/M21",
-        shortLabel: "Cruzamento",
-        time: timeIso,
-        price: fastValue,
-        color: isBullish ? "#2563eb" : "#f59e0b",
-        lane: "top",
-      });
+      if (eventMs <= anchorMs) {
+        if (!setupDirection || setupDirection === direction) {
+          crosses.push({
+            time: new Date(eventMs).toISOString(),
+            price: fastValue,
+            direction,
+            deltaMs: anchorMs - eventMs,
+          });
+        }
+      }
     }
 
     previousDiff = diff;
   }
 
-  if (!selectedCase) return crosses.slice(-3);
+  if (!crosses.length) return [];
 
-  const referenceTime =
-    selectedCase.entry_time ??
-    selectedCase.trigger_time ??
-    selectedCase.trigger_candle_time ??
-    selectedCase.close_time ??
-    null;
+  crosses.sort((a, b) => a.deltaMs - b.deltaMs);
+  const chosen = crosses[0];
 
-  if (!referenceTime) return crosses.slice(-3);
-
-  const referenceMs = new Date(referenceTime).getTime();
-  const nearest = [...crosses]
-    .map((item) => ({
-      item,
-      delta: Math.abs(new Date(item.time).getTime() - referenceMs),
-    }))
-    .sort((a, b) => a.delta - b.delta)
-    .slice(0, 1)
-    .map((entry) => ({
-      ...entry.item,
-      label: `${entry.item.label} (mais próximo do trade)`,
+  return [
+    {
+      id: `case-cross-${chosen.time}`,
+      label:
+        chosen.direction === "buy"
+          ? "Cruzamento alta M9/M21 do case"
+          : "Cruzamento baixa M9/M21 do case",
       shortLabel: "Cruzamento",
+      time: chosen.time,
+      price: chosen.price,
       color: "#7c3aed",
-      lane: "top" as MarkerLane,
-    }));
-
-  const recent = crosses.slice(-2);
-
-  const byId = new Map<string, ChartMarkerItem>();
-  for (const item of [...recent, ...nearest]) {
-    byId.set(item.id, item);
-  }
-
-  return Array.from(byId.values());
+      lane: "top",
+    },
+  ];
 }
 
 function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarkerItem[] {
@@ -283,18 +331,6 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
   const targetPrice = parseNumber(selectedCase.target_price);
   const invalidationPrice = parseNumber(selectedCase.invalidation_price);
 
-  if (selectedCase.trigger_time && triggerPrice !== null) {
-    markers.push({
-      id: `${selectedCase.id}-trigger`,
-      label: "Trigger",
-      shortLabel: "Trigger",
-      time: selectedCase.trigger_time,
-      price: triggerPrice,
-      color: "#0ea5e9",
-      lane: "bottom",
-    });
-  }
-
   if (selectedCase.entry_time && entryPrice !== null) {
     markers.push({
       id: `${selectedCase.id}-entry`,
@@ -303,18 +339,6 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
       time: selectedCase.entry_time,
       price: entryPrice,
       color: "#16a34a",
-      lane: "bottom",
-    });
-  }
-
-  if (selectedCase.close_time && closePrice !== null) {
-    markers.push({
-      id: `${selectedCase.id}-exit`,
-      label: "Saída",
-      shortLabel: "Saída",
-      time: selectedCase.close_time,
-      price: closePrice,
-      color: "#dc2626",
       lane: "bottom",
     });
   }
@@ -343,14 +367,70 @@ function buildCaseMarkers(selectedCase: StageTestRunCaseItem | null): ChartMarke
     });
   }
 
+  if (selectedCase.close_time && closePrice !== null) {
+    markers.push({
+      id: `${selectedCase.id}-exit`,
+      label: "Saída",
+      shortLabel: "Saída",
+      time: selectedCase.close_time,
+      price: closePrice,
+      color: "#dc2626",
+      lane: "bottom",
+    });
+  }
+
+  if (selectedCase.trigger_time && triggerPrice !== null) {
+    markers.push({
+      id: `${selectedCase.id}-trigger`,
+      label: "Trigger",
+      shortLabel: "Trigger",
+      time: selectedCase.trigger_time,
+      price: triggerPrice,
+      color: "#0ea5e9",
+      lane: "bottom",
+    });
+  }
+
   return markers;
+}
+
+function getSetupSummary(selectedCase: StageTestRunCaseItem | null): string {
+  const direction = getSetupDirection(selectedCase);
+  if (direction === "buy") return "Cruzamento bullish M9/M21";
+  if (direction === "sell") return "Cruzamento bearish M9/M21";
+  return "Cruzamento M9/M21";
+}
+
+function getConfirmationSummary(selectedCase: StageTestRunCaseItem | null): string {
+  const closeReason = String(selectedCase?.close_reason ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (["target_percent_reached", "target_reached", "tp_reached"].includes(closeReason)) {
+    return "Target atingido";
+  }
+
+  if (["timeout_reached", "timeout"].includes(closeReason)) {
+    return "Trade expirou por timeout";
+  }
+
+  if (["stop_reached", "sl_reached", "invalidation_reached"].includes(closeReason)) {
+    return "Invalidação atingida";
+  }
+
+  return selectedCase?.close_reason || "-";
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function distributeMarkerLanes(markers: MarkerPosition[]): MarkerPosition[] {
+function distributeMarkerLanes(
+  markers: MarkerPosition[],
+  chartHeight: number
+): MarkerPosition[] {
+  const bottomBase = chartHeight - 34;
+
   const byLane: Record<MarkerLane, MarkerPosition[]> = {
     top: [],
     bottom: [],
@@ -378,7 +458,7 @@ function distributeMarkerLanes(markers: MarkerPosition[]): MarkerPosition[] {
       item.labelTop =
         lane === "top"
           ? TOP_BASE + clusterIndex * LANE_STEP
-          : BOTTOM_BASE - clusterIndex * LANE_STEP;
+          : bottomBase - clusterIndex * LANE_STEP;
     }
   };
 
@@ -396,16 +476,25 @@ export default function StageTestCaseChartModal({
   strategyLabel,
   selectedCase,
 }: Props) {
+  const chartShellRef = useRef<HTMLDivElement | null>(null);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const ema9SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ema21SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const entryLevelSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const targetLevelSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stopLevelSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [candles, setCandles] = useState<CandleApiItem[]>([]);
   const [markerPositions, setMarkerPositions] = useState<MarkerPosition[]>([]);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const chartHeight = isMaximized
+    ? MAXIMIZED_CHART_HEIGHT
+    : DEFAULT_CHART_HEIGHT;
 
   const fetchWindow = useMemo(() => {
     return buildWindowFromCase(timeframe, selectedCase);
@@ -441,9 +530,28 @@ export default function StageTestCaseChartModal({
   const ema9Data = useMemo(() => computeEma(closeSeries, 9), [closeSeries]);
   const ema21Data = useMemo(() => computeEma(closeSeries, 21), [closeSeries]);
 
+  const entryPrice = parseNumber(selectedCase?.entry_price);
+  const targetPrice = parseNumber(selectedCase?.target_price);
+  const invalidationPrice = parseNumber(selectedCase?.invalidation_price);
+
+  const entryLevelData = useMemo(
+    () => buildHorizontalLevelData(candleData, entryPrice),
+    [candleData, entryPrice]
+  );
+
+  const targetLevelData = useMemo(
+    () => buildHorizontalLevelData(candleData, targetPrice),
+    [candleData, targetPrice]
+  );
+
+  const stopLevelData = useMemo(
+    () => buildHorizontalLevelData(candleData, invalidationPrice),
+    [candleData, invalidationPrice]
+  );
+
   const allMarkers = useMemo(() => {
     return [
-      ...detectCrossMarkers(ema9Data, ema21Data, selectedCase),
+      ...detectSingleCaseCrossMarker(ema9Data, ema21Data, selectedCase),
       ...buildCaseMarkers(selectedCase),
     ];
   }, [ema9Data, ema21Data, selectedCase]);
@@ -451,14 +559,14 @@ export default function StageTestCaseChartModal({
   const syncMarkerPositions = useCallback(() => {
     const chart = chartRef.current;
     const candleSeries = candleSeriesRef.current;
-    const container = chartContainerRef.current;
+    const shell = chartShellRef.current;
 
-    if (!chart || !candleSeries || !container || !allMarkers.length) {
+    if (!chart || !candleSeries || !shell || !allMarkers.length) {
       setMarkerPositions([]);
       return;
     }
 
-    const width = Math.max(container.clientWidth, 400);
+    const width = Math.max(shell.clientWidth, 400);
 
     const nextPositions: MarkerPosition[] = [];
 
@@ -473,18 +581,39 @@ export default function StageTestCaseChartModal({
         ...marker,
         left,
         pointTop,
-        labelTop: marker.lane === "top" ? TOP_BASE : BOTTOM_BASE,
+        labelTop: marker.lane === "top" ? TOP_BASE : chartHeight - 34,
         labelLeft: clamp(left, LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
       });
     }
 
-    const distributed = distributeMarkerLanes(nextPositions).map((marker) => ({
-      ...marker,
-      labelLeft: clamp(marker.left, LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
-    }));
+    const distributed = distributeMarkerLanes(nextPositions, chartHeight).map(
+      (marker) => ({
+        ...marker,
+        labelLeft: clamp(marker.left, LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
+      })
+    );
 
     setMarkerPositions(distributed);
-  }, [allMarkers]);
+  }, [allMarkers, chartHeight]);
+
+  const resizeChart = useCallback(() => {
+    const chart = chartRef.current;
+    const shell = chartShellRef.current;
+
+    if (!chart || !shell) return;
+
+    const nextWidth = Math.max(shell.clientWidth, 400);
+
+    chart.applyOptions({
+      width: nextWidth,
+      height: chartHeight,
+    });
+
+    window.requestAnimationFrame(() => {
+      chart.timeScale().fitContent();
+      syncMarkerPositions();
+    });
+  }, [chartHeight, syncMarkerPositions]);
 
   useEffect(() => {
     if (!open || !selectedCase || !fetchWindow) return;
@@ -554,15 +683,16 @@ export default function StageTestCaseChartModal({
   }, [open, selectedCase, symbol, timeframe, fetchWindow]);
 
   useEffect(() => {
-    if (!open || !chartContainerRef.current) return;
+    if (!open || !chartContainerRef.current || !chartShellRef.current) return;
 
     const container = chartContainerRef.current;
-    const width = Math.max(container.clientWidth, 400);
+    const shell = chartShellRef.current;
+    const width = Math.max(shell.clientWidth, 400);
 
     if (!chartRef.current) {
       const chart = createChart(container, {
         width,
-        height: CHART_HEIGHT,
+        height: chartHeight,
         layout: {
           background: { type: ColorType.Solid, color: "#ffffff" },
           textColor: "#1f2937",
@@ -614,10 +744,7 @@ export default function StageTestCaseChartModal({
         wickDownColor: "#dc2626",
         borderUpColor: "#16a34a",
         borderDownColor: "#dc2626",
-        priceLineVisible: true,
-        priceLineWidth: 1,
-        priceLineStyle: LineStyle.LargeDashed,
-        priceLineColor: "#2563eb",
+        priceLineVisible: false,
       });
 
       const ema9Series = chart.addSeries(LineSeries, {
@@ -636,10 +763,40 @@ export default function StageTestCaseChartModal({
         crosshairMarkerVisible: false,
       });
 
+      const entryLevelSeries = chart.addSeries(LineSeries, {
+        color: "#16a34a",
+        lineWidth: 2,
+        lineStyle: LineStyle.LargeDashed,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+      });
+
+      const targetLevelSeries = chart.addSeries(LineSeries, {
+        color: "#10b981",
+        lineWidth: 2,
+        lineStyle: LineStyle.LargeDashed,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+      });
+
+      const stopLevelSeries = chart.addSeries(LineSeries, {
+        color: "#f97316",
+        lineWidth: 2,
+        lineStyle: LineStyle.LargeDashed,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+      });
+
       chartRef.current = chart;
       candleSeriesRef.current = candleSeries;
       ema9SeriesRef.current = ema9Series;
       ema21SeriesRef.current = ema21Series;
+      entryLevelSeriesRef.current = entryLevelSeries;
+      targetLevelSeriesRef.current = targetLevelSeries;
+      stopLevelSeriesRef.current = stopLevelSeries;
     }
 
     const chart = chartRef.current;
@@ -648,25 +805,26 @@ export default function StageTestCaseChartModal({
       window.requestAnimationFrame(syncMarkerPositions);
     };
 
-    const handleResize = () => {
-      if (!chartContainerRef.current || !chartRef.current) return;
-
-      chartRef.current.applyOptions({
-        width: Math.max(chartContainerRef.current.clientWidth, 400),
-        height: CHART_HEIGHT,
-      });
-
-      window.requestAnimationFrame(syncMarkerPositions);
+    const handleWindowResize = () => {
+      window.requestAnimationFrame(resizeChart);
     };
 
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(resizeChart);
+    });
+
+    resizeObserver.observe(shell);
     chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange);
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleWindowResize);
+
+    window.requestAnimationFrame(resizeChart);
 
     return () => {
+      resizeObserver.disconnect();
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange);
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", handleWindowResize);
     };
-  }, [open, syncMarkerPositions]);
+  }, [open, chartHeight, resizeChart, syncMarkerPositions]);
 
   useEffect(() => {
     if (!open || !chartRef.current || !candleSeriesRef.current) return;
@@ -674,13 +832,36 @@ export default function StageTestCaseChartModal({
     candleSeriesRef.current.setData(candleData);
     ema9SeriesRef.current?.setData(ema9Data);
     ema21SeriesRef.current?.setData(ema21Data);
+    entryLevelSeriesRef.current?.setData(entryLevelData);
+    targetLevelSeriesRef.current?.setData(targetLevelData);
+    stopLevelSeriesRef.current?.setData(stopLevelData);
 
-    if (candleData.length > 0) {
-      chartRef.current.timeScale().fitContent();
-    }
+    resizeChart();
+  }, [
+    open,
+    candleData,
+    ema9Data,
+    ema21Data,
+    entryLevelData,
+    targetLevelData,
+    stopLevelData,
+    resizeChart,
+  ]);
 
-    window.requestAnimationFrame(syncMarkerPositions);
-  }, [open, candleData, ema9Data, ema21Data, syncMarkerPositions]);
+  useEffect(() => {
+    if (!open) return;
+
+    const raf1 = window.requestAnimationFrame(() => {
+      resizeChart();
+      const raf2 = window.requestAnimationFrame(() => {
+        resizeChart();
+      });
+
+      return () => window.cancelAnimationFrame(raf2);
+    });
+
+    return () => window.cancelAnimationFrame(raf1);
+  }, [isMaximized, open, resizeChart]);
 
   useEffect(() => {
     return () => {
@@ -692,10 +873,25 @@ export default function StageTestCaseChartModal({
       candleSeriesRef.current = null;
       ema9SeriesRef.current = null;
       ema21SeriesRef.current = null;
+      entryLevelSeriesRef.current = null;
+      targetLevelSeriesRef.current = null;
+      stopLevelSeriesRef.current = null;
     };
   }, []);
 
   if (!open || !selectedCase) return null;
+
+  const modalStyle: CSSProperties = {
+    width: isMaximized ? "96vw" : "100%",
+    maxWidth: isMaximized ? "96vw" : 1320,
+    maxHeight: isMaximized ? "96vh" : "94vh",
+    overflow: "auto",
+    background: "#0f172a",
+    color: "#e5e7eb",
+    borderRadius: 20,
+    padding: 20,
+    boxSizing: "border-box",
+  };
 
   return (
     <div style={overlayStyle}>
@@ -708,62 +904,83 @@ export default function StageTestCaseChartModal({
             </div>
           </div>
 
-          <button onClick={onClose} style={closeButtonStyle}>
-            Fechar
-          </button>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setIsMaximized((previous) => !previous)}
+              style={closeButtonStyle}
+            >
+              {isMaximized ? "Restaurar" : "Maximizar"}
+            </button>
+
+            <button onClick={onClose} style={closeButtonStyle}>
+              Fechar
+            </button>
+          </div>
         </div>
 
-        <div style={summaryGridStyle}>
-          <div style={summaryCardStyle}>
+        <div style={summarySingleRowStyle}>
+          <span style={summaryInlineCardStyle}>
             <strong>Case</strong>
-            <div>{selectedCase.case_number ?? "-"}</div>
-          </div>
+            <span>{selectedCase.case_number ?? "-"}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
+          <span style={summaryInlineCardStyle}>
             <strong>Lado</strong>
-            <div>{selectedCase.side || "-"}</div>
-          </div>
+            <span>{selectedCase.side || "-"}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
+          <span style={summaryInlineCardStyle}>
             <strong>Status</strong>
-            <div>{selectedCase.status || "-"}</div>
-          </div>
+            <span>{selectedCase.status || "-"}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
+          <span style={summaryInlineCardStyle}>
             <strong>Outcome</strong>
-            <div>{selectedCase.outcome || "-"}</div>
-          </div>
+            <span>{selectedCase.outcome || "-"}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
-            <strong>Trigger</strong>
-            <div>{formatPrice(parseNumber(selectedCase.trigger_price))}</div>
-          </div>
+          <span style={summaryInlineCardStyle}>
+            <strong>Setup</strong>
+            <span>{getSetupSummary(selectedCase)}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
+          <span style={summaryInlineCardStyle}>
+            <strong>Confirmação</strong>
+            <span>{getConfirmationSummary(selectedCase)}</span>
+          </span>
+
+          <span style={summaryInlineCardStyle}>
             <strong>Entrada</strong>
-            <div>{formatPrice(parseNumber(selectedCase.entry_price))}</div>
-          </div>
+            <span>{formatPrice(entryPrice)}</span>
+          </span>
 
-          <div style={summaryCardStyle}>
+          <span style={summaryInlineCardStyle}>
             <strong>Saída</strong>
-            <div>{formatPrice(parseNumber(selectedCase.close_price))}</div>
-          </div>
-
-          <div style={summaryCardStyle}>
-            <strong>Close reason</strong>
-            <div>{selectedCase.close_reason || "-"}</div>
-          </div>
+            <span>{formatPrice(parseNumber(selectedCase.close_price))}</span>
+          </span>
         </div>
 
         <div style={timeBoxStyle}>
-          <div>
-            <strong>Trigger time:</strong> {formatDateTime(selectedCase.trigger_time)}
-          </div>
-          <div>
-            <strong>Entry time:</strong> {formatDateTime(selectedCase.entry_time)}
-          </div>
-          <div>
-            <strong>Close time:</strong> {formatDateTime(selectedCase.close_time)}
+          <div style={timeRowStyle}>
+            <span style={timeItemStyle}>
+              <strong>Trigger time:</strong> {formatDateTime(selectedCase.trigger_time)}
+            </span>
+
+            <span style={timeItemStyle}>
+              <strong>Entry time:</strong> {formatDateTime(selectedCase.entry_time)}
+            </span>
+
+            <span style={timeItemStyle}>
+              <strong>Close time:</strong> {formatDateTime(selectedCase.close_time)}
+            </span>
           </div>
         </div>
 
@@ -771,15 +988,16 @@ export default function StageTestCaseChartModal({
         {error && <div style={errorStyle}>{error}</div>}
 
         <div
+          ref={chartShellRef}
           style={{
             position: "relative",
             width: "100%",
-            height: CHART_HEIGHT,
+            height: chartHeight,
             border: "1px solid #dbe2ea",
             borderRadius: 16,
             background: "#fff",
             overflow: "hidden",
-            marginTop: 16,
+            marginTop: 12,
           }}
         >
           <div
@@ -867,10 +1085,10 @@ export default function StageTestCaseChartModal({
           <span style={{ ...legendBadgeStyle, background: "#7c3aed" }}>EMA 21</span>
           <span style={{ ...legendBadgeStyle, background: "#7c3aed" }}>Cruzamento</span>
           <span style={{ ...legendBadgeStyle, background: "#16a34a" }}>Entrada</span>
+          <span style={{ ...legendBadgeStyle, background: "#10b981" }}>Target</span>
+          <span style={{ ...legendBadgeStyle, background: "#f97316" }}>Perda</span>
           <span style={{ ...legendBadgeStyle, background: "#dc2626" }}>Saída</span>
           <span style={{ ...legendBadgeStyle, background: "#0ea5e9" }}>Trigger</span>
-          <span style={{ ...legendBadgeStyle, background: "#10b981" }}>Target</span>
-          <span style={{ ...legendBadgeStyle, background: "#f97316" }}>Invalidação</span>
         </div>
       </div>
     </div>
@@ -888,24 +1106,12 @@ const overlayStyle: CSSProperties = {
   padding: 24,
 };
 
-const modalStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: 1320,
-  maxHeight: "94vh",
-  overflow: "auto",
-  background: "#0f172a",
-  color: "#e5e7eb",
-  borderRadius: 20,
-  padding: 20,
-  boxSizing: "border-box",
-};
-
 const headerStyle: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
   gap: 16,
-  marginBottom: 16,
+  marginBottom: 12,
 };
 
 const closeButtonStyle: CSSProperties = {
@@ -918,29 +1124,54 @@ const closeButtonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
-const summaryGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  gap: 12,
+const summarySingleRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "stretch",
+  gap: 8,
+  flexWrap: "nowrap",
+  overflowX: "auto",
+  paddingBottom: 2,
 };
 
-const summaryCardStyle: CSSProperties = {
-  padding: 12,
+const summaryInlineCardStyle: CSSProperties = {
+  display: "inline-flex",
+  flexDirection: "column",
+  justifyContent: "center",
+  gap: 4,
+  minWidth: 130,
+  padding: "8px 12px",
   borderRadius: 12,
   background: "#111827",
   border: "1px solid #1f2937",
-  display: "grid",
-  gap: 6,
+  color: "#e5e7eb",
+  fontSize: 13,
+  lineHeight: 1.2,
+  whiteSpace: "nowrap",
+  flexShrink: 0,
 };
 
 const timeBoxStyle: CSSProperties = {
-  marginTop: 12,
-  padding: 12,
+  marginTop: 8,
+  padding: "10px 12px",
   borderRadius: 12,
   background: "#0b1220",
   border: "1px solid #1e293b",
-  display: "grid",
+};
+
+const timeRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 18,
+  flexWrap: "wrap",
+};
+
+const timeItemStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
   gap: 6,
+  fontSize: 13,
+  color: "#e5e7eb",
+  whiteSpace: "nowrap",
 };
 
 const infoStyle: CSSProperties = {

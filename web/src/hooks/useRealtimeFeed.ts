@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { API_WS_BASE_URL } from "../constants/config";
+import { API_HTTP_BASE_URL, API_WS_BASE_URL } from "../constants/config";
 import type { CandleItem, CandleTickState, WsEnvelope } from "../types/trading";
 import { upsertRealtimeCandle } from "../utils/candles";
 import { floorToTimeframeIso } from "../utils/format";
@@ -50,6 +50,8 @@ type RealtimeFeedState = {
   lastProviderUpdateEvent: string;
   lastProviderUpdateStatus: ProviderUpdateStatus;
 };
+
+type PersistedLatestResponse = CandleItem | null;
 
 const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
   wsStatus: "disconnected",
@@ -110,6 +112,17 @@ function toDataRecord(data: unknown): Record<string, unknown> {
   return data as Record<string, unknown>;
 }
 
+function normalizeIsoString(value: unknown): string {
+  if (typeof value !== "string") return "";
+
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) {
+    return value.trim();
+  }
+
+  return new Date(parsed).toISOString();
+}
+
 function isValidCandleItem(item: unknown): item is CandleItem {
   if (!item || typeof item !== "object") return false;
 
@@ -120,6 +133,16 @@ function isValidCandleItem(item: unknown): item is CandleItem {
     typeof candidate.timeframe === "string" &&
     typeof candidate.open_time === "string"
   );
+}
+
+function normalizeIncomingCandle(item: CandleItem): CandleItem {
+  return {
+    ...item,
+    symbol: normalizeSymbol(item.symbol),
+    timeframe: normalizeTimeframe(item.timeframe),
+    open_time: normalizeIsoString(item.open_time),
+    close_time: normalizeIsoString(item.close_time),
+  };
 }
 
 function formatNowPt(): string {
@@ -167,14 +190,6 @@ function candleKey(item: { open_time: string }): string {
   return String(candleTimestamp(item.open_time));
 }
 
-function normalizeIncomingCandle(item: CandleItem): CandleItem {
-  return {
-    ...item,
-    symbol: normalizeSymbol(item.symbol),
-    timeframe: normalizeTimeframe(item.timeframe),
-  };
-}
-
 function mergeCandlesByOpenTime(
   previous: CandleItem[],
   incoming: CandleItem[]
@@ -211,6 +226,88 @@ function shouldReloadCandles(reason: string | null | undefined): boolean {
   return false;
 }
 
+function buildLatestUrl(symbol: string, timeframe: string): string {
+  const query = new URLSearchParams({
+    symbol,
+    timeframe,
+  });
+
+  return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
+}
+
+function extractErrorMessage(status: number, payloadText: string): string {
+  const text = String(payloadText ?? "").trim();
+
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message;
+    }
+  } catch {
+    // ignora parse inválido
+  }
+
+  if (text) {
+    return text;
+  }
+
+  return `HTTP ${status}`;
+}
+
+async function fetchLatestPersistedCandle(
+  symbol: string,
+  timeframe: string
+): Promise<CandleItem | null> {
+  const response = await fetch(buildLatestUrl(symbol, timeframe), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const payloadText = await response.text();
+    throw new Error(extractErrorMessage(response.status, payloadText));
+  }
+
+  const payload = (await response.json()) as PersistedLatestResponse;
+
+  if (!payload || !isValidCandleItem(payload)) {
+    return null;
+  }
+
+  return normalizeIncomingCandle(payload);
+}
+
+function persistedLatestMatchesTick(
+  latestPersisted: CandleItem | null,
+  tick: NonNullable<CandleTickState>
+): boolean {
+  if (!latestPersisted) return false;
+
+  const persistedSymbol = normalizeSymbol(latestPersisted.symbol);
+  const persistedTimeframe = normalizeTimeframe(latestPersisted.timeframe);
+
+  if (persistedSymbol !== normalizeSymbol(tick.symbol)) return false;
+  if (persistedTimeframe !== normalizeTimeframe(tick.timeframe)) return false;
+
+  const persistedOpenTime = candleTimestamp(latestPersisted.open_time);
+  const tickOpenTime = candleTimestamp(tick.open_time);
+
+  if (!persistedOpenTime || !tickOpenTime) return false;
+
+  return persistedOpenTime >= tickOpenTime;
+}
+
 function useRealtimeFeed({
   effectiveChartMarketType,
   effectiveChartCatalog,
@@ -244,12 +341,14 @@ function useRealtimeFeed({
 
   const socketRef = useRef<WebSocket | null>(null);
   const isIntentionalCloseRef = useRef(false);
+  const persistenceCheckIdRef = useRef(0);
 
   useEffect(() => {
     if (!hasSelection) {
       const activeSocket = socketRef.current;
       socketRef.current = null;
       isIntentionalCloseRef.current = true;
+      persistenceCheckIdRef.current += 1;
 
       if (
         activeSocket &&
@@ -276,6 +375,97 @@ function useRealtimeFeed({
 
     const socket = new WebSocket(API_WS_BASE_URL);
     socketRef.current = socket;
+
+    const confirmTickPersistence = async (
+      nextTick: NonNullable<CandleTickState>,
+      providerReceivedAt: string
+    ) => {
+      const checkId = ++persistenceCheckIdRef.current;
+
+      try {
+        await reloadCandles(false);
+
+        const latestPersisted = await fetchLatestPersistedCandle(
+          nextTick.symbol,
+          nextTick.timeframe
+        );
+
+        if (!isMounted) return;
+        if (persistenceCheckIdRef.current !== checkId) return;
+        if (socketRef.current !== socket) return;
+
+        const persistedAt = formatNowPt();
+        const isPersisted = persistedLatestMatchesTick(latestPersisted, nextTick);
+
+        if (isPersisted) {
+          setState((prev) => ({
+            ...prev,
+            scopeKey: currentScopeKey,
+            providerErrorMessage: "",
+            lastProviderUpdateAt: latestPersisted?.open_time ?? nextTick.open_time,
+            lastProviderReceivedAt: providerReceivedAt,
+            lastProviderUpdateEvent: "candle_tick",
+            lastProviderUpdateStatus: "success",
+            lastProviderUpdateLog: buildProviderUpdateLog({
+              eventName: "candle_tick",
+              symbol: nextTick.symbol,
+              timeframe: nextTick.timeframe,
+              candleTime: latestPersisted?.open_time ?? nextTick.open_time,
+              receivedAt: providerReceivedAt,
+              count: nextTick.count,
+              extra: `Persistência=CONFIRMADA | ConfirmadoEm=${persistedAt}`,
+            }),
+          }));
+          return;
+        }
+
+        setState((prev) => ({
+          ...prev,
+          scopeKey: currentScopeKey,
+          lastProviderUpdateAt: nextTick.open_time,
+          lastProviderReceivedAt: providerReceivedAt,
+          lastProviderUpdateEvent: "candle_tick",
+          lastProviderUpdateStatus: "waiting",
+          lastProviderUpdateLog: buildProviderUpdateLog({
+            eventName: "candle_tick",
+            symbol: nextTick.symbol,
+            timeframe: nextTick.timeframe,
+            candleTime: nextTick.open_time,
+            receivedAt: providerReceivedAt,
+            count: nextTick.count,
+            extra:
+              "Persistência=PENDENTE | O provider enviou o candle, mas a API local ainda não confirmou gravação no SQLite.",
+          }),
+        }));
+      } catch (error) {
+        if (!isMounted) return;
+        if (persistenceCheckIdRef.current !== checkId) return;
+        if (socketRef.current !== socket) return;
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Falha desconhecida ao confirmar persistência.";
+
+        setState((prev) => ({
+          ...prev,
+          scopeKey: currentScopeKey,
+          lastProviderUpdateAt: nextTick.open_time,
+          lastProviderReceivedAt: providerReceivedAt,
+          lastProviderUpdateEvent: "candle_tick",
+          lastProviderUpdateStatus: "error",
+          lastProviderUpdateLog: buildProviderUpdateLog({
+            eventName: "candle_tick",
+            symbol: nextTick.symbol,
+            timeframe: nextTick.timeframe,
+            candleTime: nextTick.open_time,
+            receivedAt: providerReceivedAt,
+            count: nextTick.count,
+            extra: `Persistência=ERRO | ${message}`,
+          }),
+        }));
+      }
+    };
 
     socket.onopen = () => {
       if (!isMounted) return;
@@ -374,7 +564,7 @@ function useRealtimeFeed({
           const reasonValue = data.reason;
           const latestOpenTimeValue =
             typeof data.latest_open_time === "string"
-              ? data.latest_open_time
+              ? normalizeIsoString(data.latest_open_time)
               : undefined;
           const receivedAt = formatNowPt();
 
@@ -389,8 +579,17 @@ function useRealtimeFeed({
             candlesRefreshReason:
               typeof reasonValue === "string" ? reasonValue : "-",
             lastProviderReceivedAt: receivedAt,
+            lastProviderUpdateAt:
+              latestOpenTimeValue ||
+              (prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                ? prev.lastProviderUpdateAt
+                : "-"),
             lastProviderUpdateEvent: "candles_refresh",
-            lastProviderUpdateStatus: "success",
+            lastProviderUpdateStatus: shouldReloadCandles(
+              typeof reasonValue === "string" ? reasonValue : ""
+            )
+              ? "waiting"
+              : "success",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "candles_refresh",
               symbol: parsedSymbol || currentSymbol,
@@ -407,7 +606,9 @@ function useRealtimeFeed({
                   : Number(countValue ?? 0),
               extra:
                 typeof reasonValue === "string" && reasonValue
-                  ? `Motivo=${reasonValue}`
+                  ? shouldReloadCandles(reasonValue)
+                    ? `Motivo=${reasonValue} | ConfirmaçãoSQLite=EM_CURSO`
+                    : `Motivo=${reasonValue}`
                   : undefined,
             }),
           }));
@@ -419,8 +620,62 @@ function useRealtimeFeed({
           ) {
             try {
               await reloadCandles(false);
+
+              if (!isMounted || socketRef.current !== socket) {
+                return;
+              }
+
+              setState((prev) => ({
+                ...prev,
+                scopeKey: currentScopeKey,
+                lastProviderUpdateStatus: "success",
+                lastProviderUpdateLog: buildProviderUpdateLog({
+                  eventName: "candles_refresh",
+                  symbol: parsedSymbol || currentSymbol,
+                  timeframe: parsedTimeframe || currentTimeframe,
+                  candleTime:
+                    latestOpenTimeValue ||
+                    (prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                      ? prev.lastProviderUpdateAt
+                      : undefined),
+                  receivedAt,
+                  count:
+                    typeof countValue === "number"
+                      ? countValue
+                      : Number(countValue ?? 0),
+                  extra:
+                    typeof reasonValue === "string" && reasonValue
+                      ? `Motivo=${reasonValue} | ConfirmaçãoSQLite=OK`
+                      : "ConfirmaçãoSQLite=OK",
+                }),
+              }));
             } catch (error) {
-              console.error("[WS] reloadCandles failed:", error);
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Falha ao recarregar candles após candles_refresh.";
+
+              setState((prev) => ({
+                ...prev,
+                scopeKey: currentScopeKey,
+                lastProviderUpdateStatus: "error",
+                lastProviderUpdateLog: buildProviderUpdateLog({
+                  eventName: "candles_refresh",
+                  symbol: parsedSymbol || currentSymbol,
+                  timeframe: parsedTimeframe || currentTimeframe,
+                  candleTime:
+                    latestOpenTimeValue ||
+                    (prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                      ? prev.lastProviderUpdateAt
+                      : undefined),
+                  receivedAt,
+                  count:
+                    typeof countValue === "number"
+                      ? countValue
+                      : Number(countValue ?? 0),
+                  extra: `ConfirmaçãoSQLite=ERRO | ${message}`,
+                }),
+              }));
             }
           }
 
@@ -489,7 +744,7 @@ function useRealtimeFeed({
             lastProviderUpdateAt: lastOpenTime,
             lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "initial_candles",
-            lastProviderUpdateStatus: "success",
+            lastProviderUpdateStatus: "waiting",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "initial_candles",
               symbol: parsedSymbol || currentSymbol,
@@ -497,6 +752,8 @@ function useRealtimeFeed({
               candleTime: lastOpenTime,
               receivedAt,
               count: sortedItems.length,
+              extra:
+                "Snapshot=RECEBIDO_VIA_WS | ConfirmaçãoSQLite=AGUARDANDO",
             }),
           }));
 
@@ -510,9 +767,11 @@ function useRealtimeFeed({
           const openTimeValue = data.open_time;
           const normalizedOpenTime =
             typeof openTimeValue === "string"
-              ? floorToTimeframeIso(
-                  openTimeValue,
-                  parsedTimeframe || currentTimeframe
+              ? normalizeIsoString(
+                  floorToTimeframeIso(
+                    openTimeValue,
+                    parsedTimeframe || currentTimeframe
+                  )
                 )
               : "-";
 
@@ -549,7 +808,7 @@ function useRealtimeFeed({
             lastProviderUpdateAt: nextTick.open_time,
             lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "candle_tick",
-            lastProviderUpdateStatus: "success",
+            lastProviderUpdateStatus: "waiting",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "candle_tick",
               symbol: nextTick.symbol,
@@ -557,10 +816,14 @@ function useRealtimeFeed({
               candleTime: nextTick.open_time,
               receivedAt,
               count: nextTick.count,
+              extra:
+                "Provider=RECEBIDO | ConfirmaçãoSQLite=EM_CURSO",
             }),
           }));
 
           setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
+
+          void confirmTickPersistence(nextTick, receivedAt);
           return;
         }
 
@@ -592,6 +855,7 @@ function useRealtimeFeed({
       if (!isMounted) return;
 
       const wasIntentional = isIntentionalCloseRef.current;
+      persistenceCheckIdRef.current += 1;
 
       setState((prev) => ({
         ...prev,
@@ -613,6 +877,7 @@ function useRealtimeFeed({
     return () => {
       isMounted = false;
       isIntentionalCloseRef.current = true;
+      persistenceCheckIdRef.current += 1;
 
       const activeSocket = socketRef.current;
       socketRef.current = null;
