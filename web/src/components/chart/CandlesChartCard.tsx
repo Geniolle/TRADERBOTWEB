@@ -44,6 +44,7 @@ type CandlesChartCardProps = {
     label: string;
     score: number;
   }>;
+  strategyHighlightMinScore: number;
   selectedMarketTypeLabel: string;
   selectedCatalogLabel: string;
   effectiveChartSymbol: string;
@@ -295,6 +296,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
     candles,
     overlays,
     strategyHighlights,
+    strategyHighlightMinScore,
     selectedMarketTypeLabel,
     selectedCatalogLabel,
     effectiveChartSymbol,
@@ -532,7 +534,10 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                   />
 
                   {showStrategyHighlights && (
-                    <ChartStrategyHighlights items={strategyHighlights} />
+                    <ChartStrategyHighlights
+                      items={strategyHighlights}
+                      minScore={strategyHighlightMinScore}
+                    />
                   )}
 
                   {showPriceScale && (

@@ -6,6 +6,7 @@ type StrategyHighlightItem = {
 
 type ChartStrategyHighlightsProps = {
   items: StrategyHighlightItem[];
+  minScore: number;
 };
 
 function getBadgeStyle(score: number) {
@@ -31,6 +32,7 @@ function formatScore(score: number): string {
 
 function ChartStrategyHighlights({
   items,
+  minScore,
 }: ChartStrategyHighlightsProps) {
   if (items.length === 0) {
     return null;
@@ -65,7 +67,7 @@ function ChartStrategyHighlights({
           boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
         }}
       >
-        Estratégias ≥ 80%
+        Estratégias ≥ {Math.round(minScore)}%
       </div>
 
       <div

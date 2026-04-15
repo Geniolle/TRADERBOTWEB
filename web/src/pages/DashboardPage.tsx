@@ -11,6 +11,7 @@ import RunMetricsCard from "../components/runs/RunMetricsCard";
 import RunSummaryCard from "../components/runs/RunSummaryCard";
 import StrategiesCard from "../components/strategies/StrategiesCard";
 import {
+  CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
   FORCED_REALTIME_SYMBOL,
   FORCED_REALTIME_TIMEFRAME,
   FORCE_REALTIME_TEST,
@@ -63,6 +64,10 @@ function readStoredChartStrategyKey(): string {
   } catch {
     return "";
   }
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 function NavLink({
@@ -273,6 +278,7 @@ function DashboardPage() {
   });
 
   const {
+    stageTests,
     selectedRunId,
     runSearch,
     setRunSearch,
@@ -300,6 +306,44 @@ function DashboardPage() {
     loadingRunDetails,
     runDetailsError,
   } = useRunDetails(selectedRunId);
+
+  const strategyHighlights = useMemo(() => {
+    const normalizedSymbol = normalizeText(effectiveChartSymbol);
+    const normalizedTimeframe = normalizeText(effectiveChartTimeframe);
+
+    if (!normalizedSymbol || !normalizedTimeframe) {
+      return [];
+    }
+
+    return stageTests
+      .filter((item) => {
+        const itemSymbol = normalizeText(item.last_run?.symbol);
+        const itemTimeframe = normalizeText(item.last_run?.timeframe);
+
+        return (
+          itemSymbol === normalizedSymbol &&
+          itemTimeframe === normalizedTimeframe
+        );
+      })
+      .map((item) => ({
+        id: item.strategy_key,
+        label: item.strategy_name || item.strategy_key,
+        score: Number(item.hit_rate ?? 0),
+      }))
+      .filter(
+        (item) =>
+          Number.isFinite(item.score) &&
+          item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE
+      )
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+
+        return a.label.localeCompare(b.label, "pt-PT");
+      })
+      .slice(0, 5);
+  }, [stageTests, effectiveChartSymbol, effectiveChartTimeframe]);
 
   const loadingCandles = useMemo(() => {
     if (!isMarketSelectionComplete) return false;
@@ -616,6 +660,8 @@ function DashboardPage() {
               chartData={chartData}
               candles={candles}
               overlays={overlays}
+              strategyHighlights={strategyHighlights}
+              strategyHighlightMinScore={CHART_STRATEGY_HIGHLIGHT_MIN_SCORE}
               selectedMarketTypeLabel={selectedMarketTypeLabel}
               selectedCatalogLabel={selectedCatalogLabel}
               effectiveChartSymbol={effectiveChartSymbol}

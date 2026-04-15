@@ -13,6 +13,7 @@ import RunMetricsCard from "./components/runs/RunMetricsCard";
 import RunSummaryCard from "./components/runs/RunSummaryCard";
 import StrategiesCard from "./components/strategies/StrategiesCard";
 import {
+  CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
   FORCED_REALTIME_SYMBOL,
   FORCED_REALTIME_TIMEFRAME,
   FORCE_REALTIME_TEST,
@@ -338,7 +339,9 @@ function DashboardPage() {
         score: Number(item.hit_rate ?? 0),
       }))
       .filter(
-        (item) => Number.isFinite(item.score) && item.score >= 80
+        (item) =>
+          Number.isFinite(item.score) &&
+          item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE
       )
       .sort((a, b) => {
         if (b.score !== a.score) {
@@ -651,6 +654,7 @@ function DashboardPage() {
             candles={candles}
             overlays={overlays}
             strategyHighlights={strategyHighlights}
+            strategyHighlightMinScore={CHART_STRATEGY_HIGHLIGHT_MIN_SCORE}
             selectedMarketTypeLabel={selectedMarketTypeLabel}
             selectedCatalogLabel={selectedCatalogLabel}
             effectiveChartSymbol={effectiveChartSymbol}
