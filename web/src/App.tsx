@@ -37,8 +37,15 @@ type TimeframeOption = {
   label: string;
 };
 
+type MarketStrategyCardBridgeItem = {
+  id: string;
+  title: string;
+  score: number;
+};
+
 const TIMEFRAME_STORAGE_KEY = "traderbot:selectedTimeframe";
 const CHART_STRATEGY_STORAGE_KEY = "traderbot:selectedChartStrategyKey";
+const MARKET_STRATEGY_CARDS_EVENT = "traderbot:market-strategy-cards";
 
 const TIMEFRAME_OPTIONS: TimeframeOption[] = [
   { value: "1m", label: "1m" },
@@ -76,6 +83,33 @@ function getCurrentPathname(): string {
 
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeMarketStrategyCards(
+  value: unknown
+): MarketStrategyCardBridgeItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const id = String(record.id ?? "").trim();
+      const title = String(record.title ?? "").trim();
+      const score = Number(record.score ?? Number.NaN);
+
+      if (!id || !title || !Number.isFinite(score)) {
+        return null;
+      }
+
+      return { id, title, score };
+    })
+    .filter((item): item is MarketStrategyCardBridgeItem => item !== null);
 }
 
 function NavLink({
@@ -159,6 +193,10 @@ function DashboardPage() {
     readStoredChartStrategyKey()
   );
 
+  const [marketStrategyCards, setMarketStrategyCards] = useState<
+    MarketStrategyCardBridgeItem[]
+  >([]);
+
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -172,6 +210,27 @@ function DashboardPage() {
       // Ignora erros de localStorage
     }
   }, [selectedTimeframe]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleStrategyCardsEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<unknown>;
+      setMarketStrategyCards(normalizeMarketStrategyCards(customEvent.detail));
+    };
+
+    window.addEventListener(
+      MARKET_STRATEGY_CARDS_EVENT,
+      handleStrategyCardsEvent as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        MARKET_STRATEGY_CARDS_EVENT,
+        handleStrategyCardsEvent as EventListener
+      );
+    };
+  }, []);
 
   const isSelectedTimeframeValid = useMemo(() => {
     return TIMEFRAME_OPTIONS.some((item) => item.value === selectedTimeframe);
@@ -319,11 +378,7 @@ function DashboardPage() {
     const normalizedSymbol = normalizeText(effectiveChartSymbol);
     const normalizedTimeframe = normalizeText(effectiveChartTimeframe);
 
-    if (!normalizedSymbol || !normalizedTimeframe) {
-      return [];
-    }
-
-    return stageTests
+    const runItems = stageTests
       .filter((item) => {
         const itemSymbol = normalizeText(item.last_run?.symbol);
         const itemTimeframe = normalizeText(item.last_run?.timeframe);
@@ -337,12 +392,35 @@ function DashboardPage() {
         id: item.strategy_key,
         label: item.strategy_name || item.strategy_key,
         score: Number(item.hit_rate ?? 0),
-      }))
-      .filter(
-        (item) =>
-          Number.isFinite(item.score) &&
-          item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE
-      )
+      }));
+
+    const contextualItems = marketStrategyCards.map((item) => ({
+      id: item.id,
+      label: item.title,
+      score: Number(item.score ?? 0),
+    }));
+
+    const mergedMap = new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        score: number;
+      }
+    >();
+
+    [...runItems, ...contextualItems].forEach((item) => {
+      if (!Number.isFinite(item.score)) return;
+      if (item.score < CHART_STRATEGY_HIGHLIGHT_MIN_SCORE) return;
+
+      const existing = mergedMap.get(item.id);
+
+      if (!existing || item.score > existing.score) {
+        mergedMap.set(item.id, item);
+      }
+    });
+
+    return Array.from(mergedMap.values())
       .sort((a, b) => {
         if (b.score !== a.score) {
           return b.score - a.score;
@@ -351,7 +429,20 @@ function DashboardPage() {
         return a.label.localeCompare(b.label, "pt-PT");
       })
       .slice(0, 5);
-  }, [stageTests, effectiveChartSymbol, effectiveChartTimeframe]);
+  }, [
+    stageTests,
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    marketStrategyCards,
+  ]);
+
+  const hasContextualOverlayCandidate = useMemo(() => {
+    return marketStrategyCards.some(
+      (item) =>
+        Number.isFinite(item.score) &&
+        item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE
+    );
+  }, [marketStrategyCards]);
 
   const loadingCandles = useMemo(() => {
     if (!isMarketSelectionComplete) return false;
@@ -426,6 +517,7 @@ function DashboardPage() {
     effectiveChartSymbol,
     effectiveChartTimeframe,
     lastCandleTick,
+    marketStrategyCards,
   });
 
   const runStrategyKey = runDetails?.run?.strategy_key ?? "";
@@ -436,12 +528,17 @@ function DashboardPage() {
   }, [selectedChartStrategy]);
 
   const showStrategyOverlays = useMemo(() => {
+    if (hasContextualOverlayCandidate) {
+      return true;
+    }
+
     if (!effectiveSelectedChartStrategyKey) return false;
     if (!runStrategyKey) return false;
     if (!selectedStrategySupportsOverlays) return false;
 
     return effectiveSelectedChartStrategyKey === runStrategyKey;
   }, [
+    hasContextualOverlayCandidate,
     effectiveSelectedChartStrategyKey,
     runStrategyKey,
     selectedStrategySupportsOverlays,

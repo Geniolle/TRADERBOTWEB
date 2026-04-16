@@ -1,6 +1,6 @@
 // web/src/components/strategies/StrategiesSection.tsx
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MarketStrategyInput, StrategyCard } from "../../types/strategy";
 import { buildStrategySection } from "../../services/buildStrategies";
 
@@ -9,6 +9,36 @@ type StrategiesSectionProps = {
 };
 
 type StrategyVisualTone = "green" | "yellow" | "red";
+
+const MARKET_STRATEGY_CARDS_EVENT = "traderbot:market-strategy-cards";
+
+function dispatchMarketStrategyCards(cards: StrategyCard[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(MARKET_STRATEGY_CARDS_EVENT, {
+      detail: cards.map((card) => ({
+        id: card.id,
+        title: card.title,
+        score: card.score,
+      })),
+    })
+  );
+}
+
+function clearMarketStrategyCards() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(MARKET_STRATEGY_CARDS_EVENT, {
+      detail: [],
+    })
+  );
+}
 
 function getStatusLabel(status: StrategyCard["status"]): string {
   switch (status) {
@@ -425,8 +455,18 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
   const section = useMemo(() => buildStrategySection(data), [data]);
   const headerStyles = useMemo(
     () => getHeaderStylesByScore(section.topScore),
-    [section.topScore],
+    [section.topScore]
   );
+
+  useEffect(() => {
+    dispatchMarketStrategyCards(section.cards);
+  }, [section.cards]);
+
+  useEffect(() => {
+    return () => {
+      clearMarketStrategyCards();
+    };
+  }, []);
 
   return (
     <section
