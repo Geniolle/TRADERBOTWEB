@@ -136,28 +136,30 @@ function ChartOverlays({ overlays }: ChartOverlaysProps) {
             }}
           />
 
-          <div
-            style={{
-              position: "absolute",
-              right: 8,
-              top: -12,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: line.color,
-              color: "#ffffff",
-              padding: "3px 8px",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-              zIndex: 10,
-            }}
-          >
-            <span>{line.label}</span>
-            <span>{formatPrice(Number(line.value))}</span>
-          </div>
+          {line.showBadge !== false ? (
+            <div
+              style={{
+                position: "absolute",
+                right: 8,
+                top: -12,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: line.color,
+                color: "#ffffff",
+                padding: "3px 8px",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 800,
+                whiteSpace: "nowrap",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                zIndex: 10,
+              }}
+            >
+              {line.label ? <span>{line.label}</span> : null}
+              <span>{formatPrice(Number(line.value))}</span>
+            </div>
+          ) : null}
         </div>
       ))}
 

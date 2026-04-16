@@ -22,11 +22,12 @@ import {
 
 export type OverlayLine = {
   id: string;
-  label: string;
+  label?: string;
   value: number;
   top: number;
   color: string;
   dashed?: boolean;
+  showBadge?: boolean;
 };
 
 export type OverlayMarker = {
@@ -218,6 +219,10 @@ function findClosestCandleIndexByTime(
   return bestIndex;
 }
 
+function clampWithinChart(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function buildSelectedCaseOverlays(params: {
   selectedCase: ExtendedRunCaseItem;
   candleMeta: CandleMeta[];
@@ -365,6 +370,7 @@ function buildSelectedCaseOverlays(params: {
       top: yFromPrice(item.value),
       value: item.value,
       dashed: item.dashed,
+      showBadge: true,
     });
   }
 
@@ -377,10 +383,18 @@ function buildPullbackContextualOverlays(params: {
   xFromIndex: (index: number) => number;
   yFromPrice: (price: number) => number;
   priceRange: number;
+  chartWidth: number;
   chartHeight: number;
 }): ChartOverlaySet {
-  const { candleMeta, score, xFromIndex, yFromPrice, priceRange, chartHeight } =
-    params;
+  const {
+    candleMeta,
+    score,
+    xFromIndex,
+    yFromPrice,
+    priceRange,
+    chartWidth,
+    chartHeight,
+  } = params;
 
   const overlays = createEmptyChartOverlays();
 
@@ -566,11 +580,11 @@ function buildPullbackContextualOverlays(params: {
     width: 2,
   });
 
-  const tagLeft = Math.max(10, xFromIndex(triggerIndex) - 32);
-  const tagTop = Math.max(
-    12,
-    Math.min(chartHeight - 40, Math.min(zoneTopPx, zoneBottomPx) - 28),
-  );
+  const anchorX = xFromIndex(triggerIndex);
+  const anchorY = Math.min(zoneTopPx, zoneBottomPx);
+
+  const tagLeft = clampWithinChart(anchorX - 34, 10, chartWidth - 190);
+  const tagTop = clampWithinChart(anchorY - 32, 12, chartHeight - 42);
 
   overlays.texts.push({
     id: "ctx-pullback-text",
@@ -593,7 +607,7 @@ function buildPullbackContextualOverlays(params: {
   if (!compactMode) {
     overlays.circles.push({
       id: "ctx-pullback-trigger-circle",
-      left: xFromIndex(triggerIndex),
+      left: anchorX,
       top: yFromPrice(side === "buy" ? triggerCandle.low : triggerCandle.high),
       radius: 18,
       color: "transparent",
@@ -625,16 +639,215 @@ function buildPullbackContextualOverlays(params: {
       },
     );
 
-    overlays.texts.push({
-      id: "ctx-pullback-entry-text",
-      left: Math.max(10, xFromIndex(triggerIndex) - 22),
-      top: Math.max(12, zoneBottomPx + 8),
-      text: `Entry ${formatMaybeNumber(entry)}`,
-      color: "#1e3a8a",
-      background: "rgba(219, 234, 254, 0.96)",
-      borderColor: "rgba(37, 99, 235, 0.92)",
-    });
+    overlays.texts.push(
+      {
+        id: "ctx-pullback-entry-text",
+        left: clampWithinChart(anchorX - 18, 10, chartWidth - 150),
+        top: clampWithinChart(zoneBottomPx + 10, 12, chartHeight - 42),
+        text: `Entry ${formatMaybeNumber(entry)}`,
+        color: "#1e3a8a",
+        background: "rgba(219, 234, 254, 0.96)",
+        borderColor: "rgba(37, 99, 235, 0.92)",
+      },
+      {
+        id: "ctx-pullback-target-text",
+        left: clampWithinChart(riskRight + 6, 10, chartWidth - 150),
+        top: clampWithinChart(targetPx - 12, 12, chartHeight - 42),
+        text: `Target ${formatMaybeNumber(target)}`,
+        color: "#14532d",
+        background: "rgba(220, 252, 231, 0.96)",
+        borderColor: "rgba(22, 163, 74, 0.92)",
+      },
+      {
+        id: "ctx-pullback-invalid-text",
+        left: clampWithinChart(riskRight + 6, 10, chartWidth - 165),
+        top: clampWithinChart(invalidPx - 12, 12, chartHeight - 42),
+        text: `Invalid ${formatMaybeNumber(invalidation)}`,
+        color: "#7f1d1d",
+        background: "rgba(254, 226, 226, 0.96)",
+        borderColor: "rgba(220, 38, 38, 0.92)",
+      },
+    );
   }
+
+  return overlays;
+}
+
+function buildMovingAverageCrossoverOverlays(params: {
+  candleMeta: CandleMeta[];
+  score: number;
+  xFromIndex: (index: number) => number;
+  yFromPrice: (price: number) => number;
+  chartWidth: number;
+  chartHeight: number;
+}): ChartOverlaySet {
+  const { candleMeta, score, xFromIndex, yFromPrice, chartWidth, chartHeight } =
+    params;
+
+  const overlays = createEmptyChartOverlays();
+
+  if (candleMeta.length < 24) {
+    return overlays;
+  }
+
+  const closes = candleMeta.map((item) => item.close);
+  const ema9Series = closes.map((_, index) =>
+    calculateEMA(closes.slice(0, index + 1), 9),
+  );
+  const ema21Series = closes.map((_, index) =>
+    calculateEMA(closes.slice(0, index + 1), 21),
+  );
+
+  let crossIndex: number | null = null;
+
+  for (
+    let index = candleMeta.length - 1;
+    index >= Math.max(1, candleMeta.length - 18);
+    index -= 1
+  ) {
+    const prevFast = ema9Series[index - 1];
+    const prevSlow = ema21Series[index - 1];
+    const currFast = ema9Series[index];
+    const currSlow = ema21Series[index];
+
+    if (
+      prevFast === null ||
+      prevSlow === null ||
+      currFast === null ||
+      currSlow === null
+    ) {
+      continue;
+    }
+
+    const prevDiff = prevFast - prevSlow;
+    const currDiff = currFast - currSlow;
+
+    if ((prevDiff <= 0 && currDiff > 0) || (prevDiff >= 0 && currDiff < 0)) {
+      crossIndex = index;
+      break;
+    }
+  }
+
+  if (crossIndex === null) {
+    return overlays;
+  }
+
+  const fast = ema9Series[crossIndex];
+  const slow = ema21Series[crossIndex];
+
+  if (fast === null || slow === null) {
+    return overlays;
+  }
+
+  const side: "buy" | "sell" = fast >= slow ? "buy" : "sell";
+  const crossPrice = (fast + slow) / 2;
+  const crossX = xFromIndex(crossIndex);
+  const crossY = yFromPrice(crossPrice);
+
+  overlays.circles.push({
+    id: "ctx-cross-circle",
+    left: crossX,
+    top: crossY,
+    radius: 18,
+    color: "transparent",
+    borderColor: side === "buy" ? "#16a34a" : "#dc2626",
+    borderWidth: 3,
+    dashed: true,
+  });
+
+  overlays.boxes.push({
+    id: "ctx-cross-zone",
+    left: clampWithinChart(crossX - 26, 10, chartWidth - 70),
+    top: clampWithinChart(
+      Math.min(yFromPrice(fast), yFromPrice(slow)) - 10,
+      10,
+      chartHeight - 34,
+    ),
+    width: 52,
+    height: Math.max(20, Math.abs(yFromPrice(fast) - yFromPrice(slow)) + 20),
+    fill:
+      side === "buy"
+        ? "rgba(34, 197, 94, 0.12)"
+        : "rgba(239, 68, 68, 0.12)",
+    borderColor:
+      side === "buy"
+        ? "rgba(22, 163, 74, 0.88)"
+        : "rgba(220, 38, 38, 0.88)",
+    borderWidth: 1,
+    label: "Cross",
+    labelColor: "#0f172a",
+    labelBackground: "rgba(255,255,255,0.9)",
+  });
+
+  overlays.texts.push({
+    id: "ctx-cross-text",
+    left: clampWithinChart(crossX - 34, 10, chartWidth - 190),
+    top: clampWithinChart(crossY - 34, 12, chartHeight - 42),
+    text: `Cruzamento ${side === "buy" ? "BUY" : "SELL"} · ${score}%`,
+    color: "#ffffff",
+    background:
+      side === "buy"
+        ? "rgba(22, 163, 74, 0.92)"
+        : "rgba(185, 28, 28, 0.92)",
+    borderColor:
+      side === "buy"
+        ? "rgba(134, 239, 172, 0.92)"
+        : "rgba(252, 165, 165, 0.92)",
+  });
+
+  return overlays;
+}
+
+function buildRangeBreakoutOverlays(params: {
+  candleMeta: CandleMeta[];
+  score: number;
+  xFromIndex: (index: number) => number;
+  yFromPrice: (price: number) => number;
+  chartWidth: number;
+  chartHeight: number;
+}): ChartOverlaySet {
+  const { candleMeta, score, xFromIndex, yFromPrice, chartWidth, chartHeight } =
+    params;
+
+  const overlays = createEmptyChartOverlays();
+
+  if (candleMeta.length < 18) {
+    return overlays;
+  }
+
+  const recent = candleMeta.slice(-14);
+  const rangeHigh = Math.max(...recent.map((item) => item.high));
+  const rangeLow = Math.min(...recent.map((item) => item.low));
+  const leftIndex = candleMeta.length - recent.length;
+  const rightIndex = candleMeta.length - 1;
+
+  const centerX = (xFromIndex(leftIndex) + xFromIndex(rightIndex)) / 2;
+  const topY = yFromPrice(rangeHigh);
+  const bottomY = yFromPrice(rangeLow);
+
+  overlays.boxes.push({
+    id: "ctx-range-box",
+    left: xFromIndex(leftIndex),
+    top: Math.min(topY, bottomY),
+    width: Math.max(24, xFromIndex(rightIndex) - xFromIndex(leftIndex)),
+    height: Math.max(20, Math.abs(bottomY - topY)),
+    fill: "rgba(245, 158, 11, 0.10)",
+    borderColor: "rgba(217, 119, 6, 0.84)",
+    borderWidth: 1,
+    label: "Range",
+    labelColor: "#78350f",
+    labelBackground: "rgba(255,255,255,0.92)",
+  });
+
+  overlays.texts.push({
+    id: "ctx-range-text",
+    left: clampWithinChart(centerX - 28, 10, chartWidth - 170),
+    top: clampWithinChart(topY - 30, 12, chartHeight - 42),
+    text: `Range breakout · ${score}%`,
+    color: "#ffffff",
+    background: "rgba(217, 119, 6, 0.92)",
+    borderColor: "rgba(253, 186, 116, 0.92)",
+  });
 
   return overlays;
 }
@@ -785,6 +998,29 @@ function useChartDerivedData({
         xFromIndex,
         yFromPrice,
         priceRange: priceBounds.range,
+        chartWidth: width,
+        chartHeight: height,
+      });
+    }
+
+    if (bestContextualStrategy?.id === "strategy-moving-average-crossover") {
+      return buildMovingAverageCrossoverOverlays({
+        candleMeta,
+        score: bestContextualStrategy.score,
+        xFromIndex,
+        yFromPrice,
+        chartWidth: width,
+        chartHeight: height,
+      });
+    }
+
+    if (bestContextualStrategy?.id === "strategy-range-breakout") {
+      return buildRangeBreakoutOverlays({
+        candleMeta,
+        score: bestContextualStrategy.score,
+        xFromIndex,
+        yFromPrice,
+        chartWidth: width,
         chartHeight: height,
       });
     }

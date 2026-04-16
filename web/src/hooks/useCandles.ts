@@ -28,6 +28,8 @@ type FetchCandlesResult = {
   items: CandleItem[];
   coverageMeta: CandleCoverageMeta | null;
   preserveExisting: boolean;
+  latestCandle: CandleItem | null;
+  responseMode: "full" | "incremental";
 };
 
 type LatestCandleResponse = CandleItem | null;
@@ -101,7 +103,7 @@ function normalizeCandleItem(item: unknown): CandleItem | null {
   const normalizedCloseTime = normalizeIsoString(
     typeof candidate.close_time === "string"
       ? candidate.close_time
-      : candidate.open_time
+      : candidate.open_time,
   );
 
   return {
@@ -174,7 +176,7 @@ function dedupeCandlesByOpenTime(items: CandleItem[]): CandleItem[] {
 function mergeCandles(
   previous: CandleItem[],
   incoming: CandleItem[],
-  mode: "full" | "incremental"
+  mode: "full" | "incremental",
 ): CandleItem[] {
   if (mode === "full") {
     return dedupeCandlesByOpenTime(incoming);
@@ -211,7 +213,7 @@ function buildCoverageMeta(
   timeframe: string,
   mode: "full" | "incremental",
   startAt: string,
-  endAt: string
+  endAt: string,
 ): CandleCoverageMeta {
   const derived = getDerivedCoverageFromItems(items);
 
@@ -241,13 +243,13 @@ function parsePayload(
   timeframe: string,
   mode: "full" | "incremental",
   startAt: string,
-  endAt: string
+  endAt: string,
 ): { items: CandleItem[]; coverageMeta: CandleCoverageMeta } {
   if (Array.isArray(payload)) {
     const items = dedupeCandlesByOpenTime(
       payload
         .map((item) => normalizeCandleItem(item))
-        .filter((item): item is CandleItem => item !== null)
+        .filter((item): item is CandleItem => item !== null),
     );
 
     return {
@@ -259,7 +261,7 @@ function parsePayload(
         timeframe,
         mode,
         startAt,
-        endAt
+        endAt,
       ),
     };
   }
@@ -271,7 +273,7 @@ function parsePayload(
     const items = dedupeCandlesByOpenTime(
       rawItems
         .map((item) => normalizeCandleItem(item))
-        .filter((item): item is CandleItem => item !== null)
+        .filter((item): item is CandleItem => item !== null),
     );
 
     return {
@@ -283,7 +285,7 @@ function parsePayload(
         timeframe,
         mode,
         startAt,
-        endAt
+        endAt,
       ),
     };
   }
@@ -299,7 +301,7 @@ function parsePayload(
       timeframe,
       mode,
       startAt,
-      endAt
+      endAt,
     ),
   };
 }
@@ -345,7 +347,7 @@ function getMinimumCandlesForStableSnapshot(timeframe: string): number {
 
 function isInsufficientSnapshot(
   items: CandleItem[],
-  timeframe: string
+  timeframe: string,
 ): boolean {
   if (items.length === 0) return true;
   return items.length < getMinimumCandlesForStableSnapshot(timeframe);
@@ -407,7 +409,7 @@ function buildCandlesUrl(params: {
 function buildLatestUrl(
   symbol: string,
   timeframe: string,
-  provider?: string
+  provider?: string,
 ): string {
   const query = new URLSearchParams({
     symbol,
@@ -454,7 +456,7 @@ function useCandles({
   const fetchCandles = useCallback(
     async (
       mode: "full" | "incremental",
-      showLoader: boolean
+      showLoader: boolean,
     ): Promise<FetchCandlesResult> => {
       const symbol = normalizeSymbol(effectiveChartSymbol);
       const timeframe = normalizeTimeframe(effectiveChartTimeframe);
@@ -465,6 +467,8 @@ function useCandles({
           items: [],
           coverageMeta: null,
           preserveExisting: false,
+          latestCandle: null,
+          responseMode: mode,
         };
       }
 
@@ -487,7 +491,7 @@ function useCandles({
               timeframe,
               provider,
               mode: "full",
-            })
+            }),
           );
 
           const parsed = parsePayload(
@@ -496,7 +500,7 @@ function useCandles({
             timeframe,
             "full",
             "",
-            nowIso
+            nowIso,
           );
 
           if (activeRequestKeyRef.current !== currentRequestKey) {
@@ -504,6 +508,8 @@ function useCandles({
               items: [],
               coverageMeta: null,
               preserveExisting: false,
+              latestCandle: null,
+              responseMode: "full",
             };
           }
 
@@ -511,6 +517,9 @@ function useCandles({
             items: parsed.items,
             coverageMeta: parsed.coverageMeta,
             preserveExisting: false,
+            latestCandle:
+              parsed.items.length > 0 ? parsed.items[parsed.items.length - 1] : null,
+            responseMode: "full",
           };
         }
 
@@ -520,10 +529,10 @@ function useCandles({
             : null;
 
         const latestPayload = await fetchJson(
-          buildLatestUrl(symbol, timeframe, provider)
+          buildLatestUrl(symbol, timeframe, provider),
         );
         const latestCandle = normalizeCandleItem(
-          latestPayload as LatestCandleResponse
+          latestPayload as LatestCandleResponse,
         );
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
@@ -531,6 +540,8 @@ function useCandles({
             items: [],
             coverageMeta: null,
             preserveExisting: false,
+            latestCandle: null,
+            responseMode: "incremental",
           };
         }
 
@@ -539,6 +550,8 @@ function useCandles({
             items: [],
             coverageMeta: coverageMetaRef.current,
             preserveExisting: candlesRef.current.length > 0,
+            latestCandle: null,
+            responseMode: "incremental",
           };
         }
 
@@ -551,7 +564,7 @@ function useCandles({
               timeframe,
               provider,
               mode: "full",
-            })
+            }),
           );
 
           const parsed = parsePayload(
@@ -560,13 +573,15 @@ function useCandles({
             timeframe,
             "full",
             "",
-            nowIso
+            nowIso,
           );
 
           return {
             items: parsed.items,
             coverageMeta: parsed.coverageMeta,
             preserveExisting: false,
+            latestCandle,
+            responseMode: "full",
           };
         }
 
@@ -583,9 +598,11 @@ function useCandles({
               timeframe,
               "incremental",
               coverageMetaRef.current?.start_at ?? frontendLastCandle.open_time,
-              coverageMetaRef.current?.end_at ?? latestCandle.close_time
+              coverageMetaRef.current?.end_at ?? latestCandle.close_time,
             ),
             preserveExisting: false,
+            latestCandle,
+            responseMode: "incremental",
           };
         }
 
@@ -601,7 +618,7 @@ function useCandles({
             endAt,
             limit: INCREMENTAL_LIMIT,
             mode: "incremental",
-          })
+          }),
         );
 
         const parsed = parsePayload(
@@ -610,7 +627,7 @@ function useCandles({
           timeframe,
           "incremental",
           startAt,
-          endAt
+          endAt,
         );
 
         if (activeRequestKeyRef.current !== currentRequestKey) {
@@ -618,6 +635,48 @@ function useCandles({
             items: [],
             coverageMeta: null,
             preserveExisting: false,
+            latestCandle: null,
+            responseMode: "incremental",
+          };
+        }
+
+        if (parsed.items.length === 0) {
+          console.warn(
+            "[HTTP] incremental vazio apesar de latest mais novo; a forçar full reload",
+            {
+              symbol,
+              timeframe,
+              provider,
+              frontendLastOpen: frontendLastCandle.open_time,
+              latestOpen: latestCandle.open_time,
+            },
+          );
+
+          const nowIso = new Date().toISOString();
+          const fullPayload = await fetchJson(
+            buildCandlesUrl({
+              symbol,
+              timeframe,
+              provider,
+              mode: "full",
+            }),
+          );
+
+          const fullParsed = parsePayload(
+            fullPayload,
+            symbol,
+            timeframe,
+            "full",
+            "",
+            nowIso,
+          );
+
+          return {
+            items: fullParsed.items,
+            coverageMeta: fullParsed.coverageMeta,
+            preserveExisting: false,
+            latestCandle,
+            responseMode: "full",
           };
         }
 
@@ -625,6 +684,8 @@ function useCandles({
           items: parsed.items,
           coverageMeta: parsed.coverageMeta,
           preserveExisting: false,
+          latestCandle,
+          responseMode: "incremental",
         };
       } catch (error) {
         if (activeRequestKeyRef.current !== currentRequestKey) {
@@ -632,6 +693,8 @@ function useCandles({
             items: [],
             coverageMeta: null,
             preserveExisting: false,
+            latestCandle: null,
+            responseMode: mode,
           };
         }
 
@@ -646,6 +709,8 @@ function useCandles({
           items: [],
           coverageMeta: coverageMetaRef.current,
           preserveExisting: candlesRef.current.length > 0,
+          latestCandle: null,
+          responseMode: mode,
         };
       } finally {
         if (activeRequestKeyRef.current === currentRequestKey) {
@@ -653,7 +718,7 @@ function useCandles({
         }
       }
     },
-    [effectiveChartSymbol, effectiveChartTimeframe, selectedProvider]
+    [effectiveChartSymbol, effectiveChartTimeframe, selectedProvider],
   );
 
   const reloadCandles = useCallback(
@@ -671,39 +736,49 @@ function useCandles({
         return;
       }
 
-      const mergedItems = mergeCandles(
-        candlesRef.current,
-        parsed.items,
-        "incremental"
-      );
-
-      const incomingIsInsufficient = isInsufficientSnapshot(parsed.items, timeframe);
-      const mergedIsInsufficient = isInsufficientSnapshot(mergedItems, timeframe);
       const hasPreviousSnapshot = candlesRef.current.length > 0;
 
+      const nextItems =
+        parsed.responseMode === "full"
+          ? mergeCandles([], parsed.items, "full")
+          : mergeCandles(candlesRef.current, parsed.items, "incremental");
+
+      const incomingForValidation =
+        parsed.responseMode === "full" ? nextItems : parsed.items;
+
+      const incomingIsInsufficient = isInsufficientSnapshot(
+        incomingForValidation,
+        timeframe,
+      );
+      const nextIsInsufficient = isInsufficientSnapshot(nextItems, timeframe);
+
       if (
-        parsed.items.length > 0 &&
-        !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
+        nextItems.length > 0 &&
+        !(incomingIsInsufficient && nextIsInsufficient && hasPreviousSnapshot)
       ) {
-        setCandles(mergedItems);
-      } else if (hasPreviousSnapshot && parsed.items.length > 0) {
+        setCandles(nextItems);
+      } else if (hasPreviousSnapshot) {
         console.warn(
-          "[HTTP] snapshot incremental insuficiente; último snapshot válido foi preservado",
+          parsed.responseMode === "full"
+            ? "[HTTP] full reload insuficiente; último snapshot válido foi preservado"
+            : "[HTTP] snapshot incremental insuficiente; último snapshot válido foi preservado",
           {
             symbol,
             timeframe,
-            incomingCount: parsed.items.length,
-            mergedCount: mergedItems.length,
+            responseMode: parsed.responseMode,
+            incomingCount: incomingForValidation.length,
+            nextCount: nextItems.length,
             preservedCount: candlesRef.current.length,
-          }
+            latestOpenTime: parsed.latestCandle?.open_time ?? null,
+          },
         );
       }
 
       if (parsed.coverageMeta) {
         const coverageItems =
-          mergedItems.length > 0 &&
-          !(incomingIsInsufficient && mergedIsInsufficient && hasPreviousSnapshot)
-            ? mergedItems
+          nextItems.length > 0 &&
+          !(incomingIsInsufficient && nextIsInsufficient && hasPreviousSnapshot)
+            ? nextItems
             : candlesRef.current;
 
         setCoverageMeta(
@@ -711,18 +786,19 @@ function useCandles({
             {
               ...parsed.coverageMeta,
               count: coverageItems.length,
+              mode: parsed.responseMode,
             },
             coverageItems,
             symbol,
             timeframe,
-            "incremental",
+            parsed.responseMode,
             parsed.coverageMeta.start_at,
-            parsed.coverageMeta.end_at
-          )
+            parsed.coverageMeta.end_at,
+          ),
         );
       }
     },
-    [effectiveChartSymbol, effectiveChartTimeframe, fetchCandles]
+    [effectiveChartSymbol, effectiveChartTimeframe, fetchCandles],
   );
 
   useEffect(() => {
@@ -762,14 +838,15 @@ function useCandles({
               {
                 ...parsed.coverageMeta,
                 count: nextCandles.length,
+                mode: "full",
               },
               nextCandles,
               symbol,
               timeframe,
               "full",
               parsed.coverageMeta.start_at,
-              parsed.coverageMeta.end_at
-            )
+              parsed.coverageMeta.end_at,
+            ),
           );
         }
 
@@ -784,7 +861,7 @@ function useCandles({
             timeframe,
             incomingCount: nextCandles.length,
             preservedCount: candlesRef.current.length,
-          }
+          },
         );
 
         if (parsed.coverageMeta) {
@@ -793,14 +870,15 @@ function useCandles({
               {
                 ...parsed.coverageMeta,
                 count: candlesRef.current.length,
+                mode: "full",
               },
               candlesRef.current,
               symbol,
               timeframe,
               "full",
               parsed.coverageMeta.start_at,
-              parsed.coverageMeta.end_at
-            )
+              parsed.coverageMeta.end_at,
+            ),
           );
         }
 

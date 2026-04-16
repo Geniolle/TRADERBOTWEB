@@ -11,6 +11,7 @@ import RunMetricsCard from "../components/runs/RunMetricsCard";
 import RunSummaryCard from "../components/runs/RunSummaryCard";
 import StrategiesCard from "../components/strategies/StrategiesCard";
 import {
+  API_HTTP_BASE_URL,
   CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
   FORCED_REALTIME_SYMBOL,
   FORCED_REALTIME_TIMEFRAME,
@@ -28,6 +29,7 @@ import useRealtimeFeed from "../hooks/useRealtimeFeed";
 import useRunDetails from "../hooks/useRunDetails";
 import useStageTests from "../hooks/useStageTests";
 import useStrategies from "../hooks/useStrategies";
+import type { CandleItem } from "../types/trading";
 
 type TimeframeOption = {
   value: string;
@@ -39,6 +41,15 @@ type MarketStrategyCardBridgeItem = {
   title: string;
   score: number;
 };
+
+type PersistedLatestCandleDiagnostic = {
+  symbol: string;
+  timeframe: string;
+  open_time: string;
+  close_time: string;
+  provider: string | null;
+  source: string | null;
+} | null;
 
 const TIMEFRAME_STORAGE_KEY = "traderbot:selectedTimeframe";
 const CHART_STRATEGY_STORAGE_KEY = "traderbot:selectedChartStrategyKey";
@@ -75,6 +86,149 @@ function readStoredChartStrategyKey(): string {
 
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeSymbol(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeTimeframe(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  const aliases: Record<string, string> = {
+    "1min": "1m",
+    "3min": "3m",
+    "5min": "5m",
+    "15min": "15m",
+    "30min": "30m",
+    "60min": "1h",
+    "1hr": "1h",
+    "4hr": "4h",
+    "1day": "1d",
+  };
+
+  return aliases[normalized] ?? normalized;
+}
+
+function normalizeProvider(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeIsoString(value: string | null | undefined): string {
+  if (!value) return "";
+
+  const parsed = new Date(value).getTime();
+  if (!Number.isFinite(parsed)) {
+    return String(value).trim();
+  }
+
+  return new Date(parsed).toISOString();
+}
+
+function timestampFromIso(value: string | null | undefined): number | null {
+  if (!value) return null;
+
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatMinutesDiff(
+  leftValue: string | null | undefined,
+  rightValue: string | null | undefined,
+): string {
+  const left = timestampFromIso(leftValue);
+  const right = timestampFromIso(rightValue);
+
+  if (left === null || right === null) {
+    return "-";
+  }
+
+  const diffMinutes = (left - right) / 60000;
+  return diffMinutes.toFixed(2);
+}
+
+function formatIsoForConsole(value: string | null | undefined): string {
+  return value ? normalizeIsoString(value) : "-";
+}
+
+function buildLatestPersistedCandleUrl(
+  symbol: string,
+  timeframe: string,
+  provider?: string,
+): string {
+  const query = new URLSearchParams({
+    symbol,
+    timeframe,
+  });
+
+  if (provider) {
+    query.set("provider", provider);
+  }
+
+  return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
+}
+
+async function fetchLatestPersistedCandleDiagnostic(params: {
+  symbol: string;
+  timeframe: string;
+  provider: string;
+}): Promise<PersistedLatestCandleDiagnostic> {
+  const { symbol, timeframe, provider } = params;
+
+  if (!symbol || !timeframe) {
+    return null;
+  }
+
+  const response = await fetch(
+    buildLatestPersistedCandleUrl(symbol, timeframe, provider),
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const payloadText = await response.text();
+    throw new Error(payloadText || `HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Partial<CandleItem> | null;
+
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (
+    typeof payload.symbol !== "string" ||
+    typeof payload.timeframe !== "string" ||
+    typeof payload.open_time !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    symbol: normalizeSymbol(payload.symbol),
+    timeframe: normalizeTimeframe(payload.timeframe),
+    open_time: normalizeIsoString(payload.open_time),
+    close_time: normalizeIsoString(
+      typeof payload.close_time === "string"
+        ? payload.close_time
+        : payload.open_time,
+    ),
+    provider:
+      typeof payload.provider === "string"
+        ? payload.provider
+        : typeof payload.source === "string"
+          ? payload.source
+          : null,
+    source: typeof payload.source === "string" ? payload.source : null,
+  };
 }
 
 function normalizeMarketStrategyCards(
@@ -559,13 +713,23 @@ function DashboardPage() {
     selectedStrategyNotice && !showStrategyOverlays,
   );
 
+  const lastChartCandle = useMemo(() => {
+    return candles.length > 0 ? candles[candles.length - 1] : null;
+  }, [candles]);
+
   useEffect(() => {
     console.groupCollapsed(
       `[TB][DASHBOARD] threshold=${CHART_STRATEGY_HIGHLIGHT_MIN_SCORE} | ${effectiveChartSymbol || "-"} / ${effectiveChartTimeframe || "-"}`,
     );
-    console.log("effectiveSelectedChartStrategyKey:", effectiveSelectedChartStrategyKey);
+    console.log(
+      "effectiveSelectedChartStrategyKey:",
+      effectiveSelectedChartStrategyKey,
+    );
     console.log("runStrategyKey:", runStrategyKey);
-    console.log("hasContextualOverlayCandidate:", hasContextualOverlayCandidate);
+    console.log(
+      "hasContextualOverlayCandidate:",
+      hasContextualOverlayCandidate,
+    );
     console.log("showStrategyOverlays:", showStrategyOverlays);
     console.log("overlayMarkers:", overlays.markers.length);
     console.log("overlayLines:", overlays.lines.length);
@@ -611,6 +775,193 @@ function DashboardPage() {
     marketStrategyCards,
     currentRunStrategyScores,
     strategyHighlights,
+  ]);
+
+  useEffect(() => {
+    const symbol = normalizeSymbol(effectiveChartSymbol);
+    const timeframe = normalizeTimeframe(effectiveChartTimeframe);
+    const provider = normalizeProvider(selectedProvider);
+
+    if (!symbol || !timeframe) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const persistedLatest = await fetchLatestPersistedCandleDiagnostic({
+          symbol,
+          timeframe,
+          provider,
+        });
+
+        if (isCancelled) return;
+
+        const chartOpenTime = lastChartCandle?.open_time ?? null;
+        const chartCloseTime = lastChartCandle?.close_time ?? null;
+        const tickOpenTime = lastCandleTick?.open_time ?? null;
+        const apiOpenTime = persistedLatest?.open_time ?? null;
+
+        const diffChartVsTickMinutes = formatMinutesDiff(
+          tickOpenTime,
+          chartOpenTime,
+        );
+        const diffApiVsChartMinutes = formatMinutesDiff(
+          apiOpenTime,
+          chartOpenTime,
+        );
+        const diffApiVsTickMinutes = formatMinutesDiff(
+          apiOpenTime,
+          tickOpenTime,
+        );
+
+        console.groupCollapsed(
+          `[TB][CANDLES_SYNC] ${symbol} / ${timeframe} | candles=${candles.length} | ws=${wsStatus}`,
+        );
+
+        console.log("selectedProvider:", provider || "backend-default");
+        console.log("lastWsEvent:", lastWsEvent);
+        console.log("lastProviderUpdateEvent:", lastProviderUpdateEvent);
+        console.log("lastProviderUpdateStatus:", lastProviderUpdateStatus);
+        console.log("lastProviderUpdateAt:", lastProviderUpdateAt);
+        console.log("lastProviderReceivedAt:", lastProviderReceivedAt);
+        console.log("candlesRefreshReason:", candlesRefreshReason || "-");
+
+        console.table([
+          {
+            origem: "grafico",
+            symbol,
+            timeframe,
+            open_time: formatIsoForConsole(chartOpenTime),
+            close_time: formatIsoForConsole(chartCloseTime),
+            provider: lastChartCandle?.provider ?? lastChartCandle?.source ?? "-",
+            source: lastChartCandle?.source ?? "-",
+            total_candles: candles.length,
+          },
+          {
+            origem: "tick_ws",
+            symbol,
+            timeframe,
+            open_time: formatIsoForConsole(tickOpenTime),
+            close_time: "-",
+            provider: lastCandleTick?.provider ?? lastCandleTick?.source ?? "-",
+            source: lastCandleTick?.source ?? "-",
+            total_candles: "-",
+          },
+          {
+            origem: "api_latest",
+            symbol,
+            timeframe,
+            open_time: formatIsoForConsole(apiOpenTime),
+            close_time: formatIsoForConsole(persistedLatest?.close_time ?? null),
+            provider: persistedLatest?.provider ?? "-",
+            source: persistedLatest?.source ?? "-",
+            total_candles: "-",
+          },
+        ]);
+
+        console.table([
+          {
+            comparacao: "tick_vs_grafico_min",
+            valor: diffChartVsTickMinutes,
+          },
+          {
+            comparacao: "api_vs_grafico_min",
+            valor: diffApiVsChartMinutes,
+          },
+          {
+            comparacao: "api_vs_tick_min",
+            valor: diffApiVsTickMinutes,
+          },
+        ]);
+
+        console.log("coverageMeta:", coverageMeta);
+
+        const chartOpenMs = timestampFromIso(chartOpenTime);
+        const tickOpenMs = timestampFromIso(tickOpenTime);
+        const apiOpenMs = timestampFromIso(apiOpenTime);
+
+        if (
+          chartOpenMs !== null &&
+          tickOpenMs !== null &&
+          tickOpenMs > chartOpenMs
+        ) {
+          console.warn("[TB][CANDLES_SYNC] O gráfico está atrasado face ao tick.", {
+            chart_open_time: chartOpenTime,
+            tick_open_time: tickOpenTime,
+            diff_minutes: diffChartVsTickMinutes,
+          });
+        }
+
+        if (
+          chartOpenMs !== null &&
+          apiOpenMs !== null &&
+          apiOpenMs > chartOpenMs
+        ) {
+          console.warn(
+            "[TB][CANDLES_SYNC] O gráfico está atrasado face ao último candle persistido na API.",
+            {
+              chart_open_time: chartOpenTime,
+              api_open_time: apiOpenTime,
+              diff_minutes: diffApiVsChartMinutes,
+            },
+          );
+        }
+
+        if (
+          tickOpenMs !== null &&
+          apiOpenMs !== null &&
+          apiOpenMs < tickOpenMs
+        ) {
+          console.warn(
+            "[TB][CANDLES_SYNC] O tick recebido ainda não coincide com o último candle persistido na API.",
+            {
+              tick_open_time: tickOpenTime,
+              api_open_time: apiOpenTime,
+              diff_minutes: diffApiVsTickMinutes,
+              received_at: lastProviderReceivedAt,
+            },
+          );
+        }
+
+        console.groupEnd();
+      } catch (error) {
+        if (isCancelled) return;
+
+        console.groupCollapsed(
+          `[TB][CANDLES_SYNC] ${symbol} / ${timeframe} | erro`,
+        );
+        console.error(error);
+        console.log("lastProviderUpdateLog:", lastProviderUpdateLog);
+        console.groupEnd();
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    selectedProvider,
+    candles,
+    lastChartCandle?.open_time,
+    lastChartCandle?.close_time,
+    lastChartCandle?.provider,
+    lastChartCandle?.source,
+    lastCandleTick?.open_time,
+    lastCandleTick?.provider,
+    lastCandleTick?.source,
+    wsStatus,
+    lastWsEvent,
+    lastProviderUpdateEvent,
+    lastProviderUpdateStatus,
+    lastProviderUpdateAt,
+    lastProviderReceivedAt,
+    lastProviderUpdateLog,
+    candlesRefreshReason,
+    coverageMeta,
   ]);
 
   const sidebarCardStyle: React.CSSProperties = {
