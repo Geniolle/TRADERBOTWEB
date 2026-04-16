@@ -1,4 +1,4 @@
-// web/src/components/chart/ChartLegend.tsx
+// C:\TraderBotWeb\web\src\components\chart\ChartLegend.tsx
 
 type ChartLegendProps = {
   legendCloseColor: string;
@@ -26,11 +26,12 @@ function ChartLegend({
 
       {showStrategyOverlays ? (
         <>
-          <span style={{ color: "#7c3aed" }}>TRG = Trigger</span>
-          <span style={{ color: "#2563eb" }}>ENT = Entry</span>
-          <span style={{ color: legendCloseColor }}>CLS = Close</span>
-          <span style={{ color: "#16a34a" }}>Linha verde = Target</span>
-          <span style={{ color: "#dc2626" }}>Linha vermelha = Invalidation</span>
+          <span style={{ color: "#0f172a" }}>Linha escura = Impulso</span>
+          <span style={{ color: "#2563eb" }}>Zona azul = M9 / M21</span>
+          <span style={{ color: "#2563eb" }}>Círculo azul = Trigger</span>
+          <span style={{ color: "#16a34a" }}>Caixa verde = Alvo</span>
+          <span style={{ color: "#dc2626" }}>Caixa vermelha = Invalidação</span>
+          <span style={{ color: legendCloseColor }}>Overlay real do case = prioridade secundária</span>
         </>
       ) : (
         <span style={{ color: "#475569" }}>

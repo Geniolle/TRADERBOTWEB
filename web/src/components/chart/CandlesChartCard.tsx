@@ -1,4 +1,4 @@
-// web/src/components/chart/CandlesChartCard.tsx
+// C:\TraderBotWeb\web\src\components\chart\CandlesChartCard.tsx
 
 import { useMemo, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
@@ -8,9 +8,8 @@ import type {
   CandleTickState,
   CatalogInstrument,
   FeedDiagnostics,
-  OverlayLine,
-  OverlayMarker,
 } from "../../types/trading";
+import type { ChartOverlaySet } from "../../hooks/useChartDerivedData";
 import { CHART_HEIGHT } from "../../constants/chart";
 import IndicatorMenu from "./IndicatorMenu";
 import ChartMarketInfo from "./ChartMarketInfo";
@@ -35,10 +34,7 @@ type CandlesChartCardProps = {
   candlesError: string;
   chartData: CandlestickData<UTCTimestamp>[];
   candles: CandleItem[];
-  overlays: {
-    markers: OverlayMarker[];
-    lines: OverlayLine[];
-  };
+  overlays: ChartOverlaySet;
   strategyHighlights: Array<{
     id: string;
     label: string;
@@ -62,7 +58,7 @@ type CandlesChartCardProps = {
   showStrategyOverlays: boolean;
   onSetIndicatorEnabled: (
     key: "ema9" | "ema21" | "bollinger",
-    enabled: boolean
+    enabled: boolean,
   ) => void;
   onSetBollingerPeriod: (value: number) => void;
   onSetBollingerStdDev: (value: number) => void;
@@ -138,11 +134,11 @@ function buildCoverageStatus(params: {
 
   const staleThresholdWarningMs = Math.max(
     timeframeMinutes * 3 * 60 * 1000,
-    45 * 60 * 1000
+    45 * 60 * 1000,
   );
   const staleThresholdDangerMs = Math.max(
     timeframeMinutes * 10 * 60 * 1000,
-    3 * 60 * 60 * 1000
+    3 * 60 * 60 * 1000,
   );
 
   const dataAgeMs =
@@ -242,7 +238,7 @@ function buildCoverageStatus(params: {
 }
 
 function getHeaderToneByCoverage(
-  coverageStatus: CoverageStatus
+  coverageStatus: CoverageStatus,
 ): {
   background: string;
   borderBottom: string;
@@ -347,7 +343,12 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   }, [coverageStatus]);
 
   const hasOverlayContent =
-    overlays.lines.length > 0 || overlays.markers.length > 0;
+    overlays.lines.length > 0 ||
+    overlays.markers.length > 0 ||
+    overlays.boxes.length > 0 ||
+    overlays.circles.length > 0 ||
+    overlays.segments.length > 0 ||
+    overlays.texts.length > 0;
 
   const hasChartSnapshot = chartData.length > 0;
 
@@ -500,6 +501,13 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                 />
               )}
 
+              {showStrategyHighlights && (
+                <ChartStrategyHighlights
+                  items={strategyHighlights}
+                  minScore={strategyHighlightMinScore}
+                />
+              )}
+
               {loadingCandles && <ChartLoadingState />}
 
               <div style={{ width: "100%" }}>
@@ -532,13 +540,6 @@ function CandlesChartCard(props: CandlesChartCardProps) {
                       height: "100%",
                     }}
                   />
-
-                  {showStrategyHighlights && (
-                    <ChartStrategyHighlights
-                      items={strategyHighlights}
-                      minScore={strategyHighlightMinScore}
-                    />
-                  )}
 
                   {showPriceScale && (
                     <ChartPriceScale levels={priceScaleData.levels} />

@@ -1,3 +1,5 @@
+// C:\TraderBotWeb\web\src\components\chart\ChartStrategyHighlights.tsx
+
 type StrategyHighlightItem = {
   id: string;
   label: string;
@@ -41,15 +43,10 @@ function ChartStrategyHighlights({
   return (
     <div
       style={{
-        position: "absolute",
-        left: 12,
-        top: 12,
-        zIndex: 12,
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        pointerEvents: "none",
-        maxWidth: "calc(100% - 120px)",
+        marginBottom: 10,
       }}
     >
       <div
