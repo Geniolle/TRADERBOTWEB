@@ -1,8 +1,7 @@
-// web/src/components/strategies/StrategiesSection.tsx
-
 import { useEffect, useMemo, useState } from "react";
 import type { MarketStrategyInput, StrategyCard } from "../../types/strategy";
 import { buildStrategySection } from "../../services/buildStrategies";
+import { CHART_STRATEGY_HIGHLIGHT_MIN_SCORE } from "../../constants/config";
 
 type StrategiesSectionProps = {
   data: MarketStrategyInput;
@@ -24,7 +23,7 @@ function dispatchMarketStrategyCards(cards: StrategyCard[]) {
         title: card.title,
         score: card.score,
       })),
-    })
+    }),
   );
 }
 
@@ -36,7 +35,7 @@ function clearMarketStrategyCards() {
   window.dispatchEvent(
     new CustomEvent(MARKET_STRATEGY_CARDS_EVENT, {
       detail: [],
-    })
+    }),
   );
 }
 
@@ -455,7 +454,7 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
   const section = useMemo(() => buildStrategySection(data), [data]);
   const headerStyles = useMemo(
     () => getHeaderStylesByScore(section.topScore),
-    [section.topScore]
+    [section.topScore],
   );
 
   useEffect(() => {
@@ -467,6 +466,27 @@ export default function StrategiesSection({ data }: StrategiesSectionProps) {
       clearMarketStrategyCards();
     };
   }, []);
+
+  useEffect(() => {
+    const debugRows = section.cards.map((card) => ({
+      id: card.id,
+      title: card.title,
+      score: card.score,
+      status: card.status,
+      direction: card.direction,
+      elegivel_overlay: card.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
+    }));
+
+    console.groupCollapsed(
+      `[TB][STRATEGIES] threshold=${CHART_STRATEGY_HIGHLIGHT_MIN_SCORE} | top=${
+        section.cards[0]?.title ?? "-"
+      }`,
+    );
+    console.log("biasLabel:", section.biasLabel);
+    console.log("summaryLabel:", section.summaryLabel);
+    console.table(debugRows);
+    console.groupEnd();
+  }, [section]);
 
   return (
     <section

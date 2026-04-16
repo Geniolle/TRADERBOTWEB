@@ -366,11 +366,11 @@ function DashboardPage() {
     runDetailsError,
   } = useRunDetails(selectedRunId);
 
-  const strategyHighlights = useMemo(() => {
+  const currentRunStrategyScores = useMemo(() => {
     const normalizedSymbol = normalizeText(effectiveChartSymbol);
     const normalizedTimeframe = normalizeText(effectiveChartTimeframe);
 
-    const runItems = stageTests
+    return stageTests
       .filter((item) => {
         const itemSymbol = normalizeText(item.last_run?.symbol);
         const itemTimeframe = normalizeText(item.last_run?.timeframe);
@@ -384,7 +384,19 @@ function DashboardPage() {
         id: item.strategy_key,
         label: item.strategy_name || item.strategy_key,
         score: Number(item.hit_rate ?? 0),
-      }));
+      }))
+      .filter((item) => Number.isFinite(item.score))
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+
+        return a.label.localeCompare(b.label, "pt-PT");
+      });
+  }, [stageTests, effectiveChartSymbol, effectiveChartTimeframe]);
+
+  const strategyHighlights = useMemo(() => {
+    const runItems = currentRunStrategyScores;
 
     const contextualItems = marketStrategyCards.map((item) => ({
       id: item.id,
@@ -421,12 +433,7 @@ function DashboardPage() {
         return a.label.localeCompare(b.label, "pt-PT");
       })
       .slice(0, 5);
-  }, [
-    stageTests,
-    effectiveChartSymbol,
-    effectiveChartTimeframe,
-    marketStrategyCards,
-  ]);
+  }, [currentRunStrategyScores, marketStrategyCards]);
 
   const hasContextualOverlayCandidate = useMemo(() => {
     return marketStrategyCards.some(
@@ -551,6 +558,60 @@ function DashboardPage() {
   const showSelectedStrategyNotice = Boolean(
     selectedStrategyNotice && !showStrategyOverlays,
   );
+
+  useEffect(() => {
+    console.groupCollapsed(
+      `[TB][DASHBOARD] threshold=${CHART_STRATEGY_HIGHLIGHT_MIN_SCORE} | ${effectiveChartSymbol || "-"} / ${effectiveChartTimeframe || "-"}`,
+    );
+    console.log("effectiveSelectedChartStrategyKey:", effectiveSelectedChartStrategyKey);
+    console.log("runStrategyKey:", runStrategyKey);
+    console.log("hasContextualOverlayCandidate:", hasContextualOverlayCandidate);
+    console.log("showStrategyOverlays:", showStrategyOverlays);
+    console.log("overlayMarkers:", overlays.markers.length);
+    console.log("overlayLines:", overlays.lines.length);
+
+    console.table(
+      marketStrategyCards.map((item) => ({
+        origem: "contexto",
+        id: item.id,
+        title: item.title,
+        score: item.score,
+        elegivel_overlay: item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
+      })),
+    );
+
+    console.table(
+      currentRunStrategyScores.map((item) => ({
+        origem: "stage_test",
+        id: item.id,
+        title: item.label,
+        score: item.score,
+        elegivel_overlay: item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
+      })),
+    );
+
+    console.table(
+      strategyHighlights.map((item) => ({
+        id: item.id,
+        title: item.label,
+        score: item.score,
+      })),
+    );
+
+    console.groupEnd();
+  }, [
+    effectiveChartSymbol,
+    effectiveChartTimeframe,
+    effectiveSelectedChartStrategyKey,
+    runStrategyKey,
+    hasContextualOverlayCandidate,
+    showStrategyOverlays,
+    overlays.markers.length,
+    overlays.lines.length,
+    marketStrategyCards,
+    currentRunStrategyScores,
+    strategyHighlights,
+  ]);
 
   const sidebarCardStyle: React.CSSProperties = {
     border: "1px solid #dbe2ea",
