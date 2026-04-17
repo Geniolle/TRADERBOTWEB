@@ -1,4 +1,4 @@
-// C:\TraderBotWeb\web\src\App.tsx
+// C:\\TraderBotWeb\\web\\src\\App.tsx
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -86,7 +86,7 @@ function normalizeText(value: string | null | undefined): string {
 }
 
 function normalizeMarketStrategyCards(
-  value: unknown
+  value: unknown,
 ): MarketStrategyCardBridgeItem[] {
   if (!Array.isArray(value)) {
     return [];
@@ -186,11 +186,11 @@ function DashboardPage() {
   } = useIndicatorSettings();
 
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() =>
-    readStoredTimeframe()
+    readStoredTimeframe(),
   );
 
   const [storedChartStrategyKey] = useState<string>(() =>
-    readStoredChartStrategyKey()
+    readStoredChartStrategyKey(),
   );
 
   const [marketStrategyCards, setMarketStrategyCards] = useState<
@@ -221,13 +221,13 @@ function DashboardPage() {
 
     window.addEventListener(
       MARKET_STRATEGY_CARDS_EVENT,
-      handleStrategyCardsEvent as EventListener
+      handleStrategyCardsEvent as EventListener,
     );
 
     return () => {
       window.removeEventListener(
         MARKET_STRATEGY_CARDS_EVENT,
-        handleStrategyCardsEvent as EventListener
+        handleStrategyCardsEvent as EventListener,
       );
     };
   }, []);
@@ -250,7 +250,7 @@ function DashboardPage() {
     }
 
     const existsInSelectableList = selectableStrategies.some(
-      (item) => item.key === storedChartStrategyKey
+      (item) => item.key === storedChartStrategyKey,
     );
 
     return existsInSelectableList ? storedChartStrategyKey : "";
@@ -259,7 +259,7 @@ function DashboardPage() {
   const selectedChartStrategy = useMemo(() => {
     return (
       selectableStrategies.find(
-        (item) => item.key === effectiveSelectedChartStrategyKey
+        (item) => item.key === effectiveSelectedChartStrategyKey,
       ) ?? null
     );
   }, [selectableStrategies, effectiveSelectedChartStrategyKey]);
@@ -273,7 +273,7 @@ function DashboardPage() {
       selectedMarketType &&
         selectedCatalog &&
         selectedSymbol &&
-        effectiveSelectedTimeframe
+        effectiveSelectedTimeframe,
     );
   }, [
     selectedMarketType,
@@ -440,7 +440,7 @@ function DashboardPage() {
     return marketStrategyCards.some(
       (item) =>
         Number.isFinite(item.score) &&
-        item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE
+        item.score >= CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
     );
   }, [marketStrategyCards]);
 
@@ -503,10 +503,11 @@ function DashboardPage() {
       settings,
     });
 
-  const { chartContainerRef, chartSize, chartData } = useCandlestickChart({
-    candles,
-    indicatorSeries,
-  });
+  const { chartContainerRef, chartSize, chartData, chartProjector } =
+    useCandlestickChart({
+      candles,
+      indicatorSeries,
+    });
 
   const { feedDiagnostics, overlays, legendCloseColor } = useChartDerivedData({
     candles,
@@ -514,6 +515,7 @@ function DashboardPage() {
     runDetails,
     selectedCaseId,
     chartSize,
+    chartProjector,
     effectiveChartSymbol,
     effectiveChartTimeframe,
     lastCandleTick,
@@ -557,7 +559,7 @@ function DashboardPage() {
   }, [selectedChartStrategy]);
 
   const showSelectedStrategyNotice = Boolean(
-    selectedStrategyNotice && !showStrategyOverlays
+    selectedStrategyNotice && !showStrategyOverlays,
   );
 
   const sidebarCardStyle: React.CSSProperties = {

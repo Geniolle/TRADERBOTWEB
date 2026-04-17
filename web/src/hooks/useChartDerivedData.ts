@@ -1,4 +1,4 @@
-// C:\TraderBotWeb\web\src\hooks\useChartDerivedData.ts
+// C:\\TraderBotWeb\\web\\src\\hooks\\useChartDerivedData.ts
 
 import { useMemo } from "react";
 
@@ -19,6 +19,7 @@ import {
   formatUtcDateTime,
   parsePrice,
 } from "../utils/format";
+import type { ChartCoordinateProjector } from "./useCandlestickChart";
 
 export type OverlayLine = {
   id: string;
@@ -111,6 +112,7 @@ type UseChartDerivedDataParams = {
     width: number;
     height: number;
   };
+  chartProjector: ChartCoordinateProjector;
   effectiveChartSymbol: string;
   effectiveChartTimeframe: string;
   lastCandleTick: CandleTickState;
@@ -149,6 +151,11 @@ type CandleMeta = {
   close: number;
 };
 
+type OverlayProjector = {
+  xFromTime: (value: string | null | undefined) => number | null;
+  yFromPrice: (price: number | null | undefined) => number | null;
+};
+
 function createEmptyChartOverlays(): ChartOverlaySet {
   return {
     markers: [],
@@ -158,6 +165,10 @@ function createEmptyChartOverlays(): ChartOverlaySet {
     segments: [],
     texts: [],
   };
+}
+
+function isFiniteCoordinate(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function calculateEMA(values: number[], period: number): number | null {
@@ -194,31 +205,6 @@ function getBestContextualStrategy(
   return eligible[0] ?? null;
 }
 
-function findClosestCandleIndexByTime(
-  candleMeta: CandleMeta[],
-  value: string | null,
-): number | null {
-  if (!value || candleMeta.length === 0) return null;
-
-  const target = new Date(value).getTime();
-  if (Number.isNaN(target)) return null;
-
-  let bestIndex = 0;
-  let bestDiff = Number.POSITIVE_INFINITY;
-
-  for (let index = 0; index < candleMeta.length; index += 1) {
-    const candleTime = new Date(candleMeta[index].openTime).getTime();
-    const diff = Math.abs(candleTime - target);
-
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestIndex = index;
-    }
-  }
-
-  return bestIndex;
-}
-
 function clampWithinChart(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -227,11 +213,9 @@ function buildSelectedCaseOverlays(params: {
   selectedCase: ExtendedRunCaseItem;
   candleMeta: CandleMeta[];
   runStrategyKey: string;
-  xFromIndex: (index: number) => number;
-  yFromPrice: (price: number) => number;
+  projector: OverlayProjector;
 }): ChartOverlaySet {
-  const { selectedCase, candleMeta, runStrategyKey, xFromIndex, yFromPrice } =
-    params;
+  const { selectedCase, runStrategyKey, projector } = params;
 
   const metadata = (selectedCase.metadata ?? {}) as CaseMetadata;
   const selectedCaseStrategyKey =
@@ -345,29 +329,36 @@ function buildSelectedCaseOverlays(params: {
   const overlays = createEmptyChartOverlays();
 
   for (const item of markerDefs) {
-    if (!item.time || item.price === null) continue;
-    const index = findClosestCandleIndexByTime(candleMeta, item.time);
-    if (index === null) continue;
+    const left = projector.xFromTime(item.time);
+    const top = projector.yFromPrice(item.price);
+
+    if (!isFiniteCoordinate(left) || !isFiniteCoordinate(top) || item.price === null) {
+      continue;
+    }
 
     overlays.markers.push({
       id: item.id,
       label: item.label,
       color: item.color,
-      left: xFromIndex(index),
-      top: yFromPrice(item.price),
+      left,
+      top,
       price: item.price,
       timeLabel: formatDateTime(item.time),
     });
   }
 
   for (const item of lineDefs) {
-    if (item.value === null) continue;
+    const top = projector.yFromPrice(item.value);
+
+    if (!isFiniteCoordinate(top) || item.value === null) {
+      continue;
+    }
 
     overlays.lines.push({
       id: item.id,
       label: item.label,
       color: item.color,
-      top: yFromPrice(item.value),
+      top,
       value: item.value,
       dashed: item.dashed,
       showBadge: true,
@@ -380,27 +371,21 @@ function buildSelectedCaseOverlays(params: {
 function buildPullbackContextualOverlays(params: {
   candleMeta: CandleMeta[];
   score: number;
-  xFromIndex: (index: number) => number;
-  yFromPrice: (price: number) => number;
+  projector: OverlayProjector;
   priceRange: number;
   chartWidth: number;
   chartHeight: number;
 }): ChartOverlaySet {
-  const {
-    candleMeta,
-    score,
-    xFromIndex,
-    yFromPrice,
-    priceRange,
-    chartWidth,
-    chartHeight,
-  } = params;
+  const { candleMeta, score, projector, priceRange, chartWidth, chartHeight } = params;
 
   const overlays = createEmptyChartOverlays();
 
   if (candleMeta.length < 16) {
     return overlays;
   }
+
+  const xFromIndex = (index: number) =>
+    projector.xFromTime(candleMeta[index]?.openTime ?? null);
 
   const closes = candleMeta.map((item) => item.close);
   const currentPrice = closes[closes.length - 1] ?? null;
@@ -550,17 +535,31 @@ function buildPullbackContextualOverlays(params: {
   const riskLeft = xFromIndex(riskLeftIndex);
   const riskRight = xFromIndex(riskRightIndex);
 
-  const zoneTopPx = yFromPrice(zoneTop);
-  const zoneBottomPx = yFromPrice(zoneBottom);
-  const entryPx = yFromPrice(entry);
-  const targetPx = yFromPrice(target);
-  const invalidPx = yFromPrice(invalidation);
+  const zoneTopPx = projector.yFromPrice(zoneTop);
+  const zoneBottomPx = projector.yFromPrice(zoneBottom);
+  const entryPx = projector.yFromPrice(entry);
+  const targetPx = projector.yFromPrice(target);
+  const invalidPx = projector.yFromPrice(invalidation);
+
+  if (
+    !isFiniteCoordinate(zoneLeft) ||
+    !isFiniteCoordinate(zoneRight) ||
+    !isFiniteCoordinate(riskLeft) ||
+    !isFiniteCoordinate(riskRight) ||
+    !isFiniteCoordinate(zoneTopPx) ||
+    !isFiniteCoordinate(zoneBottomPx) ||
+    !isFiniteCoordinate(entryPx) ||
+    !isFiniteCoordinate(targetPx) ||
+    !isFiniteCoordinate(invalidPx)
+  ) {
+    return overlays;
+  }
 
   overlays.boxes.push({
     id: "ctx-pullback-zone",
     left: Math.min(zoneLeft, zoneRight),
     top: Math.min(zoneTopPx, zoneBottomPx),
-    width: Math.abs(zoneRight - zoneLeft),
+    width: Math.max(Math.abs(zoneRight - zoneLeft), 12),
     height: Math.max(Math.abs(zoneBottomPx - zoneTopPx), 10),
     fill: "rgba(59, 130, 246, 0.12)",
     borderColor: "rgba(37, 99, 235, 0.82)",
@@ -570,18 +569,34 @@ function buildPullbackContextualOverlays(params: {
     labelBackground: "rgba(255,255,255,0.9)",
   });
 
-  overlays.segments.push({
-    id: "ctx-pullback-impulse",
-    x1: xFromIndex(swingStartIndex),
-    y1: yFromPrice(impulseStartPrice),
-    x2: xFromIndex(swingEndIndex),
-    y2: yFromPrice(impulseEndPrice),
-    color: "rgba(15, 23, 42, 0.8)",
-    width: 2,
-  });
+  const impulseX1 = xFromIndex(swingStartIndex);
+  const impulseX2 = xFromIndex(swingEndIndex);
+  const impulseY1 = projector.yFromPrice(impulseStartPrice);
+  const impulseY2 = projector.yFromPrice(impulseEndPrice);
+
+  if (
+    isFiniteCoordinate(impulseX1) &&
+    isFiniteCoordinate(impulseX2) &&
+    isFiniteCoordinate(impulseY1) &&
+    isFiniteCoordinate(impulseY2)
+  ) {
+    overlays.segments.push({
+      id: "ctx-pullback-impulse",
+      x1: impulseX1,
+      y1: impulseY1,
+      x2: impulseX2,
+      y2: impulseY2,
+      color: "rgba(15, 23, 42, 0.8)",
+      width: 2,
+    });
+  }
 
   const anchorX = xFromIndex(triggerIndex);
   const anchorY = Math.min(zoneTopPx, zoneBottomPx);
+
+  if (!isFiniteCoordinate(anchorX)) {
+    return overlays;
+  }
 
   const tagLeft = clampWithinChart(anchorX - 34, 10, chartWidth - 190);
   const tagTop = clampWithinChart(anchorY - 32, 12, chartHeight - 42);
@@ -605,23 +620,29 @@ function buildPullbackContextualOverlays(params: {
   });
 
   if (!compactMode) {
-    overlays.circles.push({
-      id: "ctx-pullback-trigger-circle",
-      left: anchorX,
-      top: yFromPrice(side === "buy" ? triggerCandle.low : triggerCandle.high),
-      radius: 18,
-      color: "transparent",
-      borderColor: "#2563eb",
-      borderWidth: 3,
-      dashed: true,
-    });
+    const triggerCircleY = projector.yFromPrice(
+      side === "buy" ? triggerCandle.low : triggerCandle.high,
+    );
+
+    if (isFiniteCoordinate(triggerCircleY)) {
+      overlays.circles.push({
+        id: "ctx-pullback-trigger-circle",
+        left: anchorX,
+        top: triggerCircleY,
+        radius: 18,
+        color: "transparent",
+        borderColor: "#2563eb",
+        borderWidth: 3,
+        dashed: true,
+      });
+    }
 
     overlays.boxes.push(
       {
         id: "ctx-pullback-reward",
         left: Math.min(riskLeft, riskRight),
         top: Math.min(entryPx, targetPx),
-        width: Math.abs(riskRight - riskLeft),
+        width: Math.max(Math.abs(riskRight - riskLeft), 12),
         height: Math.max(Math.abs(targetPx - entryPx), 10),
         fill: "rgba(34, 197, 94, 0.18)",
         borderColor: "rgba(22, 163, 74, 0.88)",
@@ -631,7 +652,7 @@ function buildPullbackContextualOverlays(params: {
         id: "ctx-pullback-risk",
         left: Math.min(riskLeft, riskRight),
         top: Math.min(entryPx, invalidPx),
-        width: Math.abs(riskRight - riskLeft),
+        width: Math.max(Math.abs(riskRight - riskLeft), 12),
         height: Math.max(Math.abs(invalidPx - entryPx), 10),
         fill: "rgba(239, 68, 68, 0.18)",
         borderColor: "rgba(220, 38, 38, 0.88)",
@@ -676,19 +697,20 @@ function buildPullbackContextualOverlays(params: {
 function buildMovingAverageCrossoverOverlays(params: {
   candleMeta: CandleMeta[];
   score: number;
-  xFromIndex: (index: number) => number;
-  yFromPrice: (price: number) => number;
+  projector: OverlayProjector;
   chartWidth: number;
   chartHeight: number;
 }): ChartOverlaySet {
-  const { candleMeta, score, xFromIndex, yFromPrice, chartWidth, chartHeight } =
-    params;
+  const { candleMeta, score, projector, chartWidth, chartHeight } = params;
 
   const overlays = createEmptyChartOverlays();
 
   if (candleMeta.length < 24) {
     return overlays;
   }
+
+  const xFromIndex = (index: number) =>
+    projector.xFromTime(candleMeta[index]?.openTime ?? null);
 
   const closes = candleMeta.map((item) => item.close);
   const ema9Series = closes.map((_, index) =>
@@ -741,8 +763,20 @@ function buildMovingAverageCrossoverOverlays(params: {
 
   const side: "buy" | "sell" = fast >= slow ? "buy" : "sell";
   const crossPrice = (fast + slow) / 2;
+
   const crossX = xFromIndex(crossIndex);
-  const crossY = yFromPrice(crossPrice);
+  const crossY = projector.yFromPrice(crossPrice);
+  const fastY = projector.yFromPrice(fast);
+  const slowY = projector.yFromPrice(slow);
+
+  if (
+    !isFiniteCoordinate(crossX) ||
+    !isFiniteCoordinate(crossY) ||
+    !isFiniteCoordinate(fastY) ||
+    !isFiniteCoordinate(slowY)
+  ) {
+    return overlays;
+  }
 
   overlays.circles.push({
     id: "ctx-cross-circle",
@@ -759,12 +793,12 @@ function buildMovingAverageCrossoverOverlays(params: {
     id: "ctx-cross-zone",
     left: clampWithinChart(crossX - 26, 10, chartWidth - 70),
     top: clampWithinChart(
-      Math.min(yFromPrice(fast), yFromPrice(slow)) - 10,
+      Math.min(fastY, slowY) - 10,
       10,
       chartHeight - 34,
     ),
     width: 52,
-    height: Math.max(20, Math.abs(yFromPrice(fast) - yFromPrice(slow)) + 20),
+    height: Math.max(20, Math.abs(fastY - slowY) + 20),
     fill:
       side === "buy"
         ? "rgba(34, 197, 94, 0.12)"
@@ -801,13 +835,11 @@ function buildMovingAverageCrossoverOverlays(params: {
 function buildRangeBreakoutOverlays(params: {
   candleMeta: CandleMeta[];
   score: number;
-  xFromIndex: (index: number) => number;
-  yFromPrice: (price: number) => number;
+  projector: OverlayProjector;
   chartWidth: number;
   chartHeight: number;
 }): ChartOverlaySet {
-  const { candleMeta, score, xFromIndex, yFromPrice, chartWidth, chartHeight } =
-    params;
+  const { candleMeta, score, projector, chartWidth, chartHeight } = params;
 
   const overlays = createEmptyChartOverlays();
 
@@ -815,21 +847,36 @@ function buildRangeBreakoutOverlays(params: {
     return overlays;
   }
 
+  const xFromIndex = (index: number) =>
+    projector.xFromTime(candleMeta[index]?.openTime ?? null);
+
   const recent = candleMeta.slice(-14);
   const rangeHigh = Math.max(...recent.map((item) => item.high));
   const rangeLow = Math.min(...recent.map((item) => item.low));
   const leftIndex = candleMeta.length - recent.length;
   const rightIndex = candleMeta.length - 1;
 
-  const centerX = (xFromIndex(leftIndex) + xFromIndex(rightIndex)) / 2;
-  const topY = yFromPrice(rangeHigh);
-  const bottomY = yFromPrice(rangeLow);
+  const leftX = xFromIndex(leftIndex);
+  const rightX = xFromIndex(rightIndex);
+  const topY = projector.yFromPrice(rangeHigh);
+  const bottomY = projector.yFromPrice(rangeLow);
+
+  if (
+    !isFiniteCoordinate(leftX) ||
+    !isFiniteCoordinate(rightX) ||
+    !isFiniteCoordinate(topY) ||
+    !isFiniteCoordinate(bottomY)
+  ) {
+    return overlays;
+  }
+
+  const centerX = (leftX + rightX) / 2;
 
   overlays.boxes.push({
     id: "ctx-range-box",
-    left: xFromIndex(leftIndex),
+    left: Math.min(leftX, rightX),
     top: Math.min(topY, bottomY),
-    width: Math.max(24, xFromIndex(rightIndex) - xFromIndex(leftIndex)),
+    width: Math.max(24, Math.abs(rightX - leftX)),
     height: Math.max(20, Math.abs(bottomY - topY)),
     fill: "rgba(245, 158, 11, 0.10)",
     borderColor: "rgba(217, 119, 6, 0.84)",
@@ -858,6 +905,7 @@ function useChartDerivedData({
   runDetails,
   selectedCaseId,
   chartSize,
+  chartProjector,
   effectiveChartSymbol,
   effectiveChartTimeframe,
   lastCandleTick,
@@ -969,24 +1017,9 @@ function useChartDerivedData({
       return createEmptyChartOverlays();
     }
 
-    const width = chartSize.width;
-    const height = chartSize.height;
-    const leftPadding = 12;
-    const rightPadding = 70;
-    const topPadding = 12;
-    const bottomPadding = 24;
-    const plotWidth = Math.max(width - leftPadding - rightPadding, 1);
-    const plotHeight = Math.max(height - topPadding - bottomPadding, 1);
-
-    const xFromIndex = (index: number) => {
-      if (candleMeta.length === 1) return leftPadding + plotWidth / 2;
-      return leftPadding + (index / Math.max(candleMeta.length - 1, 1)) * plotWidth;
-    };
-
-    const yFromPrice = (price: number) => {
-      const clamped = Math.max(priceBounds.min, Math.min(price, priceBounds.max));
-      const normalized = (clamped - priceBounds.min) / priceBounds.range;
-      return topPadding + (1 - normalized) * plotHeight;
+    const projector: OverlayProjector = {
+      xFromTime: chartProjector.xFromTime,
+      yFromPrice: chartProjector.yFromPrice,
     };
 
     const bestContextualStrategy = getBestContextualStrategy(marketStrategyCards);
@@ -995,11 +1028,10 @@ function useChartDerivedData({
       return buildPullbackContextualOverlays({
         candleMeta,
         score: bestContextualStrategy.score,
-        xFromIndex,
-        yFromPrice,
+        projector,
         priceRange: priceBounds.range,
-        chartWidth: width,
-        chartHeight: height,
+        chartWidth: chartSize.width,
+        chartHeight: chartSize.height,
       });
     }
 
@@ -1007,10 +1039,9 @@ function useChartDerivedData({
       return buildMovingAverageCrossoverOverlays({
         candleMeta,
         score: bestContextualStrategy.score,
-        xFromIndex,
-        yFromPrice,
-        chartWidth: width,
-        chartHeight: height,
+        projector,
+        chartWidth: chartSize.width,
+        chartHeight: chartSize.height,
       });
     }
 
@@ -1018,10 +1049,9 @@ function useChartDerivedData({
       return buildRangeBreakoutOverlays({
         candleMeta,
         score: bestContextualStrategy.score,
-        xFromIndex,
-        yFromPrice,
-        chartWidth: width,
-        chartHeight: height,
+        projector,
+        chartWidth: chartSize.width,
+        chartHeight: chartSize.height,
       });
     }
 
@@ -1030,8 +1060,7 @@ function useChartDerivedData({
         selectedCase,
         candleMeta,
         runStrategyKey: runDetails?.run?.strategy_key ?? "",
-        xFromIndex,
-        yFromPrice,
+        projector,
       });
     }
 
@@ -1039,8 +1068,10 @@ function useChartDerivedData({
   }, [
     selectedCase,
     candleMeta,
-    chartSize,
-    priceBounds,
+    chartProjector,
+    chartSize.width,
+    chartSize.height,
+    priceBounds.range,
     runDetails?.run?.strategy_key,
     marketStrategyCards,
   ]);

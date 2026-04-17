@@ -30,6 +30,11 @@ type UseCandlestickChartParams = {
   indicatorSeries?: ChartIndicatorSeries[];
 };
 
+export type ChartCoordinateProjector = {
+  xFromTime: (value: string | null | undefined) => number | null;
+  yFromPrice: (price: number | null | undefined) => number | null;
+};
+
 type UseCandlestickChartResult = {
   chartContainerRef: React.RefObject<HTMLDivElement | null>;
   chartSize: {
@@ -37,6 +42,7 @@ type UseCandlestickChartResult = {
     height: number;
   };
   chartData: CandlestickData<UTCTimestamp>[];
+  chartProjector: ChartCoordinateProjector;
 };
 
 const LISBON_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
@@ -102,7 +108,7 @@ function buildChartData(candles: CandleItem[]): CandlestickData<UTCTimestamp>[] 
         Number.isFinite(item.open) &&
         Number.isFinite(item.high) &&
         Number.isFinite(item.low) &&
-        Number.isFinite(item.close)
+        Number.isFinite(item.close),
     )
     .sort((a, b) => Number(a.time) - Number(b.time));
 
@@ -120,7 +126,7 @@ function buildChartData(candles: CandleItem[]): CandlestickData<UTCTimestamp>[] 
   }
 
   const dedupedItems = Array.from(dedupedMap.values()).sort(
-    (a, b) => Number(a.time) - Number(b.time)
+    (a, b) => Number(a.time) - Number(b.time),
   );
 
   if (duplicateCount > 0) {
@@ -144,7 +150,9 @@ function useCandlestickChart({
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(
+    new Map(),
+  );
   const lastRenderedChartDataRef = useRef<CandlestickData<UTCTimestamp>[]>([]);
 
   const [chartSize, setChartSize] = useState({
@@ -155,6 +163,43 @@ function useCandlestickChart({
   const chartData = useMemo<CandlestickData<UTCTimestamp>[]>(() => {
     return buildChartData(candles);
   }, [candles]);
+
+  const chartProjector = useMemo<ChartCoordinateProjector>(() => {
+    return {
+      xFromTime: (value: string | null | undefined) => {
+        if (!value) return null;
+
+        const chart = chartRef.current;
+        if (!chart) return null;
+
+        try {
+          const time = toUtcTimestamp(value);
+          const coordinate = chart.timeScale().timeToCoordinate(time);
+
+          return typeof coordinate === "number" && Number.isFinite(coordinate)
+            ? coordinate
+            : null;
+        } catch {
+          return null;
+        }
+      },
+
+      yFromPrice: (price: number | null | undefined) => {
+        if (price === null || price === undefined || !Number.isFinite(price)) {
+          return null;
+        }
+
+        const candleSeries = candleSeriesRef.current;
+        if (!candleSeries) return null;
+
+        const coordinate = candleSeries.priceToCoordinate(price);
+
+        return typeof coordinate === "number" && Number.isFinite(coordinate)
+          ? coordinate
+          : null;
+      },
+    };
+  }, []);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -299,7 +344,7 @@ function useCandlestickChart({
           "[CHART] dataset vazio recebido; último snapshot válido foi preservado",
           {
             preservedCount: lastRenderedChartDataRef.current.length,
-          }
+          },
         );
       } else {
         candleSeriesRef.current.setData([]);
@@ -371,7 +416,7 @@ function useCandlestickChart({
       if (lastRenderedChartDataRef.current.length > 0) {
         applyStableVisibleRange(
           chartRef.current,
-          lastRenderedChartDataRef.current.length
+          lastRenderedChartDataRef.current.length,
         );
         chartRef.current.timeScale().scrollToRealTime();
       } else {
@@ -406,6 +451,7 @@ function useCandlestickChart({
     chartContainerRef,
     chartSize,
     chartData,
+    chartProjector,
   };
 }
 
