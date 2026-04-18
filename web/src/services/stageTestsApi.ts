@@ -3,6 +3,7 @@
 // - GET  /api/v1/stage-tests/options
 // - POST /api/v1/stage-tests/run
 
+import { API_HTTP_BASE_URL } from "../constants/config";
 import type {
   StageTestOptionsResponse,
   StageTestRunRequest,
@@ -15,28 +16,7 @@ type ErrorPayload = {
   detail?: string;
 };
 
-type ImportMetaEnvLike = {
-  VITE_API_BASE_URL?: string;
-};
-
-type ImportMetaLike = {
-  env?: ImportMetaEnvLike;
-};
-
 type UnknownRecord = Record<string, unknown>;
-
-function getApiBase(): string {
-  const meta = import.meta as ImportMetaLike;
-  const rawBase = meta.env?.VITE_API_BASE_URL?.trim();
-
-  if (!rawBase) {
-    return "http://127.0.0.1:8000";
-  }
-
-  return rawBase.replace(/\/$/, "");
-}
-
-const API_BASE = getApiBase();
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
@@ -287,7 +267,7 @@ export async function fetchStageTestOptions(
   minCandles = 1
 ): Promise<StageTestOptionsResponse> {
   const response = await fetch(
-    `${API_BASE}/api/v1/stage-tests/options?min_candles=${minCandles}`,
+    `${API_HTTP_BASE_URL}/stage-tests/options?min_candles=${minCandles}`,
     {
       method: "GET",
     }
@@ -300,7 +280,7 @@ export async function fetchStageTestOptions(
 export async function runStageTest(
   payload: StageTestRunRequest
 ): Promise<StageTestRunResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/stage-tests/run`, {
+  const response = await fetch(`${API_HTTP_BASE_URL}/stage-tests/run`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

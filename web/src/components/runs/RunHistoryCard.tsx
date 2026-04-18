@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import StageTestCaseChartModal from "../stage-tests/StageTestCaseChartModal";
 import { CasesSection } from "./run-history/CasesSection";
+import { normalizeDisplayText } from "./run-history/normalizers";
 import { DetailRow, MetricPill } from "./run-history/RunHistoryShared";
 import type { RunHistoryCardProps, StageTestRunCaseItem } from "./run-history/types";
 import {
@@ -96,6 +97,15 @@ function RunHistoryCard({
 
   const closeCaseChart = () => {
     setSelectedCaseChart(null);
+  };
+
+  const handleRunStrategy = async (strategyKey: string) => {
+    await onRunStageTest(strategyKey);
+
+    setExpandedCasesByStrategy((previous) => ({
+      ...previous,
+      [strategyKey]: true,
+    }));
   };
 
   return (
@@ -312,11 +322,16 @@ function RunHistoryCard({
               <div style={{ display: "grid", gap: 12 }}>
                 {orderedStageTests.map((item, index) => {
                   const latestRunId = item.last_run?.run_id ?? "";
+                  const hasAnyRun = (item.total_runs ?? 0) > 0 || latestRunId !== "";
                   const isSelected =
                     latestRunId !== "" && selectedRunId === latestRunId;
                   const isRunning = runningStrategyKey === item.strategy_key;
                   const cases = item.last_run?.cases ?? [];
                   const hasCases = cases.length > 0;
+                  const normalizedLatestStatus = normalizeDisplayText(
+                    item.last_run?.status
+                  );
+                  const hasNoCasesInLatestRun = hasAnyRun && !hasCases;
                   const isCasesExpanded = Boolean(
                     expandedCasesByStrategy[item.strategy_key]
                   );
@@ -419,17 +434,17 @@ function RunHistoryCard({
                               fontWeight: 700,
                               padding: "4px 8px",
                               borderRadius: 999,
-                              background: latestRunId ? "#dbeafe" : "#f1f5f9",
-                              color: latestRunId ? "#1d4ed8" : "#64748b",
+                              background: hasAnyRun ? "#dbeafe" : "#f1f5f9",
+                              color: hasAnyRun ? "#1d4ed8" : "#64748b",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {latestRunId ? "COM RUN" : "SEM RUN"}
+                            {hasAnyRun ? "COM RUN" : "SEM RUN"}
                           </span>
 
                           <button
                             type="button"
-                            onClick={() => void onRunStageTest(item.strategy_key)}
+                            onClick={() => void handleRunStrategy(item.strategy_key)}
                             disabled={!hasManualContext || isCreatingRuns}
                             style={{
                               height: 32,
@@ -534,7 +549,10 @@ function RunHistoryCard({
                           label="Timeout Rate"
                           value={formatPercent(item.timeout_rate)}
                         />
-                        <DetailRow label="Último run" value={latestRunId || "-"} />
+                        <DetailRow
+                          label="Último run"
+                          value={latestRunId || (hasAnyRun ? "local/manual" : "-")}
+                        />
                         <DetailRow
                           label="Último símbolo"
                           value={item.last_run?.symbol ?? "-"}
@@ -545,13 +563,32 @@ function RunHistoryCard({
                         />
                         <DetailRow
                           label="Último status"
-                          value={item.last_run?.status ?? "-"}
+                          value={normalizedLatestStatus}
                         />
                         <DetailRow
                           label="Último início"
                           value={formatDateTime(item.last_run?.started_at)}
                         />
                       </div>
+
+                      {hasNoCasesInLatestRun && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            border: "1px solid #bfdbfe",
+                            background: "#eff6ff",
+                            color: "#1e3a8a",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {normalizedLatestStatus === "Run sem sinais"
+                            ? "Último run concluído sem cases para esta configuração."
+                            : "Último run não devolveu cases no retorno."}
+                        </div>
+                      )}
 
                       {hasCases && (
                         <div

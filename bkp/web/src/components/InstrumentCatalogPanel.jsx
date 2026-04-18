@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-
-const API_BASE = "http://127.0.0.1:8000/api/v1";
+import { API_HTTP_BASE_URL as API_BASE } from "../constants/config";
 
 export default function InstrumentCatalogPanel({ onCatalogChange }) {
   const [types, setTypes] = useState([]);

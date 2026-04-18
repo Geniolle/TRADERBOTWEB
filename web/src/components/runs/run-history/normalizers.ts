@@ -59,6 +59,7 @@ export function normalizeDisplayText(value: string | null | undefined): string {
     low: "Baixa",
     ready: "Sem sinal",
     local_ok: "Entrada validada",
+    local_no_signals: "Run sem sinais",
     local_error: "Run com erro",
     hit: "Hit",
     fail: "Fail",

@@ -28,6 +28,32 @@ type Props = {
 };
 
 const REFRESH_MS = 15000;
+const PREFERRED_STRATEGY_KEYS = [
+  "volatility_breakout",
+  "range_breakout",
+  "mean_reversion",
+  "ema_cross",
+  "pullback",
+  "fade",
+];
+
+function choosePreferredStrategyKey(
+  options: StageTestStrategyOption[],
+  current: string
+): string {
+  if (!options.length) return "";
+
+  if (current && options.some((item) => item.key === current)) {
+    return current;
+  }
+
+  for (const key of PREFERRED_STRATEGY_KEYS) {
+    const found = options.find((item) => item.key === key);
+    if (found) return found.key;
+  }
+
+  return options[0].key;
+}
 
 function fmtPct(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "-";
@@ -171,10 +197,9 @@ export default function StageTestRunModal({ open, onClose }: Props) {
       return;
     }
 
-    const strategyExists = strategies.some((item) => item.key === strategy);
-
-    if (!strategy || !strategyExists) {
-      setStrategy(strategies[0].key);
+    const nextStrategy = choosePreferredStrategyKey(strategies, strategy);
+    if (nextStrategy !== strategy) {
+      setStrategy(nextStrategy);
     }
   }, [open, strategies, strategy]);
 
@@ -441,6 +466,15 @@ export default function StageTestRunModal({ open, onClose }: Props) {
                   </div>
                 )}
 
+                {runResult.metrics &&
+                  Number(runResult.metrics.closed_cases ?? 0) === 0 && (
+                    <div style={noSignalStyle}>
+                      Run executado sem cases fechados para esta configuraÃ§Ã£o.
+                      Tente outra strategy/timeframe ou ajuste os parÃ¢metros em
+                      Extra args.
+                    </div>
+                  )}
+
                 <div style={casesSectionStyle}>
                   <div style={casesHeaderStyle}>
                     <h3 style={{ margin: 0 }}>Cases do run</h3>
@@ -606,6 +640,16 @@ const metricsBoxStyle: CSSProperties = {
   border: "1px solid #1e293b",
   display: "grid",
   gap: 6,
+};
+
+const noSignalStyle: CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  background: "#172554",
+  border: "1px solid #1d4ed8",
+  color: "#bfdbfe",
+  lineHeight: 1.55,
 };
 
 const actionsStyle: CSSProperties = {

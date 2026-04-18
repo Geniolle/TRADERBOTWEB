@@ -1,0 +1,42 @@
+# Root local artifacts
+.env
+.env.*
+!.env.example
+!.env.dev.example
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+web/node_modules/
+web/dist/
+web/dist-ssr/
+
+# Python
+backend/.venv/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/coverage/
+backend/build/
+backend/dist/
+backend/*.egg-info/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+
+# Dev data and secrets
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.dev.example
+web/.env
+web/.env.*
+!web/.env.example
+!web/.env.dev.example
+data/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

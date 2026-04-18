@@ -207,30 +207,6 @@ function buildAnalysisFromSnapshot(
     trendRecord?.slope_m21 ??
     null;
 
-  console.log("[StageTests][snapshot.trend]", snapshot.trend);
-  console.log("[StageTests][EMA check]", {
-    ema_5: snapshot.trend?.ema_5,
-    ema_9: trendRecord?.ema_9,
-    ema9: trendRecord?.ema9,
-    m9: trendRecord?.m9,
-    ema_09: trendRecord?.ema_09,
-    ema_10: snapshot.trend?.ema_10,
-    ema_20: snapshot.trend?.ema_20,
-    ema_21: trendRecord?.ema_21,
-    ema21: trendRecord?.ema21,
-    m21: trendRecord?.m21,
-    ema_30: snapshot.trend?.ema_30,
-    ema_40: snapshot.trend?.ema_40,
-    ema_9_slope: trendRecord?.ema_9_slope,
-    ema9_slope: trendRecord?.ema9_slope,
-    slope_ema_9: trendRecord?.slope_ema_9,
-    slope_m9: trendRecord?.slope_m9,
-    ema_21_slope: trendRecord?.ema_21_slope,
-    ema21_slope: trendRecord?.ema21_slope,
-    slope_ema_21: trendRecord?.slope_ema_21,
-    slope_m21: trendRecord?.slope_m21,
-  });
-
   pushIndicator(
     indicators,
     "Preço de referência",
@@ -779,7 +755,7 @@ function useStageTests({
     } finally {
       setLoadingRuns(false);
     }
-  }, [selectedSymbol, selectedTimeframe, lastCandleTick, hasValidSelection]);
+  }, [selectedSymbol, selectedTimeframe, hasValidSelection]);
 
   useEffect(() => {
     void loadStageTests();
@@ -902,8 +878,19 @@ function useStageTests({
         const metrics = result.metrics;
         const analysis = extractTechnicalAnalysis(result);
         const cases = extractCasesFromResult(result);
+        const localRunId = `local-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`;
+        const closedCases = Number(metrics?.closed_cases ?? 0);
+        const triggers = Number(metrics?.triggers ?? 0);
+        const ranWithNoSignals =
+          result.ok && result.return_code === 0 && closedCases === 0;
         const nextStatus =
-          result.ok && result.return_code === 0 ? "local_ok" : "local_error";
+          result.ok && result.return_code === 0
+            ? ranWithNoSignals
+              ? "local_no_signals"
+              : "local_ok"
+            : "local_error";
 
         setStageTests((previous) =>
           previous.map((current) => {
@@ -925,7 +912,7 @@ function useStageTests({
               fail_rate: metrics?.fail_rate ?? current.fail_rate ?? 0,
               timeout_rate: metrics?.timeout_rate ?? current.timeout_rate ?? 0,
               last_run: {
-                run_id: "",
+                run_id: localRunId,
                 symbol: selectedSymbol,
                 timeframe: selectedTimeframe,
                 status: nextStatus,
@@ -943,11 +930,19 @@ function useStageTests({
 
         if (result.ok && result.return_code === 0) {
           setLastExecutionStatus("success");
-          setLastExecutionLog(
-            `Run manual concluído em ${formatDateTime(
-              new Date()
-            )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Return code=${result.return_code}`
-          );
+          if (ranWithNoSignals) {
+            setLastExecutionLog(
+              `Run manual concluído sem sinais em ${formatDateTime(
+                new Date()
+              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}`
+            );
+          } else {
+            setLastExecutionLog(
+              `Run manual concluído em ${formatDateTime(
+                new Date()
+              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}`
+            );
+          }
           return;
         }
 
