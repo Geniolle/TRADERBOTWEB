@@ -47,6 +47,21 @@ export interface StageTestRunMetrics {
   last_candle?: string | null;
 }
 
+export interface StageTestRunOrdersSummary {
+  policy_enabled?: boolean;
+  min_confirmation_score?: number;
+  max_orders_per_run?: number;
+  test_mode?: boolean;
+  quote_order_qty?: string;
+  total_cases?: number;
+  eligible_cases?: number;
+  attempted_orders?: number;
+  created_orders?: number;
+  failed_orders?: number;
+  skipped_orders?: number;
+  service_error?: string;
+}
+
 export interface StageTestRunResponse {
   ok: boolean;
   command: string[];
@@ -55,4 +70,8 @@ export interface StageTestRunResponse {
   stderr: string;
   metrics?: StageTestRunMetrics | null;
   cases?: StageTestRunCaseItem[] | null;
+  orders?: StageTestRunOrdersSummary | null;
+  persisted?: boolean;
+  persisted_run_id?: string | null;
+  persistence_error?: string | null;
 }

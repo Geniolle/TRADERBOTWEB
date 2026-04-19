@@ -219,6 +219,7 @@ function normalizeRunResponse(payload: unknown): StageTestRunResponse {
 
   const rawMetrics = asRecord(record?.metrics);
   const nestedRun = asRecord(record?.run);
+  const rawOrders = asRecord(record?.orders);
 
   const rawCases =
     record?.cases ??
@@ -234,6 +235,26 @@ function normalizeRunResponse(payload: unknown): StageTestRunResponse {
     return_code: asNumber(record?.return_code) ?? -1,
     stdout: asString(record?.stdout),
     stderr: asString(record?.stderr),
+    persisted: asBoolean(record?.persisted, false),
+    persisted_run_id: asNullableString(record?.persisted_run_id),
+    persistence_error: asNullableString(record?.persistence_error),
+    orders: rawOrders
+      ? {
+          policy_enabled: asBoolean(rawOrders.policy_enabled, false),
+          min_confirmation_score:
+            asNumber(rawOrders.min_confirmation_score) ?? undefined,
+          max_orders_per_run: asNumber(rawOrders.max_orders_per_run) ?? undefined,
+          test_mode: asBoolean(rawOrders.test_mode, true),
+          quote_order_qty: asString(rawOrders.quote_order_qty) || undefined,
+          total_cases: asNumber(rawOrders.total_cases) ?? undefined,
+          eligible_cases: asNumber(rawOrders.eligible_cases) ?? undefined,
+          attempted_orders: asNumber(rawOrders.attempted_orders) ?? undefined,
+          created_orders: asNumber(rawOrders.created_orders) ?? undefined,
+          failed_orders: asNumber(rawOrders.failed_orders) ?? undefined,
+          skipped_orders: asNumber(rawOrders.skipped_orders) ?? undefined,
+          service_error: asString(rawOrders.service_error) || undefined,
+        }
+      : null,
     metrics: rawMetrics
       ? {
           strategy_class: asString(rawMetrics.strategy_class) || null,

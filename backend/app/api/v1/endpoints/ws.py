@@ -3,15 +3,18 @@
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.settings import get_settings
+from app.models.domain.candle import Candle
 from app.providers.factory import MarketDataProviderFactory
 from app.providers.twelvedata import ProviderQuotaExceededError
 from app.services.candle_sync import CandleSyncService
 from app.storage.database import SessionLocal
 from app.storage.repositories.candle_queries import CandleQueryRepository
+from app.storage.repositories.candle_repository import CandleRepository
 from app.utils.datetime_utils import ensure_naive_utc, floor_open_time
 
 router = APIRouter(tags=["ws"])
@@ -269,6 +272,7 @@ def try_build_live_tick(symbol: str, timeframe: str, provider_name: str) -> dict
         "high": float(latest.high),
         "low": float(latest.low),
         "close": float(latest.close),
+        "volume": float(latest.volume),
         "count": 1,
         "source": latest.source,
         "provider": provider.provider_name(),
@@ -277,6 +281,62 @@ def try_build_live_tick(symbol: str, timeframe: str, provider_name: str) -> dict
         "is_delayed": latest_open < current_bucket_open,
         "is_mock": provider.provider_name() == "mock",
     }
+
+
+def _safe_decimal(value: object, default: str = "0") -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(default)
+
+
+def _parse_tick_open_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    return normalize_datetime(parsed)
+
+
+def persist_live_tick(symbol: str, timeframe: str, provider_name: str, tick: dict) -> None:
+    tick_open_time = _parse_tick_open_time(tick.get("open_time"))
+    if tick_open_time is None:
+        raise ValueError("open_time inválido no candle_tick.")
+
+    candle_step = timeframe_to_timedelta(timeframe)
+    candle_close_time = tick_open_time + candle_step - timedelta(milliseconds=1)
+
+    tick_source = str(tick.get("source") or provider_name or "unknown").strip().lower() or "unknown"
+
+    candle = Candle(
+        symbol=symbol,
+        timeframe=timeframe,
+        open_time=tick_open_time,
+        close_time=candle_close_time,
+        open=_safe_decimal(tick.get("open")),
+        high=_safe_decimal(tick.get("high")),
+        low=_safe_decimal(tick.get("low")),
+        close=_safe_decimal(tick.get("close")),
+        volume=_safe_decimal(tick.get("volume")),
+        source=tick_source,
+    )
+
+    session = SessionLocal()
+    try:
+        CandleRepository().save_many(session=session, candles=[candle])
+    finally:
+        session.close()
 
 
 async def emit_heartbeat(websocket: WebSocket, count: int) -> None:
@@ -455,6 +515,22 @@ async def websocket_feed(websocket: WebSocket) -> None:
                 )
 
                 if tick_key != last_tick_key:
+                    try:
+                        persist_live_tick(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            provider_name=provider_name,
+                            tick=tick,
+                        )
+                    except Exception as exc:
+                        await emit_provider_error(
+                            websocket=websocket,
+                            message=f"Falha ao persistir candle_tick no SQLite: {exc}",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            provider_name=provider_name,
+                        )
+
                     last_tick_key = tick_key
                     await websocket.send_json(
                         {

@@ -57,6 +57,78 @@ type DevelopmentPotentialResult = {
   negatives: number;
 };
 
+type NormalizedTradeSide = "long" | "short" | "unknown";
+
+type OrderMonitorState = "open" | "closed";
+
+type RunOrderMonitorItem = {
+  key: string;
+  orderId: string;
+  caseNumber: number;
+  side: NormalizedTradeSide;
+  sideLabel: string;
+  monitorState: OrderMonitorState;
+  statusLabel: string;
+  statusColor: string;
+  statusBackground: string;
+  statusBorder: string;
+  entryPrice: number | null;
+  stopPrice: number | null;
+  targetPrice: number | null;
+  referencePrice: number | null;
+  referenceLabel: string;
+  pnlPoints: number | null;
+  pnlPercent: number | null;
+  riskPoints: number | null;
+  rewardPoints: number | null;
+  riskPercent: number | null;
+  rewardPercent: number | null;
+  rewardRisk: number | null;
+  openedAt: string | null;
+  closedAt: string | null;
+};
+
+type RunOrdersMonitoringSummary = {
+  items: RunOrderMonitorItem[];
+  totalOrders: number;
+  openOrders: number;
+  closedOrders: number;
+  positiveOrders: number;
+  negativeOrders: number;
+  monitoredOrders: number;
+  totalPnlPoints: number | null;
+  averagePnlPoints: number | null;
+  usesRealtimeTick: boolean;
+  tickTimeLabel: string;
+};
+
+type CreatedOrderViewItem = {
+  key: string;
+  caseNumber: number;
+  orderId: string;
+  status: string;
+  side: string;
+  symbol: string;
+  orderType: string;
+  testMode: boolean | null;
+  confirmationScore: number | null;
+  threshold: number | null;
+  quoteOrderQty: string;
+  entryPrice: number | null;
+  targetPrice: number | null;
+  stopPrice: number | null;
+  createdAt: string | null;
+  reason: string;
+};
+
+type CreatedOrdersSummary = {
+  items: CreatedOrderViewItem[];
+  totalCreated: number;
+  totalFailed: number;
+  totalSkipped: number;
+  configuredThreshold: number | null;
+};
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
 
@@ -84,6 +156,232 @@ function formatDecimal(value: unknown, decimals = 2): string {
   const numberValue = toNumber(value);
   if (numberValue === null) return "-";
   return numberValue.toFixed(decimals).replace(".", ",");
+}
+
+function normalizeSymbolForMatch(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function normalizeTimeframeForMatch(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function readCaseMetadataRecord(item: OutcomeLikeCase): Record<string, unknown> {
+  if (!item.metadata || typeof item.metadata !== "object") return {};
+  return item.metadata as Record<string, unknown>;
+}
+
+function resolveTradeSide(item: OutcomeLikeCase): NormalizedTradeSide {
+  const metadata = readCaseMetadataRecord(item);
+  const candidates = [
+    metadata.trade_bias,
+    metadata.direction,
+    metadata.side,
+    item.side,
+  ];
+
+  for (const value of candidates) {
+    const raw = String(value ?? "").trim().toLowerCase();
+    if (raw === "long" || raw === "buy" || raw === "compra") return "long";
+    if (raw === "short" || raw === "sell" || raw === "venda") return "short";
+  }
+
+  return "unknown";
+}
+
+function getTradeSideLabelFromNormalized(side: NormalizedTradeSide): string {
+  if (side === "long") return "Compra";
+  if (side === "short") return "Venda";
+  return "-";
+}
+
+function resolveCaseNumber(item: OutcomeLikeCase, index: number): number {
+  const metadata = readCaseMetadataRecord(item);
+  const metadataCaseNumber = toNumber(metadata.case_number);
+
+  if (metadataCaseNumber !== null) {
+    const rounded = Math.trunc(metadataCaseNumber);
+    if (rounded > 0) return rounded;
+  }
+
+  return index + 1;
+}
+
+function resolveOrderStatusPresentation(item: OutcomeLikeCase): {
+  monitorState: OrderMonitorState;
+  label: string;
+  color: string;
+  background: string;
+  border: string;
+} {
+  const status = String(item.status ?? "")
+    .trim()
+    .toLowerCase();
+  const outcome = String(item.outcome ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (status === "open" && !outcome) {
+    return {
+      monitorState: "open",
+      label: "Aberta",
+      color: "#92400e",
+      background: "#fffbeb",
+      border: "#fde68a",
+    };
+  }
+
+  if (outcome === "hit") {
+    return {
+      monitorState: "closed",
+      label: "Fechada (Hit)",
+      color: "#166534",
+      background: "#f0fdf4",
+      border: "#bbf7d0",
+    };
+  }
+
+  if (outcome === "fail") {
+    return {
+      monitorState: "closed",
+      label: "Fechada (Fail)",
+      color: "#991b1b",
+      background: "#fef2f2",
+      border: "#fecaca",
+    };
+  }
+
+  if (outcome === "timeout") {
+    return {
+      monitorState: "closed",
+      label: "Fechada (Timeout)",
+      color: "#92400e",
+      background: "#fffbeb",
+      border: "#fde68a",
+    };
+  }
+
+  if (outcome === "cancelled" || outcome === "canceled") {
+    return {
+      monitorState: "closed",
+      label: "Cancelada",
+      color: "#475569",
+      background: "#f8fafc",
+      border: "#cbd5e1",
+    };
+  }
+
+  if (status === "open") {
+    return {
+      monitorState: "open",
+      label: "Aberta",
+      color: "#92400e",
+      background: "#fffbeb",
+      border: "#fde68a",
+    };
+  }
+
+  return {
+    monitorState: "closed",
+    label: status === "closed" ? "Fechada" : status || "Fechada",
+    color: "#334155",
+    background: "#f8fafc",
+    border: "#cbd5e1",
+  };
+}
+
+function computeDirectionalDistance(
+  fromPrice: number | null,
+  toPrice: number | null,
+  side: NormalizedTradeSide,
+): number | null {
+  if (fromPrice === null || toPrice === null) return null;
+  if (side === "unknown") return null;
+
+  const direction = side === "short" ? -1 : 1;
+  return (toPrice - fromPrice) * direction;
+}
+
+function sanitizePositiveDistance(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  return value > 0 ? value : null;
+}
+
+function computeDirectionalPnl(
+  entryPrice: number | null,
+  referencePrice: number | null,
+  side: NormalizedTradeSide,
+): {
+  points: number | null;
+  percent: number | null;
+} {
+  const points = computeDirectionalDistance(entryPrice, referencePrice, side);
+
+  if (points === null) {
+    return { points: null, percent: null };
+  }
+
+  if (entryPrice === null || entryPrice === 0) {
+    return { points, percent: null };
+  }
+
+  return {
+    points,
+    percent: (points / entryPrice) * 100,
+  };
+}
+
+function toPercentFromDistance(
+  distance: number | null,
+  entryPrice: number | null,
+): number | null {
+  if (distance === null || entryPrice === null || entryPrice === 0) return null;
+  return (distance / entryPrice) * 100;
+}
+
+function formatSignedDecimal(value: number | null, decimals = 2): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(decimals).replace(".", ",")}`;
+}
+
+function getPnlTone(value: number | null): {
+  color: string;
+  background: string;
+  border: string;
+} {
+  if (value === null) {
+    return {
+      color: "#475569",
+      background: "#f8fafc",
+      border: "#e2e8f0",
+    };
+  }
+
+  if (value > 0) {
+    return {
+      color: "#166534",
+      background: "#f0fdf4",
+      border: "#bbf7d0",
+    };
+  }
+
+  if (value < 0) {
+    return {
+      color: "#991b1b",
+      background: "#fef2f2",
+      border: "#fecaca",
+    };
+  }
+
+  return {
+    color: "#334155",
+    background: "#f8fafc",
+    border: "#cbd5e1",
+  };
 }
 
 function readMetricNumber(metrics: unknown, key: string): number | null {
@@ -223,28 +521,249 @@ function buildOutcomeLists(cases: OutcomeLikeCase[]) {
   };
 }
 
+function buildRunOrdersMonitoring(
+  runDetails: RunDetailsResponse,
+  lastCandleTick: CandleTickState,
+): RunOrdersMonitoringSummary {
+  const runSymbolNormalized = normalizeSymbolForMatch(runDetails.run.symbol);
+  const runTimeframeNormalized = normalizeTimeframeForMatch(runDetails.run.timeframe);
+
+  const tickSymbolNormalized = normalizeSymbolForMatch(lastCandleTick?.symbol ?? "");
+  const tickTimeframeNormalized = normalizeTimeframeForMatch(
+    lastCandleTick?.timeframe ?? "",
+  );
+
+  const tickMatchesRun =
+    runSymbolNormalized !== "" &&
+    runSymbolNormalized === tickSymbolNormalized &&
+    runTimeframeNormalized !== "" &&
+    runTimeframeNormalized === tickTimeframeNormalized;
+
+  const tickPrice = tickMatchesRun ? toNumber(lastCandleTick?.close) : null;
+  const tickTimeLabel = tickMatchesRun
+    ? formatDateTime(lastCandleTick?.open_time ?? null)
+    : "-";
+
+  const items = ((runDetails.cases ?? []) as OutcomeLikeCase[])
+    .map((item, index) => {
+      const metadata = readCaseMetadataRecord(item);
+      const statusPresentation = resolveOrderStatusPresentation(item);
+      const side = resolveTradeSide(item);
+      const sideLabel = getTradeSideLabelFromNormalized(side);
+      const entryPrice = toNumber(item.entry_price);
+      const stopPrice = toNumber(item.invalidation_price);
+      const targetPrice = toNumber(item.target_price);
+      const closePrice = toNumber(item.close_price);
+
+      const referencePrice =
+        closePrice !== null
+          ? closePrice
+          : statusPresentation.monitorState === "open"
+            ? tickPrice
+            : null;
+      const referenceLabel =
+        closePrice !== null
+          ? "Fecho"
+          : statusPresentation.monitorState === "open" && tickPrice !== null
+            ? "Ultimo preco"
+            : "-";
+
+      const pnl = computeDirectionalPnl(entryPrice, referencePrice, side);
+      const riskPoints = sanitizePositiveDistance(
+        computeDirectionalDistance(stopPrice, entryPrice, side),
+      );
+      const rewardPoints = sanitizePositiveDistance(
+        computeDirectionalDistance(entryPrice, targetPrice, side),
+      );
+
+      const rewardRisk =
+        riskPoints !== null && rewardPoints !== null && riskPoints > 0
+          ? rewardPoints / riskPoints
+          : null;
+
+      const caseNumber = resolveCaseNumber(item, index);
+      const sourceCaseId = String(metadata.source_case_id ?? "").trim();
+
+      const openedAtRaw = item.entry_time ?? item.trigger_time ?? null;
+      const closedAtRaw = item.close_time ?? null;
+
+      return {
+        key: item.id ?? `case-${index + 1}`,
+        orderId: sourceCaseId || item.id || `case-${index + 1}`,
+        caseNumber,
+        side,
+        sideLabel,
+        monitorState: statusPresentation.monitorState,
+        statusLabel: statusPresentation.label,
+        statusColor: statusPresentation.color,
+        statusBackground: statusPresentation.background,
+        statusBorder: statusPresentation.border,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        referencePrice,
+        referenceLabel,
+        pnlPoints: pnl.points,
+        pnlPercent: pnl.percent,
+        riskPoints,
+        rewardPoints,
+        riskPercent: toPercentFromDistance(riskPoints, entryPrice),
+        rewardPercent: toPercentFromDistance(rewardPoints, entryPrice),
+        rewardRisk,
+        openedAt: openedAtRaw,
+        closedAt: closedAtRaw,
+      } satisfies RunOrderMonitorItem;
+    })
+    .sort((a, b) => {
+      if (a.monitorState !== b.monitorState) {
+        return a.monitorState === "open" ? -1 : 1;
+      }
+
+      const aTime = new Date(a.openedAt ?? 0).getTime();
+      const bTime = new Date(b.openedAt ?? 0).getTime();
+      return bTime - aTime;
+    });
+
+  let monitoredOrders = 0;
+  let totalPnlPoints = 0;
+  let positiveOrders = 0;
+  let negativeOrders = 0;
+
+  for (const item of items) {
+    if (item.pnlPoints === null) continue;
+
+    monitoredOrders += 1;
+    totalPnlPoints += item.pnlPoints;
+
+    if (item.pnlPoints > 0) positiveOrders += 1;
+    if (item.pnlPoints < 0) negativeOrders += 1;
+  }
+
+  const openOrders = items.filter((item) => item.monitorState === "open").length;
+  const closedOrders = items.length - openOrders;
+  const usesRealtimeTick = openOrders > 0 && tickPrice !== null;
+
+  return {
+    items,
+    totalOrders: items.length,
+    openOrders,
+    closedOrders,
+    positiveOrders,
+    negativeOrders,
+    monitoredOrders,
+    totalPnlPoints: monitoredOrders > 0 ? totalPnlPoints : null,
+    averagePnlPoints: monitoredOrders > 0 ? totalPnlPoints / monitoredOrders : null,
+    usesRealtimeTick,
+    tickTimeLabel,
+  };
+}
+
+function normalizeOrderStatusLabel(value: unknown): string {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!raw) return "-";
+  if (raw === "created") return "Criada";
+  if (raw === "failed") return "Falha";
+  if (raw === "skipped") return "Ignorada";
+  return raw;
+}
+
+function normalizeOrderReason(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  return raw || "-";
+}
+
+function buildCreatedOrdersSummary(runDetails: RunDetailsResponse): CreatedOrdersSummary {
+  const cases = (runDetails.cases ?? []) as OutcomeLikeCase[];
+  const items: CreatedOrderViewItem[] = [];
+  let totalFailed = 0;
+  let totalSkipped = 0;
+  let configuredThreshold: number | null = null;
+
+  for (let index = 0; index < cases.length; index += 1) {
+    const caseItem = cases[index];
+    const metadata = readCaseMetadataRecord(caseItem);
+    const orderExecution =
+      metadata.order_execution && typeof metadata.order_execution === "object"
+        ? (metadata.order_execution as Record<string, unknown>)
+        : null;
+
+    if (!orderExecution) continue;
+
+    const created = Boolean(orderExecution.created);
+    const status = normalizeOrderStatusLabel(orderExecution.status);
+    const reason = normalizeOrderReason(orderExecution.reason);
+    const threshold = toNumber(orderExecution.min_confirmation_score);
+
+    if (configuredThreshold === null && threshold !== null) {
+      configuredThreshold = threshold;
+    }
+
+    if (status === "Falha") totalFailed += 1;
+    if (status === "Ignorada") totalSkipped += 1;
+
+    const shouldShowInList = created || status === "Falha";
+    if (!shouldShowInList) continue;
+
+    const request =
+      orderExecution.request && typeof orderExecution.request === "object"
+        ? (orderExecution.request as Record<string, unknown>)
+        : {};
+
+    const caseNumber = resolveCaseNumber(caseItem, index);
+    const sourceCaseId = String(metadata.source_case_id ?? "").trim();
+    const requestClientOrderId = String(
+      request.newClientOrderId ?? request.new_client_order_id ?? "",
+    ).trim();
+
+    items.push({
+      key: caseItem.id ?? `created-order-${index + 1}`,
+      caseNumber,
+      orderId:
+        requestClientOrderId ||
+        sourceCaseId ||
+        caseItem.id ||
+        `case-${index + 1}`,
+      status,
+      side: String(request.side ?? caseItem.side ?? "-"),
+      symbol: String(request.symbol ?? runDetails.run.symbol ?? "-"),
+      orderType: String(request.type ?? "MARKET"),
+      testMode:
+        typeof request.testMode === "boolean"
+          ? request.testMode
+          : typeof request.test_mode === "boolean"
+            ? (request.test_mode as boolean)
+            : null,
+      confirmationScore: toNumber(orderExecution.confirmation_score),
+      threshold,
+      quoteOrderQty:
+        String(request.quoteOrderQty ?? request.quote_order_qty ?? "").trim() || "-",
+      entryPrice: toNumber(caseItem.entry_price),
+      targetPrice: toNumber(caseItem.target_price),
+      stopPrice: toNumber(caseItem.invalidation_price),
+      createdAt: String(orderExecution.created_at ?? caseItem.entry_time ?? "").trim() || null,
+      reason,
+    });
+  }
+
+  items.sort((a, b) => {
+    const aTime = new Date(a.createdAt ?? 0).getTime();
+    const bTime = new Date(b.createdAt ?? 0).getTime();
+    return bTime - aTime;
+  });
+
+  return {
+    items,
+    totalCreated: items.length,
+    totalFailed,
+    totalSkipped,
+    configuredThreshold,
+  };
+}
+
 function getTradeSideLabel(item: OutcomeLikeCase): string {
-  const metadataTradeBias =
-    typeof item.metadata === "object" &&
-    item.metadata !== null &&
-    "trade_bias" in item.metadata
-      ? String((item.metadata as Record<string, unknown>).trade_bias ?? "")
-          .trim()
-          .toLowerCase()
-      : "";
-
-  const rawSide = String(item.side ?? "").trim().toLowerCase();
-  const resolved = metadataTradeBias || rawSide;
-
-  if (resolved === "long" || resolved === "buy" || resolved === "compra") {
-    return "Compra";
-  }
-
-  if (resolved === "short" || resolved === "sell" || resolved === "venda") {
-    return "Venda";
-  }
-
-  return "-";
+  return getTradeSideLabelFromNormalized(resolveTradeSide(item));
 }
 
 function getAnalysisSnapshot(item: OutcomeLikeCase): Record<string, unknown> | null {
@@ -1998,6 +2517,7 @@ function RunSummaryCard({
   loadingRunDetails,
   runDetailsError,
   runDetails,
+  lastCandleTick,
 }: RunSummaryCardProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -2005,6 +2525,10 @@ function RunSummaryCard({
   const outcomeLists = runDetails
     ? buildOutcomeLists((runDetails.cases ?? []) as OutcomeLikeCase[])
     : { hits: [], fails: [] };
+  const orderMonitoring = runDetails
+    ? buildRunOrdersMonitoring(runDetails, lastCandleTick)
+    : null;
+  const createdOrders = runDetails ? buildCreatedOrdersSummary(runDetails) : null;
 
   const headerStyles = getRunSummaryHeaderStyles();
 
@@ -2262,6 +2786,445 @@ function RunSummaryCard({
                     )}
                   </div>
                 </div>
+
+                {orderMonitoring && (
+                  <div
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 14,
+                      padding: 16,
+                      background: "#ffffff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color: "#0f172a",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Ordens abertas e monitoramento
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                        gap: 12,
+                        marginBottom: 14,
+                      }}
+                    >
+                      {summaryMetricCard(
+                        "Total de ordens",
+                        orderMonitoring.totalOrders,
+                        "4px solid #94a3b8",
+                      )}
+                      {summaryMetricCard(
+                        "Ordens abertas",
+                        orderMonitoring.openOrders,
+                        "4px solid #d97706",
+                      )}
+                      {summaryMetricCard(
+                        "Ordens fechadas",
+                        orderMonitoring.closedOrders,
+                        "4px solid #2563eb",
+                      )}
+                      {summaryMetricCard(
+                        "PnL acumulado (pts)",
+                        formatSignedDecimal(orderMonitoring.totalPnlPoints),
+                        "4px solid #16a34a",
+                      )}
+                      {summaryMetricCard(
+                        "PnL medio por ordem",
+                        formatSignedDecimal(orderMonitoring.averagePnlPoints),
+                        "4px solid #7c3aed",
+                      )}
+                      {summaryMetricCard(
+                        "Ordens monitoradas",
+                        orderMonitoring.monitoredOrders,
+                        "4px solid #0ea5e9",
+                      )}
+                      {summaryMetricCard(
+                        "Ordens com ganho",
+                        orderMonitoring.positiveOrders,
+                        "4px solid #16a34a",
+                      )}
+                      {summaryMetricCard(
+                        "Ordens com perda",
+                        orderMonitoring.negativeOrders,
+                        "4px solid #dc2626",
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        marginBottom: 14,
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: "#f8fafc",
+                        fontSize: 13,
+                        color: "#334155",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      {orderMonitoring.openOrders > 0 ? (
+                        orderMonitoring.usesRealtimeTick ? (
+                          <span>
+                            Monitoramento em tempo real ativo para as ordens abertas.
+                            Ultimo candle usado: {orderMonitoring.tickTimeLabel}.
+                          </span>
+                        ) : (
+                          <span>
+                            Existem ordens abertas, mas sem candle tick compativel com
+                            este run. O PnL so e atualizado quando houver preco
+                            monitorado.
+                          </span>
+                        )
+                      ) : (
+                        <span>
+                          Sem ordens abertas neste run. O monitoramento mostra o
+                          resultado final de cada ordem fechada.
+                        </span>
+                      )}
+                    </div>
+
+                    {orderMonitoring.items.length === 0 ? (
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>
+                        Nenhuma ordem encontrada para este run.
+                      </p>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {orderMonitoring.items.map((orderItem) => {
+                          const pnlTone = getPnlTone(orderItem.pnlPoints);
+
+                          return (
+                            <div
+                              key={orderItem.key}
+                              style={{
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                background: "#ffffff",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: "10px 12px",
+                                  borderBottom: "1px solid #e2e8f0",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  flexWrap: "wrap",
+                                  background: "#f8fafc",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gap: 2,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  <strong
+                                    style={{
+                                      color: "#0f172a",
+                                      fontSize: 14,
+                                      lineHeight: 1.25,
+                                      wordBreak: "break-word",
+                                    }}
+                                  >
+                                    Ordem #{orderItem.caseNumber}
+                                  </strong>
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      color: "#64748b",
+                                      wordBreak: "break-word",
+                                    }}
+                                  >
+                                    ID: {orderItem.orderId}
+                                  </span>
+                                </div>
+
+                                <span
+                                  style={{
+                                    padding: "4px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: orderItem.statusColor,
+                                    background: orderItem.statusBackground,
+                                    border: `1px solid ${orderItem.statusBorder}`,
+                                  }}
+                                >
+                                  {orderItem.statusLabel}
+                                </span>
+                              </div>
+
+                              <div style={{ padding: 12, display: "grid", gap: 10 }}>
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                                    gap: 8,
+                                    fontSize: 13,
+                                    color: "#334155",
+                                  }}
+                                >
+                                  <div>
+                                    <strong>Lado:</strong> {orderItem.sideLabel}
+                                  </div>
+                                  <div>
+                                    <strong>Entrada:</strong>{" "}
+                                    {formatPrice(orderItem.entryPrice)}
+                                  </div>
+                                  <div>
+                                    <strong>Stop (meta perda):</strong>{" "}
+                                    {formatPrice(orderItem.stopPrice)}
+                                  </div>
+                                  <div>
+                                    <strong>Target (meta ganho):</strong>{" "}
+                                    {formatPrice(orderItem.targetPrice)}
+                                  </div>
+                                  <div>
+                                    <strong>{orderItem.referenceLabel}:</strong>{" "}
+                                    {formatPrice(orderItem.referencePrice)}
+                                  </div>
+                                  <div>
+                                    <strong>Abertura:</strong>{" "}
+                                    {formatDateTime(orderItem.openedAt)}
+                                  </div>
+                                  <div>
+                                    <strong>Fecho:</strong>{" "}
+                                    {formatDateTime(orderItem.closedAt)}
+                                  </div>
+                                  <div>
+                                    <strong>R:R:</strong>{" "}
+                                    {formatDecimal(orderItem.rewardRisk, 2)}
+                                  </div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    border: `1px solid ${pnlTone.border}`,
+                                    background: pnlTone.background,
+                                    color: pnlTone.color,
+                                    borderRadius: 10,
+                                    padding: "10px 12px",
+                                    display: "grid",
+                                    gridTemplateColumns:
+                                      "repeat(auto-fit, minmax(170px, 1fr))",
+                                    gap: 8,
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  <span>
+                                    PnL (pts): {formatSignedDecimal(orderItem.pnlPoints)}
+                                  </span>
+                                  <span>
+                                    PnL (%): {formatSignedDecimal(orderItem.pnlPercent, 2)}
+                                  </span>
+                                  <span>
+                                    Risco ate stop:{" "}
+                                    {formatSignedDecimal(orderItem.riskPoints)}
+                                    {" / "}
+                                    {formatSignedDecimal(orderItem.riskPercent, 2)}%
+                                  </span>
+                                  <span>
+                                    Potencial ate target:{" "}
+                                    {formatSignedDecimal(orderItem.rewardPoints)}
+                                    {" / "}
+                                    {formatSignedDecimal(orderItem.rewardPercent, 2)}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {createdOrders && (
+                  <div
+                    style={{
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 14,
+                      padding: 16,
+                      background: "#ffffff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color: "#0f172a",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Ordens criadas (regra maior ou igual a{" "}
+                      {formatDecimal(createdOrders.configuredThreshold, 2)}%)
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 12,
+                        marginBottom: 14,
+                      }}
+                    >
+                      {summaryMetricCard(
+                        "Ordens criadas",
+                        createdOrders.totalCreated,
+                        "4px solid #16a34a",
+                      )}
+                      {summaryMetricCard(
+                        "Falhas na criacao",
+                        createdOrders.totalFailed,
+                        "4px solid #dc2626",
+                      )}
+                      {summaryMetricCard(
+                        "Ignoradas (<95)",
+                        createdOrders.totalSkipped,
+                        "4px solid #f59e0b",
+                      )}
+                    </div>
+
+                    {createdOrders.items.length === 0 ? (
+                      <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>
+                        Nenhuma ordem criada ou tentativa com falha para este run.
+                      </p>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {createdOrders.items.map((item) => {
+                          const statusBg =
+                            item.status === "Criada"
+                              ? "#f0fdf4"
+                              : item.status === "Falha"
+                                ? "#fef2f2"
+                                : "#fffbeb";
+                          const statusColor =
+                            item.status === "Criada"
+                              ? "#166534"
+                              : item.status === "Falha"
+                                ? "#991b1b"
+                                : "#92400e";
+                          const statusBorder =
+                            item.status === "Criada"
+                              ? "#bbf7d0"
+                              : item.status === "Falha"
+                                ? "#fecaca"
+                                : "#fde68a";
+
+                          return (
+                            <div
+                              key={item.key}
+                              style={{
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 12,
+                                background: "#ffffff",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  padding: "10px 12px",
+                                  borderBottom: "1px solid #e2e8f0",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: 10,
+                                  flexWrap: "wrap",
+                                  background: "#f8fafc",
+                                }}
+                              >
+                                <strong style={{ color: "#0f172a", fontSize: 14 }}>
+                                  Ordem #{item.caseNumber}
+                                </strong>
+                                <span
+                                  style={{
+                                    padding: "4px 10px",
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: statusColor,
+                                    background: statusBg,
+                                    border: `1px solid ${statusBorder}`,
+                                  }}
+                                >
+                                  {item.status}
+                                </span>
+                              </div>
+
+                              <div
+                                style={{
+                                  padding: 12,
+                                  display: "grid",
+                                  gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                                  gap: 8,
+                                  fontSize: 13,
+                                  color: "#334155",
+                                }}
+                              >
+                                <div>
+                                  <strong>ID da ordem:</strong> {item.orderId}
+                                </div>
+                                <div>
+                                  <strong>Simbolo:</strong> {item.symbol}
+                                </div>
+                                <div>
+                                  <strong>Lado:</strong> {item.side}
+                                </div>
+                                <div>
+                                  <strong>Tipo:</strong> {item.orderType}
+                                </div>
+                                <div>
+                                  <strong>Ambiente:</strong>{" "}
+                                  {item.testMode === null
+                                    ? "-"
+                                    : item.testMode
+                                      ? "Testnet"
+                                      : "Real"}
+                                </div>
+                                <div>
+                                  <strong>Score:</strong>{" "}
+                                  {formatDecimal(item.confirmationScore, 2)}
+                                  {" / "}
+                                  {formatDecimal(item.threshold, 2)}
+                                </div>
+                                <div>
+                                  <strong>Quote qty:</strong> {item.quoteOrderQty}
+                                </div>
+                                <div>
+                                  <strong>Entrada:</strong> {formatPrice(item.entryPrice)}
+                                </div>
+                                <div>
+                                  <strong>Target:</strong> {formatPrice(item.targetPrice)}
+                                </div>
+                                <div>
+                                  <strong>Stop:</strong> {formatPrice(item.stopPrice)}
+                                </div>
+                                <div>
+                                  <strong>Criada em:</strong>{" "}
+                                  {formatDateTime(item.createdAt)}
+                                </div>
+                                <div>
+                                  <strong>Motivo:</strong> {item.reason}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div
                   style={{

@@ -209,6 +209,38 @@ function clampWithinChart(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function getTopTagPlacement(params: {
+  anchorX: number;
+  chartWidth: number;
+  tagWidth: number;
+}): {
+  left: number;
+  top: number;
+  connectorX: number;
+  connectorY: number;
+} {
+  const { anchorX, chartWidth, tagWidth } = params;
+  const horizontalPadding = 10;
+  const top = 12;
+  const connectorY = top + 28;
+  const maxLeft = Math.max(
+    horizontalPadding,
+    chartWidth - tagWidth - horizontalPadding,
+  );
+  const left = clampWithinChart(
+    anchorX - tagWidth / 2,
+    horizontalPadding,
+    maxLeft,
+  );
+
+  return {
+    left,
+    top,
+    connectorX: left + tagWidth / 2,
+    connectorY,
+  };
+}
+
 function buildSelectedCaseOverlays(params: {
   selectedCase: ExtendedRunCaseItem;
   candleMeta: CandleMeta[];
@@ -592,19 +624,39 @@ function buildPullbackContextualOverlays(params: {
   }
 
   const anchorX = xFromIndex(triggerIndex);
-  const anchorY = Math.min(zoneTopPx, zoneBottomPx);
+  const triggerCircleY = projector.yFromPrice(
+    side === "buy" ? triggerCandle.low : triggerCandle.high,
+  );
+  const anchorY = isFiniteCoordinate(triggerCircleY)
+    ? triggerCircleY
+    : Math.min(zoneTopPx, zoneBottomPx);
 
-  if (!isFiniteCoordinate(anchorX)) {
+  if (!isFiniteCoordinate(anchorX) || !isFiniteCoordinate(anchorY)) {
     return overlays;
   }
 
-  const tagLeft = clampWithinChart(anchorX - 34, 10, chartWidth - 190);
-  const tagTop = clampWithinChart(anchorY - 32, 12, chartHeight - 42);
+  const pullbackTag = getTopTagPlacement({
+    anchorX,
+    chartWidth,
+    tagWidth: compactMode ? 228 : 190,
+  });
+
+  overlays.segments.push({
+    id: "ctx-pullback-tag-link",
+    x1: pullbackTag.connectorX,
+    y1: pullbackTag.connectorY,
+    x2: anchorX,
+    y2: anchorY,
+    color:
+      side === "buy" ? "rgba(22, 163, 74, 0.9)" : "rgba(180, 83, 9, 0.9)",
+    width: 2,
+    dashed: true,
+  });
 
   overlays.texts.push({
     id: "ctx-pullback-text",
-    left: tagLeft,
-    top: tagTop,
+    left: pullbackTag.left,
+    top: pullbackTag.top,
     text: compactMode
       ? `Pullback ${side === "buy" ? "BUY" : "SELL"} · preparação`
       : `Pullback ${side === "buy" ? "BUY" : "SELL"} · ${score}%`,
@@ -620,10 +672,6 @@ function buildPullbackContextualOverlays(params: {
   });
 
   if (!compactMode) {
-    const triggerCircleY = projector.yFromPrice(
-      side === "buy" ? triggerCandle.low : triggerCandle.high,
-    );
-
     if (isFiniteCoordinate(triggerCircleY)) {
       overlays.circles.push({
         id: "ctx-pullback-trigger-circle",
@@ -763,6 +811,8 @@ function buildMovingAverageCrossoverOverlays(params: {
 
   const side: "buy" | "sell" = fast >= slow ? "buy" : "sell";
   const crossPrice = (fast + slow) / 2;
+  const fastText = formatMaybeNumber(fast, 4);
+  const slowText = formatMaybeNumber(slow, 4);
 
   const crossX = xFromIndex(crossIndex);
   const crossY = projector.yFromPrice(crossPrice);
@@ -808,16 +858,34 @@ function buildMovingAverageCrossoverOverlays(params: {
         ? "rgba(22, 163, 74, 0.88)"
         : "rgba(220, 38, 38, 0.88)",
     borderWidth: 1,
-    label: "Cross",
+    label: "EMA 9 x EMA 21",
     labelColor: "#0f172a",
     labelBackground: "rgba(255,255,255,0.9)",
   });
 
+  const crossTag = getTopTagPlacement({
+    anchorX: crossX,
+    chartWidth,
+    tagWidth: 360,
+  });
+
+  overlays.segments.push({
+    id: "ctx-cross-tag-link",
+    x1: crossTag.connectorX,
+    y1: crossTag.connectorY,
+    x2: crossX,
+    y2: crossY,
+    color:
+      side === "buy" ? "rgba(22, 163, 74, 0.9)" : "rgba(220, 38, 38, 0.9)",
+    width: 2,
+    dashed: true,
+  });
+
   overlays.texts.push({
     id: "ctx-cross-text",
-    left: clampWithinChart(crossX - 34, 10, chartWidth - 190),
-    top: clampWithinChart(crossY - 34, 12, chartHeight - 42),
-    text: `Cruzamento ${side === "buy" ? "BUY" : "SELL"} · ${score}%`,
+    left: crossTag.left,
+    top: crossTag.top,
+    text: `Cruzamento ${side === "buy" ? "BUY" : "SELL"} | EMA 9 ${fastText} | EMA 21 ${slowText} | ${score}%`,
     color: "#ffffff",
     background:
       side === "buy"
@@ -837,9 +905,8 @@ function buildRangeBreakoutOverlays(params: {
   score: number;
   projector: OverlayProjector;
   chartWidth: number;
-  chartHeight: number;
 }): ChartOverlaySet {
-  const { candleMeta, score, projector, chartWidth, chartHeight } = params;
+  const { candleMeta, score, projector, chartWidth } = params;
 
   const overlays = createEmptyChartOverlays();
 
@@ -870,8 +937,6 @@ function buildRangeBreakoutOverlays(params: {
     return overlays;
   }
 
-  const centerX = (leftX + rightX) / 2;
-
   overlays.boxes.push({
     id: "ctx-range-box",
     left: Math.min(leftX, rightX),
@@ -886,10 +951,31 @@ function buildRangeBreakoutOverlays(params: {
     labelBackground: "rgba(255,255,255,0.92)",
   });
 
+  const breakoutCloseY = projector.yFromPrice(candleMeta[rightIndex]?.close ?? null);
+  const breakoutAnchorY = isFiniteCoordinate(breakoutCloseY)
+    ? breakoutCloseY
+    : (topY + bottomY) / 2;
+  const rangeTag = getTopTagPlacement({
+    anchorX: rightX,
+    chartWidth,
+    tagWidth: 170,
+  });
+
+  overlays.segments.push({
+    id: "ctx-range-tag-link",
+    x1: rangeTag.connectorX,
+    y1: rangeTag.connectorY,
+    x2: rightX,
+    y2: breakoutAnchorY,
+    color: "rgba(217, 119, 6, 0.9)",
+    width: 2,
+    dashed: true,
+  });
+
   overlays.texts.push({
     id: "ctx-range-text",
-    left: clampWithinChart(centerX - 28, 10, chartWidth - 170),
-    top: clampWithinChart(topY - 30, 12, chartHeight - 42),
+    left: rangeTag.left,
+    top: rangeTag.top,
     text: `Range breakout · ${score}%`,
     color: "#ffffff",
     background: "rgba(217, 119, 6, 0.92)",
@@ -1051,7 +1137,6 @@ function useChartDerivedData({
         score: bestContextualStrategy.score,
         projector,
         chartWidth: chartSize.width,
-        chartHeight: chartSize.height,
       });
     }
 

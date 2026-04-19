@@ -219,8 +219,8 @@ function buildCoverageStatus(params: {
   if (hasEnoughCandlesForChart) {
     return {
       level: "good",
-      title: "Cobertura saudável",
-      message: "A cobertura local parece suficiente para esta seleção.",
+      title: "",
+      message: "",
       background: "#ecfdf5",
       border: "#86efac",
       color: "#166534",
@@ -369,6 +369,7 @@ function CandlesChartCard(props: CandlesChartCardProps) {
   const showFooter = !loadingCandles && hasChartSnapshot;
   const showStrategyHighlights =
     !loadingCandles && hasChartSnapshot && strategyHighlights.length > 0;
+  const showCoverageNotice = coverageStatus.level !== "good";
 
   return (
     <section style={mainCardStyle}>
@@ -478,21 +479,23 @@ function CandlesChartCard(props: CandlesChartCardProps) {
 
           {isChartExpanded && (
             <div style={{ padding: 16 }}>
-              <div
-                style={{
-                  marginBottom: 14,
-                  padding: 12,
-                  borderRadius: 12,
-                  background: coverageStatus.background,
-                  border: `1px solid ${coverageStatus.border}`,
-                  color: coverageStatus.color,
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                }}
-              >
-                <strong>{coverageStatus.title}</strong>
-                <div>{coverageStatus.message}</div>
-              </div>
+              {showCoverageNotice && (
+                <div
+                  style={{
+                    marginBottom: 14,
+                    padding: 12,
+                    borderRadius: 12,
+                    background: coverageStatus.background,
+                    border: `1px solid ${coverageStatus.border}`,
+                    color: coverageStatus.color,
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <strong>{coverageStatus.title}</strong>
+                  <div>{coverageStatus.message}</div>
+                </div>
+              )}
 
               {showMarketInfo && (
                 <ChartMarketInfo

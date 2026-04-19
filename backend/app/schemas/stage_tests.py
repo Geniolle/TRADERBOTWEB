@@ -69,3 +69,7 @@ class StageTestRunResponse(BaseModel):
     metrics: StageTestMetricsResponse | dict[str, Any] | None = None
     analysis: dict[str, Any] | None = None
     cases: list[dict[str, Any]] | None = None
+    orders: dict[str, Any] | None = None
+    persisted: bool = False
+    persisted_run_id: str | None = None
+    persistence_error: str | None = None

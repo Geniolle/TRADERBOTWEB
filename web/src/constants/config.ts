@@ -28,6 +28,24 @@ function readNumberEnv(
   return value;
 }
 
+function readBooleanEnv(rawValue: unknown, fallback: boolean): boolean {
+  if (typeof rawValue === "boolean") {
+    return rawValue;
+  }
+
+  if (typeof rawValue === "string") {
+    const normalized = rawValue.trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "n", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
 function toWebSocketOrigin(httpOrigin: string): string {
   if (httpOrigin.startsWith("https://")) {
     return `wss://${httpOrigin.slice("https://".length)}`;
@@ -78,4 +96,27 @@ export const CHART_STRATEGY_HIGHLIGHT_MIN_SCORE = readNumberEnv(
   import.meta.env.VITE_CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
   80,
   { min: 0, max: 100 }
+);
+
+export const REALTIME_AUTO_ORDER_ENABLED = readBooleanEnv(
+  import.meta.env.VITE_REALTIME_AUTO_ORDER_ENABLED,
+  true,
+);
+
+export const REALTIME_AUTO_ORDER_MIN_SCORE = readNumberEnv(
+  import.meta.env.VITE_REALTIME_AUTO_ORDER_MIN_SCORE,
+  100,
+  { min: 0, max: 100 },
+);
+
+export const REALTIME_AUTO_ORDER_QUOTE_QTY = readNumberEnv(
+  import.meta.env.VITE_REALTIME_AUTO_ORDER_QUOTE_QTY,
+  20,
+  { min: 1 },
+);
+
+export const REALTIME_AUTO_ORDER_MAX_LOG_ITEMS = readNumberEnv(
+  import.meta.env.VITE_REALTIME_AUTO_ORDER_MAX_LOG_ITEMS,
+  60,
+  { min: 10, max: 500 },
 );

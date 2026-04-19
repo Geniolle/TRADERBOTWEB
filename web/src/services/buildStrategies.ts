@@ -919,6 +919,11 @@ function buildMovingAverageCrossoverStrategy(
         impact: bullishCross || bearishCross ? "positive" : "neutral",
       },
       {
+        label: "Medias no grafico",
+        value: `EMA 9: ${formatMaybeNumber(ema9)} | EMA 21: ${formatMaybeNumber(ema21)}`,
+        impact: ema9 != null && ema21 != null ? "positive" : "neutral",
+      },
+      {
         label: "Preço vs MMS 200",
         value: above200 ? "Acima" : below200 ? "Abaixo" : "Próximo / indefinido",
         impact:

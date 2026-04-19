@@ -10,6 +10,7 @@ import RunCasesCard from "../components/runs/RunCasesCard";
 import RunHistoryCard from "../components/runs/RunHistoryCard";
 import RunMetricsCard from "../components/runs/RunMetricsCard";
 import RunSummaryCard from "../components/runs/RunSummaryCard";
+import RealtimeOrdersCard from "../components/orders/RealtimeOrdersCard";
 import StrategiesCard from "../components/strategies/StrategiesCard";
 import {
   CHART_STRATEGY_HIGHLIGHT_MIN_SCORE,
@@ -26,6 +27,10 @@ import useIndicatorSettings from "../hooks/useIndicatorSettings";
 import useMarketCatalog from "../hooks/useMarketCatalog";
 import useMarketProviders from "../hooks/useMarketProviders.ts";
 import useRealtimeFeed from "../hooks/useRealtimeFeed";
+import useRealtimeStrategyOrders, {
+  type RealtimeStrategyCardBridgeItem,
+} from "../hooks/useRealtimeStrategyOrders";
+import useBinanceTestnetOrderHistory from "../hooks/useBinanceTestnetOrderHistory";
 import useRunDetails from "../hooks/useRunDetails";
 import useStageTests from "../hooks/useStageTests";
 import useStrategies from "../hooks/useStrategies";
@@ -35,11 +40,7 @@ type TimeframeOption = {
   label: string;
 };
 
-type MarketStrategyCardBridgeItem = {
-  id: string;
-  title: string;
-  score: number;
-};
+type MarketStrategyCardBridgeItem = RealtimeStrategyCardBridgeItem;
 
 const TIMEFRAME_STORAGE_KEY = "traderbot:selectedTimeframe";
 const CHART_STRATEGY_STORAGE_KEY = "traderbot:selectedChartStrategyKey";
@@ -78,6 +79,54 @@ function normalizeText(value: string | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeDirection(
+  value: unknown,
+): RealtimeStrategyCardBridgeItem["direction"] {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "buy" || normalized === "sell" || normalized === "neutral") {
+    return normalized;
+  }
+
+  return "neutral";
+}
+
+function normalizeStatus(
+  value: unknown,
+): RealtimeStrategyCardBridgeItem["status"] {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalized === "active" ||
+    normalized === "waiting_trigger" ||
+    normalized === "watching" ||
+    normalized === "weak" ||
+    normalized === "invalid"
+  ) {
+    return normalized;
+  }
+
+  return "invalid";
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter((item) => item.length > 0);
+}
+
 function normalizeMarketStrategyCards(
   value: unknown,
 ): MarketStrategyCardBridgeItem[] {
@@ -95,12 +144,26 @@ function normalizeMarketStrategyCards(
       const id = String(record.id ?? "").trim();
       const title = String(record.title ?? "").trim();
       const score = Number(record.score ?? Number.NaN);
+      const direction = normalizeDirection(record.direction);
+      const status = normalizeStatus(record.status);
+      const entry = normalizeOptionalText(record.entry);
+      const invalidation = normalizeOptionalText(record.invalidation);
+      const targets = normalizeStringList(record.targets);
 
       if (!id || !title || !Number.isFinite(score)) {
         return null;
       }
 
-      return { id, title, score };
+      return {
+        id,
+        title,
+        score,
+        direction,
+        status,
+        entry,
+        invalidation,
+        targets,
+      };
     })
     .filter((item): item is MarketStrategyCardBridgeItem => item !== null);
 }
@@ -286,6 +349,8 @@ export default function DashboardPage() {
   const {
     wsStatus,
     lastWsEvent,
+    lastWsCloseCode,
+    lastWsCloseReason,
     heartbeatCount,
     heartbeatMessage,
     candlesRefreshCount,
@@ -337,6 +402,32 @@ export default function DashboardPage() {
     loadingRunDetails,
     runDetailsError,
   } = useRunDetails(selectedRunId);
+
+  const {
+    isEnabled: realtimeOrdersEnabled,
+    minScore: realtimeOrdersMinScore,
+    quoteOrderQty: realtimeOrdersQuoteQty,
+    blockedReason: realtimeOrdersBlockedReason,
+    orders: realtimeOrders,
+    clearOrders: clearRealtimeOrders,
+  } = useRealtimeStrategyOrders({
+    symbol: effectiveChartSymbol,
+    timeframe: effectiveChartTimeframe,
+    strategyCards: marketStrategyCards,
+    lastCandleTick,
+  });
+
+  const {
+    loading: historyLoading,
+    error: historyError,
+    items: historyItems,
+    lastUpdatedAt: historyLastUpdatedAt,
+    reload: reloadHistory,
+  } = useBinanceTestnetOrderHistory({
+    symbol: effectiveChartSymbol,
+    enabled: realtimeOrdersEnabled,
+    limit: 50,
+  });
 
   const strategyHighlights = useMemo(() => {
     const normalizedSymbol = normalizeText(effectiveChartSymbol);
@@ -613,6 +704,8 @@ export default function DashboardPage() {
             health={health}
             wsStatus={wsStatus}
             lastWsEvent={lastWsEvent}
+            lastWsCloseCode={lastWsCloseCode}
+            lastWsCloseReason={lastWsCloseReason}
             providerErrorMessage={providerErrorMessage || candlesErrorFromHttp}
             hasLoadedInitialCandles={hasLoadedInitialCandles}
             candles={candles}
@@ -729,6 +822,25 @@ export default function DashboardPage() {
           candlesRefreshCount={candlesRefreshCount}
           candlesRefreshReason={candlesRefreshReason}
           lastCandleTick={lastCandleTick}
+        />
+
+        <RealtimeOrdersCard
+          mainCardStyle={mainCardStyle}
+          orders={realtimeOrders}
+          autoOrderEnabled={realtimeOrdersEnabled}
+          minScore={realtimeOrdersMinScore}
+          quoteOrderQty={realtimeOrdersQuoteQty}
+          blockedReason={realtimeOrdersBlockedReason}
+          selectedSymbol={effectiveChartSymbol}
+          selectedTimeframe={effectiveChartTimeframe}
+          historyLoading={historyLoading}
+          historyError={historyError}
+          historyItems={historyItems}
+          historyLastUpdatedAt={historyLastUpdatedAt}
+          onReloadHistory={() => {
+            void reloadHistory();
+          }}
+          onClearOrders={clearRealtimeOrders}
         />
 
         <ChartDiagnosticsCard

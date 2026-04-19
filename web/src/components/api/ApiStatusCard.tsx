@@ -11,6 +11,8 @@ type ApiStatusCardProps = {
   health: HealthResponse | null;
   wsStatus: string;
   lastWsEvent: string;
+  lastWsCloseCode: number | null;
+  lastWsCloseReason: string;
   providerErrorMessage: string;
   hasLoadedInitialCandles: boolean;
   candles: CandleItem[];
@@ -90,13 +92,21 @@ function getApiStatusInfo(
   };
 }
 
-function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
+function getWebSocketStatusInfo(
+  wsStatus: string,
+  lastWsEvent: string,
+  lastWsCloseCode: number | null,
+  lastWsCloseReason: string
+) {
   const normalizedStatus = String(wsStatus ?? "").trim().toLowerCase();
+  const closeCodeText =
+    typeof lastWsCloseCode === "number" ? String(lastWsCloseCode) : "-";
+  const closeReasonText = String(lastWsCloseReason ?? "").trim() || "-";
 
   if (normalizedStatus === "subscribed") {
     return {
       label: "Subscrito",
-      detail: "Ligação ativa e subscrição confirmada",
+      detail: "Ligacao ativa e subscricao confirmada",
       kind: "ok" as const,
     };
   }
@@ -104,7 +114,7 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
   if (normalizedStatus === "connected") {
     return {
       label: "Ligado",
-      detail: "Socket aberto, à espera da subscrição",
+      detail: "Socket aberto, a espera da subscricao",
       kind: "ok" as const,
     };
   }
@@ -117,10 +127,18 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
     };
   }
 
+  if (normalizedStatus === "reconnecting") {
+    return {
+      label: "A reconectar...",
+      detail: `Ultimo close: code=${closeCodeText}, reason=${closeReasonText}`,
+      kind: "warn" as const,
+    };
+  }
+
   if (normalizedStatus === "error") {
     return {
       label: "Erro",
-      detail: "Falha na ligação websocket",
+      detail: "Falha na ligacao websocket",
       kind: "error" as const,
     };
   }
@@ -128,7 +146,7 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
   if (normalizedStatus === "closed") {
     return {
       label: "Fechado",
-      detail: `Último evento: ${lastWsEvent || "-"}`,
+      detail: `Ultimo evento: ${lastWsEvent || "-"} | close code=${closeCodeText} | reason=${closeReasonText}`,
       kind: "warn" as const,
     };
   }
@@ -139,7 +157,6 @@ function getWebSocketStatusInfo(wsStatus: string, lastWsEvent: string) {
     kind: "neutral" as const,
   };
 }
-
 function getProviderStatusInfo(
   providerErrorMessage: string,
   hasLoadedInitialCandles: boolean,
@@ -350,6 +367,8 @@ function ApiStatusCard({
   health,
   wsStatus,
   lastWsEvent,
+  lastWsCloseCode,
+  lastWsCloseReason,
   providerErrorMessage,
   hasLoadedInitialCandles,
   candles,
@@ -360,7 +379,12 @@ function ApiStatusCard({
   lastProviderUpdateStatus,
 }: ApiStatusCardProps) {
   const apiInfo = getApiStatusInfo(loadingHealth, healthError, health);
-  const wsInfo = getWebSocketStatusInfo(wsStatus, lastWsEvent);
+  const wsInfo = getWebSocketStatusInfo(
+    wsStatus,
+    lastWsEvent,
+    lastWsCloseCode,
+    lastWsCloseReason
+  );
   const providerInfo = getProviderStatusInfo(
     providerErrorMessage,
     hasLoadedInitialCandles,
@@ -464,3 +488,4 @@ function ApiStatusCard({
 }
 
 export default ApiStatusCard;
+

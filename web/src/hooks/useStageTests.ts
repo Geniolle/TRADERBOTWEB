@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchStageTestOptions, runStageTest } from "../services/stageTestsApi";
+import { API_HTTP_BASE_URL } from "../constants/config";
 import type { StageTestOptionItem } from "../types/stageTests";
 import type {
   AnalysisSnapshot,
   CandleTickState,
+  RunDetailsResponse,
+  RunHistoryItem,
   StageTestRunCaseItem,
   StageTestRunRuleItem,
   StageTestRunTechnicalAnalysis,
@@ -678,6 +681,170 @@ function buildStageTestSummaryItems(
   });
 }
 
+type PersistedStageStrategySnapshot = {
+  totalRuns: number;
+  latestRun: RunHistoryItem;
+  latestDetails: RunDetailsResponse | null;
+};
+
+function pickBestAnalysisFromCases(
+  cases: StageTestRunCaseItem[]
+): StageTestRunTechnicalAnalysis | null {
+  for (const item of cases) {
+    if (item.analysis) {
+      return item.analysis;
+    }
+  }
+
+  return null;
+}
+
+function toMetricsRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+async function fetchPersistedStageStrategySnapshots(params: {
+  strategyKeys: string[];
+  selectedSymbol: string;
+  selectedTimeframe: string;
+}): Promise<Map<string, PersistedStageStrategySnapshot>> {
+  const { strategyKeys, selectedSymbol, selectedTimeframe } = params;
+  const snapshotByStrategy = new Map<string, PersistedStageStrategySnapshot>();
+
+  if (strategyKeys.length === 0) {
+    return snapshotByStrategy;
+  }
+
+  const query = new URLSearchParams();
+  query.set("limit", "300");
+  if (selectedSymbol) query.set("symbol", selectedSymbol);
+  if (selectedTimeframe) query.set("timeframe", selectedTimeframe);
+
+  const response = await fetch(`${API_HTTP_BASE_URL}/run-history?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const rows = (await response.json()) as RunHistoryItem[];
+  const strategySet = new Set(strategyKeys);
+
+  const stageRuns = rows.filter((row) => {
+    if (!row || typeof row !== "object") return false;
+    if ((row.mode || "").toLowerCase() !== "replay") return false;
+    const strategyKey = (row.strategy_key || "").trim();
+    return strategyKey !== "" && strategySet.has(strategyKey);
+  });
+
+  const groupedRuns = new Map<string, RunHistoryItem[]>();
+
+  for (const run of stageRuns) {
+    const strategyKey = String(run.strategy_key || "").trim();
+    if (!strategyKey) continue;
+    const list = groupedRuns.get(strategyKey) ?? [];
+    list.push(run);
+    groupedRuns.set(strategyKey, list);
+  }
+
+  const latestRuns = Array.from(groupedRuns.entries()).map(([strategyKey, list]) => {
+    return {
+      strategyKey,
+      latestRun: list[0],
+      totalRuns: list.length,
+    };
+  });
+
+  const detailsEntries = await Promise.all(
+    latestRuns.map(async (entry) => {
+      try {
+        const detailsResponse = await fetch(
+          `${API_HTTP_BASE_URL}/run-details/${entry.latestRun.id}`
+        );
+
+        if (!detailsResponse.ok) {
+          return [entry.strategyKey, null] as const;
+        }
+
+        const details = (await detailsResponse.json()) as RunDetailsResponse;
+        return [entry.strategyKey, details] as const;
+      } catch {
+        return [entry.strategyKey, null] as const;
+      }
+    })
+  );
+
+  const detailsMap = new Map<string, RunDetailsResponse | null>(detailsEntries);
+
+  for (const item of latestRuns) {
+    snapshotByStrategy.set(item.strategyKey, {
+      totalRuns: item.totalRuns,
+      latestRun: item.latestRun,
+      latestDetails: detailsMap.get(item.strategyKey) ?? null,
+    });
+  }
+
+  return snapshotByStrategy;
+}
+
+function applyPersistedSnapshotsToStageTests(params: {
+  baseItems: StageTestSummaryItem[];
+  snapshots: Map<string, PersistedStageStrategySnapshot>;
+}): StageTestSummaryItem[] {
+  const { baseItems, snapshots } = params;
+
+  return baseItems.map((item) => {
+    const persisted = snapshots.get(item.strategy_key);
+    if (!persisted) return item;
+
+    const latest = persisted.latestRun;
+    const latestDetails = persisted.latestDetails;
+    const normalizedCases = latestDetails
+      ? extractCasesFromResult({ cases: latestDetails.cases })
+      : [];
+    const bestAnalysis = pickBestAnalysisFromCases(normalizedCases);
+    const metricsRecord = toMetricsRecord(latestDetails?.metrics);
+
+    const totalCases =
+      toNumber(metricsRecord?.total_cases) ??
+      latest.total_cases_closed ??
+      latest.cases_count ??
+      item.total_cases;
+    const totalHits = toNumber(metricsRecord?.total_hits) ?? item.total_hits;
+    const totalFails = toNumber(metricsRecord?.total_fails) ?? item.total_fails;
+    const totalTimeouts =
+      toNumber(metricsRecord?.total_timeouts) ?? item.total_timeouts;
+    const hitRate = toNumber(metricsRecord?.hit_rate) ?? item.hit_rate;
+    const failRate = toNumber(metricsRecord?.fail_rate) ?? item.fail_rate;
+    const timeoutRate = toNumber(metricsRecord?.timeout_rate) ?? item.timeout_rate;
+
+    return {
+      ...item,
+      total_runs: persisted.totalRuns,
+      total_cases: totalCases ?? item.total_cases,
+      total_hits: totalHits ?? item.total_hits,
+      total_fails: totalFails ?? item.total_fails,
+      total_timeouts: totalTimeouts ?? item.total_timeouts,
+      hit_rate: hitRate ?? item.hit_rate,
+      fail_rate: failRate ?? item.fail_rate,
+      timeout_rate: timeoutRate ?? item.timeout_rate,
+      last_run: {
+        run_id: latest.id,
+        symbol: latest.symbol ?? item.last_run?.symbol ?? "",
+        timeframe: latest.timeframe ?? item.last_run?.timeframe ?? "",
+        status: latest.status ?? "persisted",
+        started_at: latest.started_at ?? null,
+        finished_at: latest.finished_at ?? null,
+        total_candles:
+          latest.total_candles_processed ?? latest.candles_count ?? null,
+        first_candle: latest.start_at ?? null,
+        last_candle: latest.end_at ?? null,
+        analysis: bestAnalysis,
+        cases: normalizedCases,
+      },
+    };
+  });
+}
+
 function useStageTests({
   selectedSymbol,
   selectedTimeframe,
@@ -715,15 +882,39 @@ function useStageTests({
         ? ((data as { items?: unknown }).items as StageTestOptionItem[])
         : [];
 
-      setStageTests((previousStageTests) =>
-        buildStageTestSummaryItems(
-          normalizedStrategies,
-          items,
-          selectedSymbol,
-          selectedTimeframe,
-          previousStageTests
-        )
+      let nextStageTests = buildStageTestSummaryItems(
+        normalizedStrategies,
+        items,
+        selectedSymbol,
+        selectedTimeframe,
+        []
       );
+
+      if (hasValidSelection) {
+        try {
+          const snapshots = await fetchPersistedStageStrategySnapshots({
+            strategyKeys: normalizedStrategies.map((item) => item.key),
+            selectedSymbol,
+            selectedTimeframe,
+          });
+
+          nextStageTests = applyPersistedSnapshotsToStageTests({
+            baseItems: nextStageTests,
+            snapshots,
+          });
+        } catch (persistedError) {
+          console.warn(
+            "[StageTests] Falha ao carregar runs persistidos:",
+            persistedError
+          );
+        }
+      }
+
+      setStageTests(nextStageTests);
+      const latestPersistedRunId =
+        nextStageTests.find((item) => item.last_run?.run_id)?.last_run?.run_id ??
+        "";
+      setSelectedRunId(latestPersistedRunId);
 
       const candleLabel = lastCandleTick?.open_time
         ? ` | Último candle observado=${lastCandleTick.open_time}`
@@ -878,9 +1069,10 @@ function useStageTests({
         const metrics = result.metrics;
         const analysis = extractTechnicalAnalysis(result);
         const cases = extractCasesFromResult(result);
-        const localRunId = `local-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}`;
+        const persistedRunId = (result.persisted_run_id || "").trim();
+        const localRunId =
+          persistedRunId ||
+          `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const closedCases = Number(metrics?.closed_cases ?? 0);
         const triggers = Number(metrics?.triggers ?? 0);
         const ranWithNoSignals =
@@ -927,26 +1119,30 @@ function useStageTests({
             } as StageTestSummaryItem;
           })
         );
+        setSelectedRunId(localRunId);
 
+        const persistenceLabel = result.persisted
+          ? ` | Persistido no DB (run_id=${localRunId})`
+          : "";
         if (result.ok && result.return_code === 0) {
           setLastExecutionStatus("success");
           if (ranWithNoSignals) {
             setLastExecutionLog(
               `Run manual concluído sem sinais em ${formatDateTime(
                 new Date()
-              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}`
+              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}${persistenceLabel}`
             );
           } else {
             setLastExecutionLog(
               `Run manual concluído em ${formatDateTime(
                 new Date()
-              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}`
+              )} | Strategy=${strategyKey} | Símbolo=${selectedSymbol} | Timeframe=${selectedTimeframe} | Triggers=${triggers} | Cases=${closedCases} | Return code=${result.return_code}${persistenceLabel}`
             );
           }
           return;
         }
 
-        const errorMessage = `Strategy=${strategyKey} | return_code=${result.return_code}`;
+        const errorMessage = `Strategy=${strategyKey} | return_code=${result.return_code}${persistenceLabel}`;
         setActionError(errorMessage);
         setLastExecutionStatus("error");
         setLastExecutionLog(

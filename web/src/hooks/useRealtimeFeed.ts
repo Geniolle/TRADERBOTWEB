@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { API_HTTP_BASE_URL, API_WS_BASE_URL } from "../constants/config";
+import { API_WS_BASE_URL } from "../constants/config";
 import type { CandleItem, CandleTickState, WsEnvelope } from "../types/trading";
 import { upsertRealtimeCandle } from "../utils/candles";
 import { floorToTimeframeIso } from "../utils/format";
@@ -20,6 +20,8 @@ export type ProviderUpdateStatus = "idle" | "waiting" | "success" | "error";
 type UseRealtimeFeedResult = {
   wsStatus: string;
   lastWsEvent: string;
+  lastWsCloseCode: number | null;
+  lastWsCloseReason: string;
   heartbeatCount: number | null;
   heartbeatMessage: string;
   candlesRefreshCount: number | null;
@@ -38,6 +40,8 @@ type RealtimeFeedState = {
   scopeKey: string;
   wsStatus: string;
   lastWsEvent: string;
+  lastWsCloseCode: number | null;
+  lastWsCloseReason: string;
   heartbeatCount: number | null;
   heartbeatMessage: string;
   candlesRefreshCount: number | null;
@@ -52,11 +56,16 @@ type RealtimeFeedState = {
   lastProviderUpdateStatus: ProviderUpdateStatus;
 };
 
-type PersistedLatestResponse = CandleItem | null;
+const PERIODIC_RECONCILE_MS = 45_000;
+const WS_RECONNECT_BASE_DELAY_MS = 1_000;
+const WS_RECONNECT_MAX_DELAY_MS = 10_000;
+const WS_RECONNECT_MAX_ATTEMPTS = 8;
 
 const DEFAULT_RESULT: Omit<RealtimeFeedState, "scopeKey"> = {
   wsStatus: "disconnected",
   lastWsEvent: "-",
+  lastWsCloseCode: null,
+  lastWsCloseReason: "",
   heartbeatCount: null,
   heartbeatMessage: "-",
   candlesRefreshCount: null,
@@ -232,97 +241,6 @@ function shouldReloadCandles(reason: string | null | undefined): boolean {
   return false;
 }
 
-function buildLatestUrl(
-  symbol: string,
-  timeframe: string,
-  provider?: string
-): string {
-  const query = new URLSearchParams({
-    symbol,
-    timeframe,
-  });
-
-  if (provider) {
-    query.set("provider", provider);
-  }
-
-  return `${API_HTTP_BASE_URL}/candles/latest?${query.toString()}`;
-}
-
-function extractErrorMessage(status: number, payloadText: string): string {
-  const text = String(payloadText ?? "").trim();
-
-  try {
-    const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
-
-    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
-      return parsed.detail;
-    }
-
-    if (typeof parsed.message === "string" && parsed.message.trim()) {
-      return parsed.message;
-    }
-  } catch {
-    // ignora parse inválido
-  }
-
-  if (text) {
-    return text;
-  }
-
-  return `HTTP ${status}`;
-}
-
-async function fetchLatestPersistedCandle(
-  symbol: string,
-  timeframe: string,
-  provider?: string
-): Promise<CandleItem | null> {
-  const response = await fetch(buildLatestUrl(symbol, timeframe, provider), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    const payloadText = await response.text();
-    throw new Error(extractErrorMessage(response.status, payloadText));
-  }
-
-  const payload = (await response.json()) as PersistedLatestResponse;
-
-  if (!payload || !isValidCandleItem(payload)) {
-    return null;
-  }
-
-  return normalizeIncomingCandle(payload);
-}
-
-function persistedLatestMatchesTick(
-  latestPersisted: CandleItem | null,
-  tick: NonNullable<CandleTickState>
-): boolean {
-  if (!latestPersisted) return false;
-
-  const persistedSymbol = normalizeSymbol(latestPersisted.symbol);
-  const persistedTimeframe = normalizeTimeframe(latestPersisted.timeframe);
-
-  if (persistedSymbol !== normalizeSymbol(tick.symbol)) return false;
-  if (persistedTimeframe !== normalizeTimeframe(tick.timeframe)) return false;
-
-  const persistedOpenTime = candleTimestamp(latestPersisted.open_time);
-  const tickOpenTime = candleTimestamp(tick.open_time);
-
-  if (!persistedOpenTime || !tickOpenTime) return false;
-
-  return persistedOpenTime >= tickOpenTime;
-}
-
 function useRealtimeFeed({
   effectiveChartMarketType,
   effectiveChartCatalog,
@@ -359,14 +277,23 @@ function useRealtimeFeed({
 
   const socketRef = useRef<WebSocket | null>(null);
   const isIntentionalCloseRef = useRef(false);
-  const persistenceCheckIdRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectScopeKeyRef = useRef("");
+  const [wsReconnectTick, setWsReconnectTick] = useState(0);
 
   useEffect(() => {
     if (!hasSelection) {
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      reconnectAttemptRef.current = 0;
+      reconnectScopeKeyRef.current = "";
+
       const activeSocket = socketRef.current;
       socketRef.current = null;
       isIntentionalCloseRef.current = true;
-      persistenceCheckIdRef.current += 1;
 
       if (
         activeSocket &&
@@ -390,110 +317,96 @@ function useRealtimeFeed({
     const currentTimeframe = normalizeTimeframe(effectiveChartTimeframe);
     const currentProvider = normalizeProvider(selectedProvider);
 
+    if (reconnectScopeKeyRef.current !== currentScopeKey) {
+      reconnectScopeKeyRef.current = currentScopeKey;
+      reconnectAttemptRef.current = 0;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    }
+
     isIntentionalCloseRef.current = false;
 
     const socket = new WebSocket(API_WS_BASE_URL);
     socketRef.current = socket;
 
-    const confirmTickPersistence = async (
-      nextTick: NonNullable<CandleTickState>,
-      providerReceivedAt: string
-    ) => {
-      const checkId = ++persistenceCheckIdRef.current;
+    let periodicReconcileHandle: ReturnType<typeof setInterval> | null = null;
+    let periodicReconcileInFlight = false;
+
+    const stopPeriodicReconcile = () => {
+      if (periodicReconcileHandle !== null) {
+        clearInterval(periodicReconcileHandle);
+        periodicReconcileHandle = null;
+      }
+    };
+
+    const runPeriodicReconcile = async () => {
+      if (!isMounted) return;
+      if (socketRef.current !== socket) return;
+      if (periodicReconcileInFlight) return;
+
+      periodicReconcileInFlight = true;
 
       try {
         await reloadCandles(false);
-
-        const latestPersisted = await fetchLatestPersistedCandle(
-          nextTick.symbol,
-          nextTick.timeframe,
-          currentProvider
-        );
-
-        if (!isMounted) return;
-        if (persistenceCheckIdRef.current !== checkId) return;
-        if (socketRef.current !== socket) return;
-
-        const persistedAt = formatNowPt();
-        const isPersisted = persistedLatestMatchesTick(latestPersisted, nextTick);
-
-        if (isPersisted) {
-          setState((prev) => ({
-            ...prev,
-            scopeKey: currentScopeKey,
-            providerErrorMessage: "",
-            lastProviderUpdateAt: latestPersisted?.open_time ?? nextTick.open_time,
-            lastProviderReceivedAt: providerReceivedAt,
-            lastProviderUpdateEvent: "candle_tick",
-            lastProviderUpdateStatus: "success",
-            lastProviderUpdateLog: buildProviderUpdateLog({
-              eventName: "candle_tick",
-              symbol: nextTick.symbol,
-              timeframe: nextTick.timeframe,
-              candleTime: latestPersisted?.open_time ?? nextTick.open_time,
-              receivedAt: providerReceivedAt,
-              count: nextTick.count,
-              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=CONFIRMADA | ConfirmadoEm=${persistedAt}`,
-            }),
-          }));
-          return;
-        }
-
-        setState((prev) => ({
-          ...prev,
-          scopeKey: currentScopeKey,
-          lastProviderUpdateAt: nextTick.open_time,
-          lastProviderReceivedAt: providerReceivedAt,
-          lastProviderUpdateEvent: "candle_tick",
-          lastProviderUpdateStatus: "waiting",
-          lastProviderUpdateLog: buildProviderUpdateLog({
-            eventName: "candle_tick",
-            symbol: nextTick.symbol,
-            timeframe: nextTick.timeframe,
-            candleTime: nextTick.open_time,
-            receivedAt: providerReceivedAt,
-            count: nextTick.count,
-            extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=PENDENTE | O provider enviou o candle, mas a API local ainda não confirmou gravação no SQLite.`,
-          }),
-        }));
       } catch (error) {
         if (!isMounted) return;
-        if (persistenceCheckIdRef.current !== checkId) return;
         if (socketRef.current !== socket) return;
 
         const message =
           error instanceof Error
             ? error.message
-            : "Falha desconhecida ao confirmar persistência.";
+            : "Falha desconhecida na reconciliação periódica.";
+        const receivedAt = formatNowPt();
 
         setState((prev) => ({
           ...prev,
           scopeKey: currentScopeKey,
-          lastProviderUpdateAt: nextTick.open_time,
-          lastProviderReceivedAt: providerReceivedAt,
-          lastProviderUpdateEvent: "candle_tick",
+          lastProviderReceivedAt: receivedAt,
+          lastProviderUpdateEvent: "reconcile_timer",
           lastProviderUpdateStatus: "error",
           lastProviderUpdateLog: buildProviderUpdateLog({
-            eventName: "candle_tick",
-            symbol: nextTick.symbol,
-            timeframe: nextTick.timeframe,
-            candleTime: nextTick.open_time,
-            receivedAt: providerReceivedAt,
-            count: nextTick.count,
-            extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=ERRO | ${message}`,
+            eventName: "reconcile_timer",
+            symbol: currentSymbol || "-",
+            timeframe: currentTimeframe || "-",
+            candleTime:
+              prev.lastProviderUpdateAt && prev.lastProviderUpdateAt !== "-"
+                ? prev.lastProviderUpdateAt
+                : undefined,
+            receivedAt,
+            extra: `ProviderSelecionado=${currentProvider || "backend-default"} | ConfirmaçãoSQLite=ERRO | ${message}`,
           }),
         }));
+      } finally {
+        periodicReconcileInFlight = false;
       }
+    };
+
+    const startPeriodicReconcile = () => {
+      if (periodicReconcileHandle !== null) return;
+
+      periodicReconcileHandle = setInterval(() => {
+        void runPeriodicReconcile();
+      }, PERIODIC_RECONCILE_MS);
     };
 
     socket.onopen = () => {
       if (!isMounted) return;
+
+      reconnectAttemptRef.current = 0;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
 
       setState({
         scopeKey: currentScopeKey,
         ...DEFAULT_RESULT,
         wsStatus: "connected",
         lastWsEvent: "connected",
+        lastWsCloseCode: null,
+        lastWsCloseReason: "",
         lastProviderUpdateLog: `Ligação aberta em ${formatNowPt()}. A aguardar candles do provider ${currentProvider || "backend-default"}.`,
         lastProviderUpdateStatus: "waiting",
       });
@@ -532,6 +445,10 @@ function useRealtimeFeed({
           nextEvent === "echo" ||
           nextEvent === "subscribed"
         ) {
+          if (nextEvent === "subscribed") {
+            startPeriodicReconcile();
+          }
+
           setState((prev) => ({
             ...prev,
             scopeKey: currentScopeKey,
@@ -827,7 +744,7 @@ function useRealtimeFeed({
             lastProviderUpdateAt: nextTick.open_time,
             lastProviderReceivedAt: receivedAt,
             lastProviderUpdateEvent: "candle_tick",
-            lastProviderUpdateStatus: "waiting",
+            lastProviderUpdateStatus: "success",
             lastProviderUpdateLog: buildProviderUpdateLog({
               eventName: "candle_tick",
               symbol: nextTick.symbol,
@@ -835,13 +752,11 @@ function useRealtimeFeed({
               candleTime: nextTick.open_time,
               receivedAt,
               count: nextTick.count,
-              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Provider=RECEBIDO | ConfirmaçãoSQLite=EM_CURSO`,
+              extra: `ProviderSelecionado=${currentProvider || "backend-default"} | Persistência=CONFIRMADA_VIA_WS`,
             }),
           }));
 
           setCandles((prev) => upsertRealtimeCandle(prev, nextTick));
-
-          void confirmTickPersistence(nextTick, receivedAt);
           return;
         }
 
@@ -871,17 +786,55 @@ function useRealtimeFeed({
 
     socket.onclose = (event) => {
       if (!isMounted) return;
+      if (socketRef.current !== socket) return;
 
       const wasIntentional = isIntentionalCloseRef.current;
-      persistenceCheckIdRef.current += 1;
+      stopPeriodicReconcile();
+      periodicReconcileInFlight = false;
+      const closeCode = Number.isFinite(event.code) ? event.code : null;
+      const closeReason =
+        typeof event.reason === "string" ? event.reason.trim() : "";
+
+      const canRetry =
+        !wasIntentional && reconnectAttemptRef.current < WS_RECONNECT_MAX_ATTEMPTS;
+
+      let retryDelayMs: number | null = null;
+      if (canRetry) {
+        const nextAttempt = reconnectAttemptRef.current + 1;
+        reconnectAttemptRef.current = nextAttempt;
+        retryDelayMs = Math.min(
+          WS_RECONNECT_BASE_DELAY_MS * 2 ** (nextAttempt - 1),
+          WS_RECONNECT_MAX_DELAY_MS
+        );
+
+        if (reconnectTimerRef.current !== null) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          if (!isMounted) return;
+          if (isIntentionalCloseRef.current) return;
+          setWsReconnectTick((value) => value + 1);
+        }, retryDelayMs);
+      }
 
       setState((prev) => ({
         ...prev,
         scopeKey: currentScopeKey,
-        wsStatus: "closed",
-        lastWsEvent: wasIntentional
-          ? prev.lastWsEvent || "closed"
-          : "closed",
+        wsStatus: canRetry ? "reconnecting" : "closed",
+        lastWsEvent: canRetry
+          ? `reconnect_attempt_${reconnectAttemptRef.current}`
+          : wasIntentional
+            ? prev.lastWsEvent || "closed"
+            : "closed",
+        lastWsCloseCode: closeCode,
+        lastWsCloseReason:
+          closeReason ||
+          (retryDelayMs !== null
+            ? `socket fechado; retry em ${retryDelayMs}ms`
+            : "socket fechado"),
       }));
 
       if (!wasIntentional && !event.wasClean) {
@@ -890,12 +843,24 @@ function useRealtimeFeed({
           reason: event.reason,
         });
       }
+
+      if (!wasIntentional && !canRetry) {
+        console.error("[WS] reconnect limit reached:", {
+          attempts: reconnectAttemptRef.current,
+          maxAttempts: WS_RECONNECT_MAX_ATTEMPTS,
+        });
+      }
     };
 
     return () => {
       isMounted = false;
       isIntentionalCloseRef.current = true;
-      persistenceCheckIdRef.current += 1;
+      stopPeriodicReconcile();
+      periodicReconcileInFlight = false;
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
 
       const activeSocket = socketRef.current;
       socketRef.current = null;
@@ -925,6 +890,7 @@ function useRealtimeFeed({
     effectiveChartTimeframe,
     setCandles,
     reloadCandles,
+    wsReconnectTick,
   ]);
 
   const visibleState = state.scopeKey === scopeKey ? state : null;
@@ -933,6 +899,8 @@ function useRealtimeFeed({
     return {
       wsStatus: DEFAULT_RESULT.wsStatus,
       lastWsEvent: DEFAULT_RESULT.lastWsEvent,
+      lastWsCloseCode: DEFAULT_RESULT.lastWsCloseCode,
+      lastWsCloseReason: DEFAULT_RESULT.lastWsCloseReason,
       heartbeatCount: DEFAULT_RESULT.heartbeatCount,
       heartbeatMessage: DEFAULT_RESULT.heartbeatMessage,
       candlesRefreshCount: DEFAULT_RESULT.candlesRefreshCount,
@@ -951,6 +919,10 @@ function useRealtimeFeed({
   return {
     wsStatus: visibleState?.wsStatus ?? "connecting",
     lastWsEvent: visibleState?.lastWsEvent ?? "connecting",
+    lastWsCloseCode:
+      visibleState?.lastWsCloseCode ?? DEFAULT_RESULT.lastWsCloseCode,
+    lastWsCloseReason:
+      visibleState?.lastWsCloseReason ?? DEFAULT_RESULT.lastWsCloseReason,
     heartbeatCount:
       visibleState?.heartbeatCount ?? DEFAULT_RESULT.heartbeatCount,
     heartbeatMessage:

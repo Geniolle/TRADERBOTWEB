@@ -92,11 +92,9 @@ function getCoverageStatus(feedDiagnostics: FeedDiagnostics): CoverageStatus {
 
   return {
     level: "good",
-    title: "Cobertura saudável",
-    message:
-      "A cobertura local parece consistente com a janela pedida e a ponta recente não indica atraso relevante.",
-    expectedChartBehavior:
-      "O gráfico pode atualizar normalmente com os candles mais recentes disponíveis.",
+    title: "",
+    message: "",
+    expectedChartBehavior: "",
     background: "#ecfdf5",
     border: "#86efac",
     color: "#166534",
@@ -111,6 +109,7 @@ function ChartDiagnosticsCard({
   feedDiagnostics,
 }: ChartDiagnosticsCardProps) {
   const coverageStatus = getCoverageStatus(feedDiagnostics);
+  const showCoverageWarning = coverageStatus.level !== "good";
 
   return (
     <div style={mainCardStyle}>
@@ -129,34 +128,36 @@ function ChartDiagnosticsCard({
         base local.
       </div>
 
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          borderRadius: 12,
-          background: coverageStatus.background,
-          border: `1px solid ${coverageStatus.border}`,
-          color: coverageStatus.color,
-          fontSize: 13,
-          lineHeight: 1.6,
-        }}
-      >
-        <strong>{coverageStatus.title}</strong>
-        <div style={{ marginTop: 4 }}>{coverageStatus.message}</div>
-
+      {showCoverageWarning && (
         <div
           style={{
-            marginTop: 10,
-            padding: 10,
-            borderRadius: 10,
-            background: "rgba(255,255,255,0.45)",
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            background: coverageStatus.background,
             border: `1px solid ${coverageStatus.border}`,
+            color: coverageStatus.color,
+            fontSize: 13,
+            lineHeight: 1.6,
           }}
         >
-          <strong>Comportamento esperado do gráfico:</strong>
-          <div>{coverageStatus.expectedChartBehavior}</div>
+          <strong>{coverageStatus.title}</strong>
+          <div style={{ marginTop: 4 }}>{coverageStatus.message}</div>
+
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 10,
+              background: "rgba(255,255,255,0.45)",
+              border: `1px solid ${coverageStatus.border}`,
+            }}
+          >
+            <strong>Comportamento esperado do gráfico:</strong>
+            <div>{coverageStatus.expectedChartBehavior}</div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={debugGridStyle}>
         <div style={debugItemStyle}>
@@ -250,9 +251,11 @@ function ChartDiagnosticsCard({
             background: coverageStatus.background,
           }}
         >
-          <div style={{ color: coverageStatus.color, marginBottom: 8 }}>
-            <strong>Status da cobertura:</strong> {coverageStatus.title}
-          </div>
+          {showCoverageWarning && (
+            <div style={{ color: coverageStatus.color, marginBottom: 8 }}>
+              <strong>Status da cobertura:</strong> {coverageStatus.title}
+            </div>
+          )}
           <div>
             <strong>Coverage mode:</strong> {feedDiagnostics.coverageMode}
           </div>

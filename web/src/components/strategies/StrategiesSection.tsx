@@ -22,6 +22,11 @@ function dispatchMarketStrategyCards(cards: StrategyCard[]) {
         id: card.id,
         title: card.title,
         score: card.score,
+        direction: card.direction,
+        status: card.status,
+        entry: card.entry ?? null,
+        invalidation: card.invalidation ?? null,
+        targets: Array.isArray(card.targets) ? card.targets : [],
       })),
     }),
   );

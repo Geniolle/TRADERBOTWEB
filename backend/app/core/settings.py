@@ -22,9 +22,20 @@ class Settings(BaseSettings):
     binance_api_key: str = Field(default="")
     binance_api_secret: str = Field(default="")
     binance_base_url: str = Field(default="https://api.binance.com")
+    binance_trading_api_key: str = Field(default="")
+    binance_trading_api_secret: str = Field(default="")
+    binance_trading_base_url: str = Field(default="https://testnet.binance.vision")
+    binance_trading_recv_window_ms: int = Field(default=5000)
+    binance_trading_timeout_seconds: int = Field(default=30)
+    binance_trading_require_testnet: bool = Field(default=True)
 
     database_url: str = Field(default="sqlite:///./market_research_lab.db")
     stage_test_run_command: str = Field(default="python -m app.stage_tests.runner")
+    stage_test_auto_order_enabled: bool = Field(default=False)
+    stage_test_auto_order_min_confirmation_score: float = Field(default=95.0)
+    stage_test_auto_order_max_orders_per_run: int = Field(default=1)
+    stage_test_auto_order_quote_order_qty: float = Field(default=20.0)
+    stage_test_auto_order_test_mode: bool = Field(default=True)
     cors_origins: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173"
     )
